@@ -1,0 +1,309 @@
+<title>Chief of Staff System</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column, a system diagram up top, then reference sections a person scans: bots, the Mac, the clock, the flows, the walls. */
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --ink: #15181e;
+  --muted: #5a6170;
+  --rule: #dfe2e8;
+  --accent: #2f55c8;
+  --chief: #2f55c8;
+  --ops: #0f8a7e;
+  --steward: #b26a00;
+  --builder: #8a3fb5;
+  --keeper: #c0392b;
+  --mac: #3d4452;
+  --chip-bg: #eef0f4;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Public Sans", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111318; --surface: #191c23; --ink: #e8eaf0; --muted: #9aa1b0; --rule: #2b303b; --accent: #7d9bff;
+    --chief: #7d9bff; --ops: #3cc4b4; --steward: #e9a23b; --builder: #c38bea; --keeper: #f07b6e; --mac: #aab2c2; --chip-bg: #232733;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111318; --surface: #191c23; --ink: #e8eaf0; --muted: #9aa1b0; --rule: #2b303b; --accent: #7d9bff;
+  --chief: #7d9bff; --ops: #3cc4b4; --steward: #e9a23b; --builder: #c38bea; --keeper: #f07b6e; --mac: #aab2c2; --chip-bg: #232733;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 40px 72px; display: grid; gap: 48px; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 700; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+header { display: grid; gap: 14px; }
+header .lede { font-size: 1.12rem; color: var(--muted); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-family: var(--font-mono); font-size: 0.78rem; background: var(--chip-bg); border-radius: 999px; padding: 3px 10px; color: var(--muted); }
+section { display: grid; gap: 18px; }
+section > .intro { color: var(--muted); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--chip-bg); padding: 1px 5px; border-radius: 4px; }
+.diagram { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 20px; overflow-x: auto; }
+.diagram pre { margin: 0; text-align: center; }
+.bots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.bot { background: var(--surface); border: 1px solid var(--rule); border-top: 4px solid var(--c); border-radius: 10px; padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.bot .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.bot .name { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; color: var(--c); letter-spacing: 0.02em; }
+.bot .when { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+.bot .job { font-weight: 500; }
+.bot dl { margin: 0; display: grid; grid-template-columns: 76px 1fr; gap: 6px 10px; font-size: 0.92rem; }
+.bot dt { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 2px; }
+.bot dd { margin: 0; min-width: 0; }
+.c-chief { --c: var(--chief); } .c-ops { --c: var(--ops); } .c-steward { --c: var(--steward); } .c-builder { --c: var(--builder); } .c-keeper { --c: var(--keeper); } .c-mac { --c: var(--mac); }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; background: var(--chip-bg); }
+tr:last-child td { border-bottom: 0; }
+td.t { font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.who { font-weight: 600; color: var(--c); white-space: nowrap; }
+.flows { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.flow { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.flow ol { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; font-size: 0.93rem; }
+.walls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.wall { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; display: grid; gap: 4px; }
+.wall strong { font-weight: 600; }
+.wall span { color: var(--muted); font-size: 0.92rem; }
+.cmd { display: grid; gap: 10px; }
+.cmd div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; }
+.cmd .say { font-weight: 500; }
+.cmd .does { font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); padding-top: 18px; display: grid; gap: 6px; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 520px) { .bot dl { grid-template-columns: 1fr; } .bot dt { padding-top: 6px; } }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Cassidy Hilton · data org · as of November 9, 2026</div>
+  <h1>Chief of Staff System</h1>
+  <p class="lede">Five Grok bots and one Mac. You talk to the Chief. The other four each own one part of the work. Your Mac does everything that touches the repos, the board, transcripts or data, and it runs its own schedule. Nothing leaves the team, merges, or changes shared state without your yes on that exact action.</p>
+  <div class="meta">
+    <span class="chip">kit: ~/cos/kit (git)</span>
+    <span class="chip">engines: Claude Code, Cursor Agent</span>
+    <span class="chip">bots: Grok Bot</span>
+  </div>
+</header>
+
+<section>
+  <h2>How the parts connect</h2>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  you(["You"]) -- "ask and approve" --> chief["CHIEF"]
+  chief -- "hands off" --> ops["OPS"]
+  chief -- "hands off" --> stew["STEWARD"]
+  chief -- "hands off" --> bld["BUILDER"]
+  chief -- "hands off" --> kpr["KEEPER"]
+  chief -- "runs, after your tap" --> run[["Mac: cos-run"]]
+  clock[["Mac clock: cos-sched"]] -- "starts jobs" --> run
+  clock -- "pushes receipts" --> ops
+  clock -- "pushes receipts" --> stew
+  clock -- "pushes receipts" --> bld
+  clock -- "pushes receipts" --> kpr
+  run -- "reads" --> src[("Repos, board, transcripts, Slack, lake")]
+</pre>
+  </div>
+  <p class="intro">Two paths reach the Mac. When you ask, the Chief runs <code>cos-run</code> and you approve the card that shows the exact command. On a schedule, the Mac runs the job itself and hands the result to the bot that owns it. A bot never runs anything on your Mac while you're not looking.</p>
+</section>
+
+<section>
+  <h2>The bots</h2>
+  <div class="bots">
+    <article class="bot c-chief">
+      <div class="head"><span class="name">CHIEF</span><span class="when">whenever you message it</span></div>
+      <p class="job">Your one contact. Restates each request as a brief, picks the cheapest way to do it, gets your yes, and reports in five lines.</p>
+      <dl>
+        <dt>Owns</dt><dd>Routing, open loops, approvals, mail, Slack and calendar errands</dd>
+        <dt>Never</dt><dd>Sends, merges, or edits a sheet or calendar without your yes on that exact change</dd>
+        <dt>Talks to</dt><dd>You, every bot, the Mac through <code>cos-run</code></dd>
+      </dl>
+    </article>
+    <article class="bot c-ops">
+      <div class="head"><span class="name">OPS</span><span class="when">weekdays 06:30</span></div>
+      <p class="job">Your clock. The morning brief, with follow-up drafts from yesterday's calls.</p>
+      <dl>
+        <dt>Owns</dt><dd>Today's meetings and prep, replies you owe, overdue items, blockers</dd>
+        <dt>Never</dt><dd>Sends anything, or runs commands on your Mac</dd>
+        <dt>Talks to</dt><dd>You through its brief. Receives the Mac's 06:15 follow-ups.</dd>
+      </dl>
+    </article>
+    <article class="bot c-steward">
+      <div class="head"><span class="name">STEWARD</span><span class="when">daily, Tue/Thu, Fri</span></div>
+      <p class="job">The board and the roadmap. Runs the team's own make targets and skills, so you can enforce the system without doing the cleanup.</p>
+      <dl>
+        <dt>Owns</dt><dd>The pulse, your daily capture, the roadmap reconcile, the weekly pass, owner nudges</dd>
+        <dt>Never</dt><dd>Writes on someone else's card, runs <code>EXECUTE=1</code>, edits the sheet, posts per-person scores</dd>
+        <dt>Talks to</dt><dd>The Chief, with write batches for your yes. Nudge drafts you send.</dd>
+      </dl>
+    </article>
+    <article class="bot c-builder">
+      <div class="head"><span class="name">BUILDER</span><span class="when">Mondays 08:30</span></div>
+      <p class="job">The engineering lead. Turns board work that needs engineering into small, proven prototypes and candidates for The Pantry.</p>
+      <dl>
+        <dt>Owns</dt><dd>Opportunities (three a week), briefs, build workspaces, proof, draft PRs to owners</dd>
+        <dt>Never</dt><dd>Builds off the board or without your yes to a brief. Merges, deploys, touches production.</dd>
+        <dt>Talks to</dt><dd>The Chief, and STEWARD when a build needs a card</dd>
+      </dl>
+    </article>
+    <article class="bot c-keeper">
+      <div class="head"><span class="name">KEEPER</span><span class="when">Fridays 13:00</span></div>
+      <p class="job">Maintains the other bots. Finds what keeps going wrong and proposes tested fixes.</p>
+      <dl>
+        <dt>Owns</dt><dd>The scorecard, rule drift in the repos, source health, up to three fixes, the bot roster</dd>
+        <dt>Never</dt><dd>Changes a bot, skill, routine or the kit itself. You approve and apply.</dd>
+        <dt>Talks to</dt><dd>The Chief, with each fix's evidence and eval result</dd>
+      </dl>
+    </article>
+    <article class="bot c-mac">
+      <div class="head"><span class="name">THE MAC</span><span class="when">on demand and on its clock</span></div>
+      <p class="job">Where the work happens. Claude Code and Cursor Agent, behind one front desk, <code>cos-run</code>.</p>
+      <dl>
+        <dt>Owns</dt><dd>Every read of the repos, board, transcripts, Slack and the lake. Every receipt.</dd>
+        <dt>Never</dt><dd>Writes outside <code>~/cos/outbox</code> without an approved batch. The gate blocks the rest.</dd>
+        <dt>Talks to</dt><dd>The bots, by receipt and webhook</dd>
+      </dl>
+    </article>
+  </div>
+</section>
+
+<section>
+  <h2>The Mac's lanes</h2>
+  <p class="intro">Each job returns a receipt in <code>~/cos/outbox/&lt;job&gt;/</code>. A separate checker reviews it before anyone calls it done.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Lane</th><th>What it does</th><th>Engine</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td class="t">quick</td><td>Answers from one read-only command</td><td>Cursor Agent</td><td>cents</td></tr>
+        <tr><td class="t">investigate</td><td>Digs in, changes nothing</td><td>Claude Code</td><td>about $0.30 to $3</td></tr>
+        <tr><td class="t">draft</td><td>Prepares a doc or repo change on its own branch, never pushed</td><td>Claude Code</td><td>up to $12</td></tr>
+        <tr><td class="t">build</td><td>One build slice, then three checks: before and after, a verifier, a second model</td><td>Claude Code</td><td>up to $20, plus about $6</td></tr>
+        <tr><td class="t">pair</td><td>Opens a build workspace you drive in Cursor</td><td>you</td><td>free</td></tr>
+        <tr><td class="t">apply</td><td>Runs a write batch you approved by its sha256, once</td><td>no model</td><td>free</td></tr>
+        <tr><td class="t">eval</td><td>Tests a prompt change blind on six real requests</td><td>Claude, judged by Codex</td><td>about $4</td></tr>
+        <tr><td class="t">note</td><td>Records a correction for KEEPER</td><td>no model</td><td>free</td></tr>
+        <tr><td class="t">pause</td><td>Holds a scheduled job for N days</td><td>no model</td><td>free</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>A week</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>When</th><th>The Mac runs</th><th>Goes to</th><th>You see</th></tr></thead>
+      <tbody>
+        <tr><td class="t">Weekdays 06:15</td><td>Follow-ups from yesterday's calls</td><td class="who c-ops">OPS</td><td>Drafts inside the 06:30 brief</td></tr>
+        <tr><td class="t">Weekdays 06:30</td><td>(OPS, in the cloud)</td><td class="who c-ops">OPS</td><td>Your morning brief</td></tr>
+        <tr><td class="t">Weekdays 08:10</td><td>Board pulse: stale, weed, roadmap check, ship check</td><td class="who c-steward">STEWARD</td><td>Three lines and owner nudge drafts, before the ops meeting</td></tr>
+        <tr><td class="t">Weekdays 16:00</td><td>Your capture onto the board</td><td class="who c-steward">STEWARD</td><td>A write batch for your cards, by sha256</td></tr>
+        <tr><td class="t">Tue, Thu 10:00</td><td>Roadmap reconcile</td><td class="who c-steward">STEWARD</td><td>Drift, which side should move, sheet paste text</td></tr>
+        <tr><td class="t">Mon 08:30</td><td>Build opportunities</td><td class="who c-builder">BUILDER</td><td>Up to three, each tied to a card</td></tr>
+        <tr><td class="t">Fri 10:00</td><td>The weekly pass, in David's order</td><td class="who c-steward">STEWARD</td><td>The packet for you and Melanie</td></tr>
+        <tr><td class="t">Fri 13:00</td><td>The audit of every bot and lane</td><td class="who c-keeper">KEEPER</td><td>A scorecard and up to three fixes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="intro">A job that finds nothing new sends nothing. A job the Mac slept through is reported as missed, never replayed late with old data.</p>
+</section>
+
+<section>
+  <h2>Three flows</h2>
+  <div class="flows">
+    <div class="flow">
+      <h3>A request</h3>
+      <ol>
+        <li>You ask the Chief, in your own words.</li>
+        <li>A quick lookup runs right away. Anything bigger comes back as a brief: task, done-means, constraints, lane, cost cap.</li>
+        <li>You say go. The approval card shows the exact <code>cos-run</code> command. You tap Allow.</li>
+        <li>The job runs, the checker reviews it, and the Chief reports: needs you, done, blocked.</li>
+      </ol>
+    </div>
+    <div class="flow">
+      <h3>A board write</h3>
+      <ol>
+        <li>STEWARD's capture stages writes for your cards in <code>apply.sh</code>, previewed with <code>DRY_RUN=1</code>.</li>
+        <li>The Chief shows you the batch and its sha256.</li>
+        <li>You say yes to that hash. The card shows <code>cos-run apply &lt;job&gt; &lt;sha256&gt;</code>.</li>
+        <li>Only that exact file runs, once. The Chief re-reads each card to confirm.</li>
+      </ol>
+    </div>
+    <div class="flow">
+      <h3>A correction</h3>
+      <ol>
+        <li>You correct a bot. The Chief records it with <code>cos-run note</code>.</li>
+        <li>Seen twice, it's a pattern. KEEPER finds it in Friday's audit.</li>
+        <li>KEEPER proposes the strongest fix: a setup change, then a check, then a skill edit, then memory. A prompt change comes with its eval result.</li>
+        <li>You approve and apply it. The kit's git history keeps every change.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The walls</h2>
+  <div class="walls">
+    <div class="wall"><strong>Approval cards</strong><span>Every command on your Mac shows the exact command first. Mac execution is set to ask every time.</span></div>
+    <div class="wall"><strong>Custom Rules</strong><span>Sending, posting, calendar, sheets, GitHub writes, purchases and Zoom sign-in always stop and ask.</span></div>
+    <div class="wall"><strong>The gate</strong><span>Blocks secrets, production writes, infrastructure, force-push, canon values and edits to the system's own controls in every job.</span></div>
+    <div class="wall"><strong>Approval by hash</strong><span>A write batch runs only if it matches the sha256 you approved, once.</span></div>
+    <div class="wall"><strong>The team's rules</strong><span>data-org and data-org-notebook come first: the writing standard, the boundary, <code>context/</code> read-only, canon charter decision 14.</span></div>
+    <div class="wall"><strong>No merges</strong><span>The furthest an agent goes is a draft PR, after your yes. Owners merge.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Controls you'll use</h2>
+  <div class="cmd">
+    <div><span class="say">"Pause for 7 days," to any bot</span><span class="does">the Chief runs cos-run pause &lt;its slot&gt; 7 · 0 resumes · all pauses everything</span></div>
+    <div><span class="say">"That's wrong, it should…"</span><span class="does">the Chief fixes it and records cos-run note &lt;bot&gt; "&lt;rule&gt;"</span></div>
+    <div><span class="say">"Can we build something for…"</span><span class="does">routed to BUILDER · nothing starts before your yes to a BRIEF.md</span></div>
+    <div><span class="say">"Is this on the board?"</span><span class="does">routed to STEWARD · answered from make targets on fresh main</span></div>
+    <div><span class="say">"I can't find the transcript for…"</span><span class="does">~/meetings, then ~/Documents/Zoom, then you, then Zoom web after your yes</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Where things live</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td>The system, versioned</td><td class="t">~/cos/kit</td></tr>
+        <tr><td>Rules, standards, people, the system map</td><td class="t">~/cos/handbook</td></tr>
+        <tr><td>Every job's receipt and files</td><td class="t">~/cos/outbox/&lt;job&gt;</td></tr>
+        <tr><td>Corrections, schedule log, board-health trend, pauses</td><td class="t">~/cos/state</td></tr>
+        <tr><td>Build workspaces</td><td class="t">~/builds/&lt;slug&gt;</td></tr>
+        <tr><td>How Claude works with you</td><td class="t">~/.claude/skills/cassidy-mode</td></tr>
+        <tr><td>Each bot's rules and playbook</td><td>Grok skills: chief-playbook, ops-playbook, steward-playbook, builder-playbook, keeper-playbook, system-map, cassidy-chief-of-staff-rules, cassidy-mode, cassidy-voice</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <span>Open items: the AI Data Stewardship Field Guide (Tolga) isn't found yet; PR #610 is unmerged; the Chief's old 7:30 brief and 4:30 sweep run until OPS and STEWARD prove out.</span>
+  <span>KEEPER keeps this page current. The source is docs/system-overview.html in the kit.</span>
+</footer>
+
+</div>
