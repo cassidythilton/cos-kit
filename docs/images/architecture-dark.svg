@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 460" width="900" height="460" role="img" aria-label="You ask the Chief. The Chief hands work to OPS, STEWARD, BUILDER and KEEPER, and runs cos-run on the Mac after your tap. The Mac clock starts scheduled jobs and pushes each receipt to the bot that owns it. cos-run reads the repos, board, transcripts, Slack and the lake.">
+  <style>svg{--bg:#161b22;--surface:#0d1117;--ink:#e8eaf0;--muted:#9aa1b0;--rule:#3a404c;--amber:#e9a23b;--chief:#7d9bff;--ops:#3cc4b4;--steward:#e9a23b;--builder:#c38bea;--keeper:#f07b6e;--mac:#aab2c2}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.bg{fill:var(--bg);stroke:var(--rule);stroke-width:1}
+.edges line{stroke:var(--muted);stroke-width:1.4}
+.edges line.tap{stroke:var(--amber);stroke-dasharray:5 4}
+.ah{fill:var(--muted)}
+.elabel text{fill:var(--muted);font-size:12px}
+.node rect{fill:var(--surface);stroke:var(--c);stroke-width:2}
+.node text{fill:var(--ink);font-size:15px;font-weight:600;text-anchor:middle;letter-spacing:.02em}
+.node text.sub{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;font-weight:400;fill:var(--muted);letter-spacing:0}
+.src rect{stroke-dasharray:5 4}
+.src text{font-weight:500;font-size:13px}</style>
+  <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+  <rect class="bg" x="0" y="0" width="900" height="460" rx="14"/>
+  <g class="edges">
+    <line x1="120" y1="206" x2="176" y2="206" marker-end="url(#arr)"/>
+    <line x1="310" y1="206" x2="416" y2="62" marker-end="url(#arr)"/>
+    <line x1="310" y1="206" x2="416" y2="142" marker-end="url(#arr)"/>
+    <line x1="310" y1="206" x2="416" y2="222" marker-end="url(#arr)"/>
+    <line x1="310" y1="206" x2="416" y2="302" marker-end="url(#arr)"/>
+    <line class="tap" x1="245" y1="231" x2="416" y2="386" marker-end="url(#arr)"/>
+    <line x1="700" y1="178" x2="574" y2="62" marker-end="url(#arr)"/>
+    <line x1="700" y1="178" x2="574" y2="142" marker-end="url(#arr)"/>
+    <line x1="700" y1="178" x2="574" y2="222" marker-end="url(#arr)"/>
+    <line x1="700" y1="178" x2="574" y2="302" marker-end="url(#arr)"/>
+    <line x1="780" y1="206" x2="574" y2="382" marker-end="url(#arr)"/>
+    <line x1="570" y1="408" x2="696" y2="408" marker-end="url(#arr)"/>
+  </g>
+  <g class="elabel">
+    <text x="148" y="196" text-anchor="middle">asks</text>
+    <text x="352" y="120" text-anchor="middle" transform="rotate(-53 352 120)">hands off</text>
+    <text x="300" y="330" text-anchor="middle" transform="rotate(42 300 330)">runs, after your tap</text>
+    <text x="652" y="98" text-anchor="middle" transform="rotate(43 652 98)">pushes receipts</text>
+    <text x="700" y="310" text-anchor="middle" transform="rotate(-40 700 310)">starts jobs</text>
+    <text x="633" y="400" text-anchor="middle">reads</text>
+  </g>
+  <g class="node" style="--c:var(--ink)"><rect x="20" y="181" width="100" height="50" rx="25"/><text x="70" y="211">You</text></g>
+  <g class="node" style="--c:var(--chief)"><rect x="180" y="181" width="130" height="50" rx="8"/><text x="245" y="211">CHIEF</text></g>
+  <g class="node" style="--c:var(--ops)"><rect x="420" y="40" width="150" height="44" rx="8"/><text x="495" y="67">OPS</text></g>
+  <g class="node" style="--c:var(--steward)"><rect x="420" y="120" width="150" height="44" rx="8"/><text x="495" y="147">STEWARD</text></g>
+  <g class="node" style="--c:var(--builder)"><rect x="420" y="200" width="150" height="44" rx="8"/><text x="495" y="227">BUILDER</text></g>
+  <g class="node" style="--c:var(--keeper)"><rect x="420" y="280" width="150" height="44" rx="8"/><text x="495" y="307">KEEPER</text></g>
+  <g class="node" style="--c:var(--mac)"><rect x="700" y="150" width="180" height="56" rx="4"/><text x="790" y="174">Mac clock</text><text class="sub" x="790" y="194">cos-sched</text></g>
+  <g class="node" style="--c:var(--mac)"><rect x="420" y="364" width="150" height="56" rx="4"/><text x="495" y="388">Mac front desk</text><text class="sub" x="495" y="408">cos-run</text></g>
+  <g class="node src" style="--c:var(--rule)"><rect x="700" y="364" width="180" height="70" rx="4"/><text x="790" y="390">Repos, board,</text><text x="790" y="408">transcripts,</text><text x="790" y="426">Slack, lake</text></g>
+</svg>
