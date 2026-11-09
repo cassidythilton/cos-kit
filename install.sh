@@ -171,7 +171,7 @@ printf '%s' '{"tool_name":"Bash","tool_input":{"command":"make board"}}' \
   | HOME="$T" COS_GATE_MODE=job "$COS/claude/gate.sh" >/dev/null 2>&1
 after="$(wc -l < "$T/cos/state/ledger/gate.jsonl" | tr -d ' ')"
 [[ "$before" == "$after" ]] && pass "an allow writes no gate line" || fail "an allow wrote a gate line"
-HOME="$T" python3 -I - "$T" <<'PY'
+HOME="$T" python3 -I -B - "$T" <<'PY'
 import json, pathlib, sys
 home = pathlib.Path(sys.argv[1])
 job = home / "cos/outbox/fixjob"
@@ -212,11 +212,11 @@ HOME="$T" "$T/cos/bin/cos-ledger" pushes bot=steward slot=pulse job=pulse-202611
 HOME="$T" "$T/cos/bin/cos-ledger" schedule slot=pulse msg="pushed to steward" >/dev/null
 HOME="$T" "$T/cos/bin/cos-ledger" pauses slot=keeper days=3 until=2026-11-12 >/dev/null
 HOME="$T" "$T/cos/bin/cos-ledger" applies job=fixjob sha=abc writes=1 ok=1 status=done >/dev/null
-if HOME="$T" python3 -I "$KIT/claude/cos_db.py" load >/tmp/cos-fr-load.json; then
+if HOME="$T" python3 -I -B "$KIT/claude/cos_db.py" load >/tmp/cos-fr-load.json; then
   pass "cos-db load builds the database"
 else fail "cos-db load failed"; fi
-if HOME="$T" python3 -I "$KIT/claude/cos_db.py" load >/tmp/cos-fr-load2.json; then
-  python3 -I - "$T" <<'PY'
+if HOME="$T" python3 -I -B "$KIT/claude/cos_db.py" load >/tmp/cos-fr-load2.json; then
+  python3 -I -B - "$T" <<'PY'
 import json, sqlite3, sys
 db = sys.argv[1] + "/cos/state/cos.db"
 con = sqlite3.connect(db)
@@ -242,11 +242,11 @@ else
   echo "BAD load"
 fi > /tmp/cos-fr-counts.txt
 [[ "$(cat /tmp/cos-fr-counts.txt)" == OK ]] && pass "two loads, same tables, no secrets stored" || fail "loader check: $(cat /tmp/cos-fr-counts.txt)"
-HOME="$T" python3 -I "$KIT/claude/cos_db.py" sql "DELETE FROM jobs" >/dev/null 2>&1
+HOME="$T" python3 -I -B "$KIT/claude/cos_db.py" sql "DELETE FROM jobs" >/dev/null 2>&1
 sql_rc=$?
 [[ $sql_rc -ne 0 ]] && pass "cos-db sql refuses a write" || fail "cos-db sql ran a write"
 fr_port=18787
-COS_DASH_PORT=$fr_port COS_DB="$T/cos/state/cos.db" HOME="$T" python3 -I "$KIT/apps/flight-recorder/server.py" >/tmp/cos-fr-api.log 2>&1 &
+COS_DASH_PORT=$fr_port COS_DB="$T/cos/state/cos.db" HOME="$T" python3 -I -B "$KIT/apps/flight-recorder/server.py" >/tmp/cos-fr-api.log 2>&1 &
 fr_pid=$!
 fr_up=0
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
@@ -258,7 +258,7 @@ fr_bind="$(lsof -nP -iTCP:$fr_port -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $
 kill "$fr_pid" 2>/dev/null; wait "$fr_pid" 2>/dev/null
 [[ $fr_up -eq 1 && "$fr_bind" == "127.0.0.1:$fr_port" ]] && pass "API binds only 127.0.0.1" || fail "API bind was '$fr_bind' (up $fr_up)"
 [[ "$fr_post" == 405 ]] && pass "API refuses a write" || fail "API POST returned $fr_post"
-timing_ms="$(python3 -I - "$COS/claude/gate.sh" "$T" <<'PY'
+timing_ms="$(python3 -I -B - "$COS/claude/gate.sh" "$T" <<'PY'
 import os, subprocess, sys, time
 gate, home = sys.argv[1], sys.argv[2]
 payload = '{"tool_name":"Bash","tool_input":{"command":"gh issue comment 1 -b hi"}}'

@@ -7,7 +7,7 @@
 ![bots](https://img.shields.io/badge/bots-Grok_Bot_·_5-15181e?style=flat-square)
 ![engines](https://img.shields.io/badge/engines-Claude_Code_·_Cursor_Agent-D97757?style=flat-square&logo=anthropic&logoColor=white)
 ![mac](https://img.shields.io/badge/Mac-launchd_·_bash_·_gh-3d4452?style=flat-square&logo=apple&logoColor=white)
-![checks](https://img.shields.io/badge/install_checks-84%2F84-56E39F?style=flat-square)
+![checks](https://img.shields.io/badge/install_checks-103%2F103-56E39F?style=flat-square)
 ![license](https://img.shields.io/badge/license-private-5B6C5D?style=flat-square)
 
 <p align="center">
@@ -237,7 +237,7 @@ The full map of sources, rules and what may cross which wire is [handbook/system
 cd ~/cos/kit && ./install.sh --online
 ```
 
-`install.sh` checks prerequisites, copies the kit into `~/cos`, installs `cassidy-mode` for Claude and Cursor, and proves the walls with 84 checks. `--schedule` loads the launchd jobs, and `--schedule=<slot,…>` loads only those. Full steps, including the Grok setup and webhook keys, are in [INSTALL.md](INSTALL.md). The design and its reasons are in [PLAN.md](PLAN.md). A one-page overview is [docs/system-overview.html](docs/system-overview.html).
+`install.sh` checks prerequisites, copies the kit into `~/cos`, installs `cassidy-mode` for Claude and Cursor, and proves the walls with 103 checks. `--schedule` loads the launchd jobs, and `--schedule=<slot,…>` loads only those. Full steps, including the Grok setup and webhook keys, are in [INSTALL.md](INSTALL.md). The design and its reasons are in [PLAN.md](PLAN.md). A one-page overview is [docs/system-overview.html](docs/system-overview.html).
 
 This folder is the only source. A change is an edit here, a commit with its reason, a push, then `./install.sh`. To undo one, revert the commit and reinstall.
 
