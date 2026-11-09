@@ -21,6 +21,20 @@ Weekdays 06:30, MORNING BRIEF (a scheduled routine, in the cloud):
   Add the follow-ups from my Mac if they arrived this morning (below). If they didn't arrive by 06:30, say
   "follow-ups not in yet" and add them when they come. Don't reuse yesterday's.
 
+OBLIGATIONS (webhook slot "obligations", every two hours on workdays, from 08:00)
+  Everything waiting on me is in a ledger on my Mac, and you own it until each item is closed in its system of
+  record. "Closed" means the record says so: a review request is gone from the PR, a reply is posted, an issue is
+  closed. A message, a draft or a comment elsewhere doesn't close anything.
+  What the Mac already did under my standing approvals arrives under "done": comment-only PR reviews, and
+  make complete on my own work-items whose PRs merged and whose boxes are all checked (announced a day before).
+  Tell me each in one line in the next brief. Nothing to ask.
+  What it couldn't do arrives under needs_approval. Work each one to the point of one tap:
+  - a reply someone is waiting for: read the thread, draft the reply in my voice (cassidy-voice), and give it to the
+    Chief as one GitHub comment for my yes;
+  - a review that needs me: show me the drafted review and why it needs me (a decision only I can make, or a block);
+  - a close announced for tomorrow: list it, so I can veto it if it's wrong.
+  An item still open two workdays after it appeared goes in the brief under "Overdue", with the work already done.
+
 WEBHOOK (from my Mac, about 06:15, slot "followups"):
   The body is a receipt: drafts of the follow-ups I owe from yesterday's calls, each with a transcript timestamp.
   Turn them into Gmail or Slack drafts (drafts only), and put them in the morning brief. Status "blocked" with

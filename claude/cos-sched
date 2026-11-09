@@ -21,7 +21,8 @@ reconcile   | 2,4 10:00 | 9-14  | steward | investigate
 capture     | 1-5 16:00 | 15-21 | steward | investigate
 week        | 5 10:00   | 9-15  | steward | investigate
 opportunity | 1 08:30   | 7-13  | builder | investigate
-keeper      | 5 13:00   | 12-18 | keeper  | investigate'
+keeper      | 5 13:00   | 12-18 | keeper  | investigate
+obligations | 1-5 08:00,10:00,12:00,14:00,16:00 | 7-17 | ops | script'
 
 if [[ "$SLOT" == list ]]; then echo "$TABLE"; exit 0; fi
 row="$(printf '%s\n' "$TABLE" | awk -F'|' -v s="$SLOT" '{k=$1; gsub(/ /,"",k)} k==s')"
@@ -48,13 +49,17 @@ if (( h < lo || h > hi )); then
 fi
 
 if [[ $DRY -eq 1 ]]; then
-  if [[ "$LANE" == quick ]]; then echo "cos-run quick $JOB <pulse question> --with 'board-pulse --record'  -> $BOT"
+  if [[ "$LANE" == script ]]; then echo "cos-obligations --act  -> $BOT"
+  elif [[ "$LANE" == quick ]]; then echo "cos-run quick $JOB <pulse question> --with 'board-pulse --record'  -> $BOT"
   else echo "cos-run $LANE $JOB $BRIEFS/$SLOT.md  -> $BOT"; [[ -f "$BRIEFS/$SLOT.md" ]] || echo "MISSING brief: $BRIEFS/$SLOT.md"; fi
   exit 0
 fi
 
 log "start $JOB"
-if [[ "$LANE" == quick ]]; then
+if [[ "$LANE" == script ]]; then
+  JOB="obligations-$D"
+  cos-obligations --act >/dev/null 2>"$COS/state/obligations.err" || log "obligations failed: $(tail -c 200 "$COS/state/obligations.err" | tr '\n' ' ')"
+elif [[ "$LANE" == quick ]]; then
   cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), and how many owners need a nudge. If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
     --with "board-pulse --record" >/dev/null 2>&1
 else
