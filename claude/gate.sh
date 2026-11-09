@@ -36,7 +36,18 @@ ctl_re='(/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|\.claude/(skills|settin
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]] && [[ "$path" =~ $ctl_re ]]; then hard "editing the system's own controls ($path)"; fi
 if [[ "$tool" == "Bash" ]]; then
   [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-sched)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
-  [[ "$cmd" =~ $ctl_re ]] && [[ "$cmd" =~ (\>|tee[[:space:]]|cp[[:space:]]|mv[[:space:]]|sed[[:space:]]+-i|perl[[:space:]]+-[a-z]*i|install[[:space:]]|ln[[:space:]]|git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?(commit|apply|am|checkout|reset)) ]] && hard "changing the system's own controls"
+  # Writes into a control path only: a redirect or tee into it, an in-place edit of it, a copy or move onto it, or git in it.
+  C='[^[:space:];&|]*/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|[^[:space:];&|]*\.claude/(skills|settings)|[^[:space:];&|]*LaunchAgents'
+  w1=">>?[[:space:]]*[\"']?($C)"; w2="tee[[:space:]]+(-a[[:space:]]+)?[\"']?($C)"; w3="(sed|perl)[[:space:]]+-[a-zA-Z]*i[^;&|]*($C)"
+  w5="git[[:space:]]+-C[[:space:]]+[\"']?($C)[^;&|]*(commit|apply|am|checkout|reset|add|rm|mv|restore|stash|merge|rebase|revert|cherry-pick)"
+  w6="cd[[:space:]]+[\"']?($C)[^;&|]*(&&|;)[[:space:]]*git[[:space:]]+(commit|apply|am|checkout|reset|add|rm|mv|restore|stash|merge|rebase|revert)"
+  # cp, mv, install, ln, rsync, chmod: only the destination (the last argument of that command) counts.
+  while IFS= read -r seg; do
+    [[ "$seg" =~ ^[[:space:]]*(sudo[[:space:]]+)?(cp|mv|install|ln|rsync|chmod)[[:space:]] ]] || continue
+    last="$(printf '%s' "$seg" | awk '{print $NF}' | tr -d "\"'")"
+    [[ "$last " =~ ^($C) ]] && hard "changing the system's own controls"
+  done < <(printf '%s\n' "$cmd" | tr ';&|' '\n\n\n')
+  for w in "$w1" "$w2" "$w3" "$w5" "$w6"; do [[ "$cmd" =~ $w ]] && hard "changing the system's own controls"; done
 fi
 
 # ---- HARD: data-org context/ is a published snapshot the CDO's private repo owns. Cite it, never edit it.
@@ -86,7 +97,7 @@ fi
 [[ "$lc" =~ gh[[:space:]]+(project[[:space:]]+item-(edit|add|delete|archive)|repo[[:space:]]+(create|delete|edit)|release[[:space:]]+create) ]] && outward "GitHub write"
 [[ "$lc" =~ gh[[:space:]]+api.*(-x|--method)[[:space:]]*(post|patch|put|delete) ]]   && outward "GitHub API write"
 [[ "$cmd" =~ EXECUTE=1 ]]                                                             && outward "EXECUTE=1 board operation"
-[[ "$lc" =~ make[[:space:]]+(promote|set-pillar|complete|ragb|field|roadmap-fill|intake|intake-holders|intake-sweep|board-add|board-intake|ship-link|labels)([[:space:]]|$) ]] && outward "board-write make target"
+[[ "$lc" =~ make[[:space:]]+(promote|set-pillar|complete|ragb|field|roadmap-fill|intake|board-add|ship-link|labels)([[:space:]]|$) ]] && outward "board-write make target"
 [[ "$lc" =~ make[[:space:]]+classifier.*to= ]]                                        && outward "classifier switch"
 [[ "$lc" =~ curl.*(-x|--request)[[:space:]]*(post|put|patch|delete)|curl.*(-d|--data|-f[[:space:]]|--form) ]] && outward "outbound HTTP write"
 [[ "$lc" =~ (^|[;&|[:space:]])rm[[:space:]] ]]                                        && outward "delete (use git rm for tracked files)"

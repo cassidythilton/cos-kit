@@ -90,6 +90,10 @@ chk "launchctl list" job block
 chk "git -C ~/cos/kit commit -am x" pair block
 chk "echo x > ~/cos/claude/lane.md" pair block
 chk "cat ~/cos/claude/lane.md" job allow
+chk "cat ~/cos/handbook/rules.md 2>&1 | head -50" job allow
+chk "cp ~/cos/handbook/rules.md /tmp/r.md" job allow
+chk "make intake-sweep" job allow
+chk "EXECUTE=1 make intake-sweep" job block
 got="$(g Write "" pair "$HOME/.claude/skills/cassidy-mode/SKILL.md")"; [[ "$got" == block ]] && pass "pair · block · writing a skill" || fail "a job could write a skill ($got)"
 got="$(g Write "" job "$COS/outbox/x/a.md")"; [[ "$got" == allow ]] && pass "job · allow · writing in the job folder" || fail "job folder write blocked ($got)"
 got="$(printf '{"tool_name":"mcp__claude_ai_Slack__slack_send_message","tool_input":{}}' | COS_GATE_MODE=job "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?)"
