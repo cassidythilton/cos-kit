@@ -1,0 +1,30 @@
+#!/bin/bash
+# lake-query: the one way a build reads data. Read-only, through data-org-notebook's run_query.py
+# (wcx refuses non-read-only SQL), with the canon tripwire and token hygiene built in.
+#
+#   lake-query <file.sql>                       app warehouse (Postgres replica)
+#   lake-query <file.sql> --lake --env dev      The Pantry (DuckLake), dev
+#   lake-query <file.sql> --save ...            full result to Parquet; read it with code, never cat it
+set -euo pipefail
+SQL="${1:?usage: lake-query <file.sql> [run_query.py flags]}"; shift
+NB="${DATA_ORG_NOTEBOOK:-$HOME/Documents/Data-Org-Repos/data-org-notebook}"
+[[ -f "$SQL" ]] || { echo "no such file: $SQL" >&2; exit 64; }
+SQL="$(cd "$(dirname "$SQL")" && pwd)/$(basename "$SQL")"
+body="$(tr '[:upper:]' '[:lower:]' < "$SQL")"
+
+# Writes: run_query.py and wcx refuse them too. This is the first line of defence, not the only one.
+if grep -Eq '(^|[^a-z_])(insert|update|delete|drop|alter|truncate|create|grant|copy|merge)[[:space:]]' <<<"$body"; then
+  echo "BLOCKED: lake-query is read-only. Writes go through their owner's pipeline." >&2; exit 2
+fi
+# Canon values never cross the wire (David, 2026-10-08). Aggregates and IDs are fine.
+if grep -Eq '(canon_ingredient|canon_term|canon_assets\.|food_expression_ingredients|mirror\.canon_|history\.canon_|mart\.canon_)' <<<"$body"; then
+  if ! grep -Eq '(count\(|group[[:space:]]+by|sum\(|avg\(|min\(|max\()' <<<"$body"; then
+    echo "BLOCKED: this query reads canon tables without aggregating. Return counts, group-bys, null rates or IDs only." >&2; exit 2
+  fi
+  echo "note: canon tables referenced. Select only IDs and aggregates from them." >&2
+fi
+# Token hygiene: a query that could return more than a screen needs a LIMIT, unless it saves to Parquet.
+if ! grep -Eq '(limit[[:space:]]+[0-9]+|count\(|group[[:space:]]+by)' <<<"$body" && [[ ! " $* " =~ " --save " ]]; then
+  echo "BLOCKED: add a LIMIT, aggregate, or use --save and read the Parquet with code." >&2; exit 2
+fi
+cd "$NB" && exec uv run python scripts/run_query.py "$SQL" "$@"

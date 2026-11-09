@@ -1,0 +1,63 @@
+#!/bin/bash
+# board-pulse: the daily pre-ops-meeting readout, built only from the repo's own read-only targets.
+# The Makefile is the rule. This script adds no rule of its own. It runs the targets from a fresh
+# copy of origin/main, keeps their raw output, and pulls out the headline numbers.
+#
+#   board-pulse                 markdown: headlines, then each target's raw output
+#   board-pulse --json          headlines as JSON
+#   board-pulse --record ...    also append the headlines to ~/cos/state/board-health.csv (team level only)
+#   board-pulse --week ...      the weekly window: make stale DAYS=7, plus make socialize
+#                               (stand-ins for the proposed `make week`, per docs/2026-10-29-commands-by-cadence.md)
+set -euo pipefail
+COS="${COS_HOME:-$HOME/cos}"; REPO="${DATA_ORG_REPO:-$HOME/Documents/Data-Org-Repos/data-org}"
+MAIN="$COS/data-org-main"; STATE="${COS_STATE:-$COS/state}"
+RECORD=0; JSON=0; WEEK=0
+for a in "$@"; do case "$a" in --record) RECORD=1 ;; --json) JSON=1 ;; --week) WEEK=1 ;; *) echo "unknown: $a" >&2; exit 64 ;; esac; done
+
+# A detached, read-only copy of origin/main. Never Cassidy's working checkout.
+git -C "$REPO" fetch -q origin main
+if [[ -d "$MAIN" ]]; then git -C "$MAIN" checkout -q --detach origin/main; else git -C "$REPO" worktree add -q --detach "$MAIN" origin/main; fi
+cd "$MAIN"; SHA="$(git rev-parse --short HEAD)"
+
+# The ops meeting reads stale "since the last business day": on Monday that is Friday.
+case "$(date +%u)" in 1) DAYS=3 ;; 7) DAYS=2 ;; *) DAYS=1 ;; esac
+[[ $WEEK -eq 1 ]] && DAYS=7
+
+run() { make "$@" 2>&1 || true; }
+STALE="$(run stale DAYS=$DAYS)"; WEED="$(run weed)"; RC="$(run roadmap-check)"; SHIP="$(run ship-check)"
+SOC=""; [[ $WEEK -eq 1 ]] && SOC="$(run socialize)"
+
+num() { sed -nE "$1" <<<"$2" | head -1; }
+STALE_N="$(num 's/^stale .*: ([0-9]+) of ([0-9]+).*/\1/p' "$STALE")";   ACTIVE_N="$(num 's/^stale .*: ([0-9]+) of ([0-9]+).*/\2/p' "$STALE")"
+WEED_N="$(num 's/^weed .*: ([0-9]+) of ([0-9]+).*/\1/p' "$WEED")"
+GAP_N="$(num 's/^roadmap-check — gap list.*: ([0-9]+) of ([0-9]+).*/\1/p' "$RC")"; GAP_OF="$(num 's/^roadmap-check — gap list.*: ([0-9]+) of ([0-9]+).*/\2/p' "$RC")"
+DRIFT_N="$(num 's/^roadmap-check — drift list.*: ([0-9]+).*/\1/p' "$RC")"
+NORAGB_N="$(grep -cE '^ +#[0-9]+ .* · · ' <<<"$SHIP" || true)"
+UNTOUCHED_N="$(grep -cE '![0-9]+d untouched' <<<"$SHIP" || true)"
+
+H="$(jq -n --arg asof "$(date -u +%FT%TZ)" --arg sha "$SHA" --argjson days "$DAYS" \
+  --arg stale "${STALE_N:-}" --arg active "${ACTIVE_N:-}" --arg weed "${WEED_N:-}" --arg gap "${GAP_N:-}" --arg gapof "${GAP_OF:-}" \
+  --arg drift "${DRIFT_N:-}" --arg noragb "${NORAGB_N:-}" --arg untouched "${UNTOUCHED_N:-}" '
+  def n: if . == "" then null else tonumber end;
+  {as_of: $asof, main: $sha, stale_days: $days,
+   stale: ($stale|n), active: ($active|n), weed: ($weed|n),
+   roadmap_gaps: ($gap|n), roadmap_gaps_of: ($gapof|n), roadmap_drift: ($drift|n),
+   shipping_no_ragb: ($noragb|n), shipping_untouched: ($untouched|n)}')"
+
+if [[ $RECORD -eq 1 ]]; then
+  mkdir -p "$STATE"; F="$STATE/board-health.csv"
+  [[ -f "$F" ]] || echo "as_of,main,stale_days,stale,active,weed,roadmap_gaps,roadmap_gaps_of,roadmap_drift,shipping_no_ragb,shipping_untouched" > "$F"
+  jq -r '[.as_of,.main,.stale_days,.stale,.active,.weed,.roadmap_gaps,.roadmap_gaps_of,.roadmap_drift,.shipping_no_ragb,.shipping_untouched]|@csv' <<<"$H" >> "$F"
+fi
+
+if [[ $JSON -eq 1 ]]; then echo "$H"; exit 0; fi
+
+jq -r '"# Board pulse, \(.as_of) (origin/main \(.main))",
+  "",
+  "- Stale, no comment or PR event in \(.stale_days) day(s): \(.stale) of \(.active) active cards",
+  "- Weed candidates, no owner or silent 14 days: \(.weed)",
+  "- Roadmap gaps, missing Pillar metric or Target: \(.roadmap_gaps) of \(.roadmap_gaps_of). Drift, Target differs from milestone: \(.roadmap_drift)",
+  "- Shipping and Delivery Prep: \(.shipping_no_ragb) with no RAGB, \(.shipping_untouched) flagged untouched"' <<<"$H"
+printf '\n## make stale DAYS=%s\n```\n%s\n```\n\n## make ship-check\n```\n%s\n```\n\n## make roadmap-check\n```\n%s\n```\n\n## make weed\n```\n%s\n```\n' "$DAYS" "$STALE" "$SHIP" "$RC" "$WEED"
+[[ -n "$SOC" ]] && printf '\n## make socialize\n```\n%s\n```\n' "$SOC"
+exit 0

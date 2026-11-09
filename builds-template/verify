@@ -1,0 +1,14 @@
+#!/bin/bash
+# verify: the build's one fixed check. Same input, same result, every time.
+#   ./verify seed              put the prototype in a known state (load a golden set, fixtures)
+#   ./verify run <flow>        run a named flow end to end
+#   ./verify screenshot <page> capture proof of a UI page into docs/proof/
+#   ./verify check             assert the rules; exit non-zero if any is broken
+# Until the build defines them, every command fails. That's deliberate: nothing is "done" without a check.
+set -euo pipefail
+cmd="${1:-check}"; shift || true
+case "$cmd" in
+  seed|run|screenshot) echo "verify $cmd: not implemented yet. Define it for this build." >&2; exit 1 ;;
+  check) echo "verify check: no assertions yet. The build must define what passing means." >&2; exit 1 ;;
+  *) echo "usage: ./verify seed | run <flow> | screenshot <page> | check" >&2; exit 64 ;;
+esac

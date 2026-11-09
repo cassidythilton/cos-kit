@@ -1,0 +1,10 @@
+.env
+.env.*
+results/
+.runs/
+*.parquet
+data/
+.venv/
+node_modules/
+repos/
+docs/proof/*.mp4

@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "required": ["status", "summary", "artifacts", "evidence", "decisions", "open_questions", "needs_approval"],
+  "properties": {
+    "status": { "enum": ["done", "partial", "failed", "blocked"] },
+    "summary": { "type": "string", "description": "Five lines max: needs Cassidy / done / blocked." },
+    "artifacts": { "type": "array", "items": { "type": "string" }, "description": "Every file created or changed, absolute paths." },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "source"],
+        "properties": {
+          "claim": { "type": "string" },
+          "source": { "type": "string", "description": "file:line, transcript path@timestamp, command + output excerpt, or URL" },
+          "verified": { "type": "boolean" }
+        }
+      }
+    },
+    "decisions": { "type": "array", "items": { "type": "string" }, "description": "Only those a DRD/DADR, the board or a transcript records. Label anything else 'proposed:'." },
+    "open_questions": { "type": "array", "items": { "type": "string" } },
+    "needs_approval": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action", "target", "why"],
+        "properties": {
+          "action": { "type": "string", "description": "The exact command or paste text Cassidy would run or send." },
+          "target": { "type": "string", "description": "Card #, thread, PR, sheet range: the exact place." },
+          "why": { "type": "string" }
+        }
+      }
+    },
+    "proofs": {
+      "type": "array",
+      "description": "Evidence records, one per proof requirement. Required for build jobs (BASELINE, BEHAVIOR, QUALITY; PERFORMANCE when the work claims speed or cost; SKILL when instructions change). Optional elsewhere.",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string", "description": "BASELINE | BEHAVIOR | QUALITY | PERFORMANCE | SKILL, or a done-means criterion" },
+          "tested_revision": { "type": "string", "description": "commit sha, or the data snapshot/date" },
+          "ran": { "type": "string", "description": "the exact command or action" },
+          "expected": { "type": "string" },
+          "observed": { "type": "string", "description": "what actually came back, quoted or summarized with numbers" },
+          "status": { "enum": ["PASS", "FAIL", "NOT_RUN"] },
+          "artifacts": { "type": "array", "items": { "type": "string" } },
+          "blocker": { "type": "string", "description": "required when NOT_RUN: the missing access, tool or dependency" }
+        }
+      }
+    },
+    "branch": { "type": "string", "description": "draft lane only" }
+  }
+}

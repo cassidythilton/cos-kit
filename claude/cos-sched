@@ -1,0 +1,62 @@
+#!/bin/bash
+# cos-sched: the Mac's own clock. launchd calls it; no bot starts these jobs.
+#
+#   cos-sched <slot>            run one scheduled job, then push its receipt to the owning bot's routine webhook
+#   cos-sched <slot> --dry-run  print what would run and where it would go
+#   cos-sched list              the schedule
+#
+# Why: a Grok routine runs in the cloud, and asking the Mac to run a command needs a tap on an approval card. A routine
+# can't wait for that. So the Mac runs its own schedule and hands the result to the bot, which reports or stays quiet.
+# The bot never runs a command here on a schedule. Interactive work (Cassidy in a chat) still goes bot -> cos-run.
+set -uo pipefail
+export PATH="$HOME/cos/bin:$PATH"
+COS="$HOME/cos"; BRIEFS="$COS/claude/briefs"; LOG="$COS/state/sched.log"; mkdir -p "$COS/state"
+SLOT="${1:?slot or list}"; DRY=0; [[ "${2:-}" == "--dry-run" ]] && DRY=1
+D="$(date +%Y%m%d)"
+
+# slot | when (launchd: weekday numbers, 1 = Monday, then HH:MM) | allowed hours (skip if the Mac woke too late) | bot | lane
+TABLE='followups   | 1-5 06:15 | 5-9   | ops     | investigate
+pulse       | 1-5 08:10 | 7-11  | steward | quick
+reconcile   | 2,4 10:00 | 9-14  | steward | investigate
+capture     | 1-5 16:00 | 15-21 | steward | investigate
+week        | 5 10:00   | 9-15  | steward | investigate
+opportunity | 1 08:30   | 7-13  | builder | investigate
+keeper      | 5 13:00   | 12-18 | keeper  | investigate'
+
+if [[ "$SLOT" == list ]]; then echo "$TABLE"; exit 0; fi
+row="$(printf '%s\n' "$TABLE" | awk -F'|' -v s="$SLOT" '{k=$1; gsub(/ /,"",k)} k==s')"
+[[ -n "$row" ]] || { echo "unknown slot: $SLOT (cos-sched list)" >&2; exit 64; }
+HOURS="$(echo "$row" | cut -d'|' -f3 | tr -d ' ')"; BOT="$(echo "$row" | cut -d'|' -f4 | tr -d ' ')"; LANE="$(echo "$row" | cut -d'|' -f5 | tr -d ' ')"
+JOB="$SLOT-$D"
+
+log() { printf '%s %s %s\n' "$(date +%FT%T)" "$SLOT" "$*" >> "$LOG"; }
+
+# The Mac was asleep at the scheduled time and launchd is catching up. A morning brief at 9 pm is worse than none,
+# so skip and tell the bot the run was missed (silence would read as "nothing changed").
+h=$((10#$(date +%H))); lo="${HOURS%-*}"; hi="${HOURS#*-}"
+if (( h < lo || h > hi )); then
+  log "skipped: outside $HOURS"
+  [[ $DRY -eq 1 ]] && { echo "would skip (outside hours $HOURS) and tell $BOT"; exit 0; }
+  printf '{"receipt":{"status":"blocked","summary":"MISSED: the Mac was asleep or offline at the scheduled time. No fresh data. Do not reuse old results."},"job":"%s"}\n' "$JOB" > "$COS/state/missed-$SLOT.json"
+  cos-push "$BOT" "$SLOT" "$COS/state/missed-$SLOT.json"; exit 0
+fi
+
+if [[ $DRY -eq 1 ]]; then
+  if [[ "$LANE" == quick ]]; then echo "cos-run quick $JOB <pulse question> --with 'board-pulse --record'  -> $BOT"
+  else echo "cos-run $LANE $JOB $BRIEFS/$SLOT.md  -> $BOT"; [[ -f "$BRIEFS/$SLOT.md" ]] || echo "MISSING brief: $BRIEFS/$SLOT.md"; fi
+  exit 0
+fi
+
+log "start $JOB"
+if [[ "$LANE" == quick ]]; then
+  cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), and how many owners need a nudge. If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
+    --with "board-pulse --record" >/dev/null 2>&1
+else
+  cos-run "$LANE" "$JOB" "$BRIEFS/$SLOT.md" >/dev/null 2>&1
+fi
+R="$COS/outbox/$JOB/receipt.json"
+[[ -f "$R" ]] || { printf '{"receipt":{"status":"failed","summary":"cos-run left no receipt; see %s"},"job":"%s"}\n' "$COS/outbox/$JOB/run.err" "$JOB" > "$COS/state/failed-$SLOT.json"; R="$COS/state/failed-$SLOT.json"; }
+
+# Silent when nothing changed: don't spend a bot turn on it.
+if jq -e '(.receipt.summary // "") | test("^\\s*NO CHANGE")' "$R" >/dev/null 2>&1; then log "no change; not pushed"; exit 0; fi
+cos-push "$BOT" "$SLOT" "$R" && log "pushed to $BOT" || log "push to $BOT failed"

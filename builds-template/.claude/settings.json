@@ -1,0 +1,14 @@
+{
+  "env": { "COS_GATE_MODE": "pair" },
+  "permissions": {
+    "deny": [
+      "Read(**/.env*)", "Read(~/.ssh/**)", "Read(~/.aws/**)",
+      "Bash(git push * main*)", "Bash(git push --force*)", "Bash(terraform apply*)", "Bash(*EXECUTE=1*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash|Read|Edit|Write|mcp__.*", "hooks": [ { "type": "command", "command": "~/cos/claude/gate.sh" } ] }
+    ]
+  }
+}
