@@ -4,12 +4,14 @@
 #   ./install.sh               install + self-test
 #   ./install.sh --online      also run board-pulse once (read-only GitHub calls)
 #   ./install.sh --schedule    also (re)load the launchd schedule (cos-sched list shows it)
+#   ./install.sh --schedule=followups,pulse   load only those slots
 #   ./install.sh --unschedule  remove the launchd schedule
 # Writes to: ~/cos, ~/builds, ~/.claude/skills/cassidy-mode, ~/.cursor/skills/cassidy-mode,
 #            ~/.claude/CLAUDE.md (only if it doesn't exist), ~/Library/LaunchAgents/com.cos.* (only with --schedule).
 set -uo pipefail
 KIT="$(cd "$(dirname "$0")" && pwd)"; COS="$HOME/cos"; ONLINE=0; SCHEDULE=0; UNSCHEDULE=0
-for a in "$@"; do case "$a" in --online) ONLINE=1;; --schedule) SCHEDULE=1;; --unschedule) UNSCHEDULE=1;; *) echo "unknown: $a" >&2; exit 64;; esac; done
+ONLY=""
+for a in "$@"; do case "$a" in --online) ONLINE=1;; --schedule) SCHEDULE=1;; --schedule=*) SCHEDULE=1; ONLY="${a#--schedule=}";; --unschedule) UNSCHEDULE=1;; *) echo "unknown: $a" >&2; exit 64;; esac; done
 ok=0; bad=0; pass() { printf '  ✓ %s\n' "$1"; ok=$((ok+1)); }; fail() { printf '  ✗ %s\n' "$1"; bad=$((bad+1)); }
 LA="$HOME/Library/LaunchAgents"; SLOTS="followups pulse reconcile capture week opportunity keeper"
 
@@ -132,7 +134,7 @@ if [[ $SCHEDULE -eq 1 ]]; then
   echo "10. Schedule (launchd)"
   mkdir -p "$LA"
   "$COS/bin/cos-sched" list | while IFS='|' read -r slot when _ _ _; do
-    slot="$(echo "$slot" | tr -d ' ')"; days="$(echo "$when" | awk '{print $1}')"; hm="$(echo "$when" | awk '{print $2}')"
+    slot="$(echo "$slot" | tr -d ' ')"; [[ -n "$ONLY" && ",$ONLY," != *",$slot,"* ]] && continue; days="$(echo "$when" | awk '{print $1}')"; hm="$(echo "$when" | awk '{print $2}')"
     H=$((10#${hm%:*})); M=$((10#${hm#*:}))
     case "$days" in *-*) dl="$(seq "${days%-*}" "${days#*-}")";; *) dl="$(echo "$days" | tr ',' ' ')";; esac
     entries=""; for d in $dl; do entries+="<dict><key>Weekday</key><integer>$d</integer><key>Hour</key><integer>$H</integer><key>Minute</key><integer>$M</integer></dict>"; done
