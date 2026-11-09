@@ -431,19 +431,22 @@ function Walls({ gates }: { gates: Envelope<GateEvent[]> | null }) {
       </div>
       {events.length === 0 ? <p className="empty"><strong>No blocks or asks in this window.</strong> The gate writes a line only when it blocks or asks. Older runs predate the ledger.</p> : (
         <div className="chart-host">
-          <svg viewBox="0 0 720 160" role="img" aria-label="Gate blocks and asks by day">
+          <svg viewBox="0 0 720 180" role="img" aria-label="Gate blocks and asks by day">
             {days.map(([day, value], index) => {
-              const x = 40 + index * (640 / Math.max(1, days.length));
-              const width = Math.max(10, 640 / days.length - 10);
-              const bh = (value.block / max) * 120;
-              const ah = (value.ask / max) * 120;
+              const slot = 640 / Math.max(1, days.length);
+              const width = Math.min(48, Math.max(10, slot - 12));
+              const x = 40 + index * slot + (slot - width) / 2;
+              const bh = (value.block / max) * 110;
+              const ah = (value.ask / max) * 110;
               return (
                 <g key={day}>
-                  <rect x={x} y={130 - bh - ah} width={width} height={ah} fill="#d4d4d2"><title>{`${day} ${value.ask} asks`}</title></rect>
-                  <rect x={x} y={130 - bh} width={width} height={bh} fill="#141416"><title>{`${day} ${value.block} blocks`}</title></rect>
+                  <rect x={x} y={140 - bh - ah} width={width} height={ah} fill="#d4d4d2"><title>{`${day} ${value.ask} asks`}</title></rect>
+                  <rect x={x} y={140 - bh} width={width} height={bh} fill="#141416"><title>{`${day} ${value.block} blocks`}</title></rect>
+                  <text x={x + width / 2} y="162" textAnchor="middle" fontSize="11" fill="#6b6b70">{day.slice(5)}</text>
                 </g>
               );
             })}
+            <line x1="40" y1="140" x2="700" y2="140" stroke="#dededc" />
           </svg>
           <ul className="legend">
             <li><span className="swatch" style={{ background: "#141416" }} />block</li>
