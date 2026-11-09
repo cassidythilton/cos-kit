@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 940" width="1200" height="940" role="img" aria-label="Routing: nine example requests traced through the Grok bot that takes them, the Mac lane, and the engine, with the Chief's decision rule for picking a lane.">
+<style>svg{--bg:#161b22;--surface:#0d1117;--band:#1d232c;--ink:#e8eaf0;--muted:#9aa1b0;--rule:#30363d;--amber:#e9a23b;--chief:#7d9bff;--steward:#e9a23b;--builder:#c38bea;--keeper:#f07b6e;--mac:#aab2c2;--claude:#e8916f;--codex:#3ccfa0}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:var(--ink)}
+.bg{fill:var(--bg);stroke:var(--rule)}
+.band{fill:var(--band);stroke:none}
+.grp{font-size:11px;font-weight:700;letter-spacing:.08em;fill:var(--muted);text-anchor:middle}
+.colh{font-size:11px;font-weight:700;letter-spacing:.08em;fill:var(--muted)}
+.title{font-size:22px;font-weight:700}
+.lede{font-size:13px;fill:var(--muted)}
+.rule{stroke:var(--rule);stroke-width:1}
+.req{font-size:13.5px;font-weight:500}
+.req.q{font-style:italic}
+.tag{fill:none;stroke:var(--steward);stroke-width:1.2}
+.tagt{font-size:10px;font-weight:700;letter-spacing:.06em;fill:var(--steward)}
+.pill rect{fill:var(--surface);stroke:var(--c);stroke-width:1.8}
+.pill text{font-size:12.5px;font-weight:600;text-anchor:middle}
+.pill text.small{font-size:11px;font-weight:400;fill:var(--muted)}
+.k-chief{--c:var(--chief)}.k-steward{--c:var(--steward)}.k-builder{--c:var(--builder)}.k-keeper{--c:var(--keeper)}
+.k-mac{--c:var(--mac)}.k-apply{--c:var(--amber)}.k-build{--c:var(--builder)}.k-grok{--c:var(--ink)}
+.k-cursor{--c:var(--mac)}.k-claude{--c:var(--claude)}.k-codex{--c:var(--codex)}
+.k-none rect{stroke-dasharray:4 3}.k-none{--c:var(--muted)}
+.flow{stroke:var(--muted);stroke-width:1.3}
+.skip{stroke:var(--rule);stroke-width:1.3;stroke-dasharray:3 4}
+.none{font-size:10px;fill:var(--muted);text-anchor:middle;letter-spacing:.04em}
+.res{font-size:12.5px;fill:var(--muted)}
+.ah{fill:var(--muted)}
+.h2{font-size:17px;font-weight:700}
+.sub2{font-size:12.5px;fill:var(--muted)}
+.q rect{fill:var(--band);stroke:var(--rule);stroke-width:1.2}
+.q text{font-size:12px;font-weight:600;text-anchor:middle}
+.yn{font-size:11px;fill:var(--muted);font-weight:600}
+.foot{font-size:11.5px;fill:var(--muted)}</style>
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+<rect class="bg" x="0.5" y="0.5" width="1199" height="939" rx="14"/>
+<text class="title" x="24" y="42">Who does what</text><text class="lede" x="24" y="66">Nine real requests, traced from the bot that takes them to the engine that does the work.</text><text class="lede" x="24" y="84">Grok handles conversation, mail and routing. Cursor answers one-command lookups. Claude Code does anything multi-step. Codex checks Claude.</text>
+<rect class="band grok" x="382" y="104" width="164" height="554" rx="10"/>
+<rect class="band mac" x="562" y="104" width="404" height="554" rx="10"/>
+<text class="grp" x="464.0" y="124">GROK BOT · CLOUD</text>
+<text class="grp" x="764.0" y="124">YOUR MAC · cos-run · or the Bot's browser</text>
+<text class="colh" x="24" y="142" text-anchor="start">REQUEST</text>
+<text class="colh" x="464.0" y="142" text-anchor="middle">WHO TAKES IT</text>
+<text class="colh" x="649.0" y="142" text-anchor="middle">LANE</text>
+<text class="colh" x="859.0" y="142" text-anchor="middle">ENGINE</text>
+<text class="colh" x="994" y="142" text-anchor="start">RESULT</text>
+<text class="req q" x="24" y="173.0">“What&#x27;s on my calendar tomorrow?”</text>
+<g class="pill k-chief"><rect x="394" y="150" width="140" height="36" rx="7"/><text x="464.0" y="173.0">CHIEF</text></g>
+<line class="skip" x1="584" x2="714" y1="168.0" y2="168.0"/><text class="none" x="649.0" y="162.0">no Mac</text>
+<g class="pill k-grok"><rect x="764" y="150" width="190" height="36" rx="7"/><text x="859.0" y="173.0">Grok</text></g>
+<line class="flow" x1="358" x2="390" y1="168.0" y2="168.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="760" y1="168.0" y2="168.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="168.0" y2="168.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="173.0">Answer in chat. No Mac.</text>
+<line class="rule" x1="24" x2="1176" y1="196" y2="196"/>
+<text class="req q" x="24" y="229.0">“Draft a reply to Greta about the shortlist”</text>
+<g class="pill k-chief"><rect x="394" y="206" width="140" height="36" rx="7"/><text x="464.0" y="229.0">CHIEF</text></g>
+<line class="skip" x1="584" x2="714" y1="224.0" y2="224.0"/><text class="none" x="649.0" y="218.0">no Mac</text>
+<g class="pill k-grok"><rect x="764" y="206" width="190" height="36" rx="7"/><text x="859.0" y="229.0">Grok · cassidy-voice</text></g>
+<line class="flow" x1="358" x2="390" y1="224.0" y2="224.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="760" y1="224.0" y2="224.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="224.0" y2="224.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="229.0">Gmail draft. You send it.</text>
+<line class="rule" x1="24" x2="1176" y1="252" y2="252"/>
+<text class="req q" x="24" y="285.0">“Which of my cards are stale?”</text>
+<g class="pill k-chief"><rect x="394" y="262" width="140" height="36" rx="7"/><text x="464.0" y="285.0">CHIEF</text></g>
+<g class="pill k-mac"><rect x="574" y="262" width="150" height="36" rx="7"/><text x="649.0" y="285.0">quick</text></g>
+<g class="pill k-cursor"><rect x="764" y="262" width="190" height="36" rx="7"/><text x="859.0" y="285.0">Cursor Agent</text></g>
+<line class="flow" x1="358" x2="390" y1="280.0" y2="280.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="570" y1="280.0" y2="280.0" marker-end="url(#arr)"/>
+<line class="flow" x1="726" x2="760" y1="280.0" y2="280.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="280.0" y2="280.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="285.0">Five lines citing make stale</text>
+<line class="rule" x1="24" x2="1176" y1="308" y2="308"/>
+<text class="req q" x="24" y="341.0">“What did David decide on golden sets, Nov 5?”</text>
+<g class="pill k-chief"><rect x="394" y="318" width="140" height="36" rx="7"/><text x="464.0" y="341.0">CHIEF</text></g>
+<g class="pill k-mac"><rect x="574" y="318" width="150" height="36" rx="7"/><text x="649.0" y="341.0">investigate</text></g>
+<g class="pill k-claude"><rect x="764" y="318" width="190" height="36" rx="7"/><text x="859.0" y="341.0">Claude Code</text></g>
+<line class="flow" x1="358" x2="390" y1="336.0" y2="336.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="570" y1="336.0" y2="336.0" marker-end="url(#arr)"/>
+<line class="flow" x1="726" x2="760" y1="336.0" y2="336.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="336.0" y2="336.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="341.0">Quotes with timestamps, checked</text>
+<line class="rule" x1="24" x2="1176" y1="364" y2="364"/>
+<text class="req q" x="24" y="397.0">“Draft a DADR for the Bedrock exception”</text>
+<g class="pill k-chief"><rect x="394" y="374" width="140" height="36" rx="7"/><text x="464.0" y="397.0">CHIEF</text></g>
+<g class="pill k-mac"><rect x="574" y="374" width="150" height="36" rx="7"/><text x="649.0" y="397.0">draft</text></g>
+<g class="pill k-claude"><rect x="764" y="374" width="190" height="36" rx="7"/><text x="859.0" y="397.0">Claude Code</text></g>
+<line class="flow" x1="358" x2="390" y1="392.0" y2="392.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="570" y1="392.0" y2="392.0" marker-end="url(#arr)"/>
+<line class="flow" x1="726" x2="760" y1="392.0" y2="392.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="392.0" y2="392.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="397.0">Own branch, PR staged for you</text>
+<line class="rule" x1="24" x2="1176" y1="420" y2="420"/>
+<rect class="tag" x="24" y="431" width="113.0" height="16" rx="8"/><text class="tagt" x="31" y="443">SCHEDULED 16:00</text>
+<text class="req" x="24" y="463">Daily capture onto the board</text>
+<g class="pill k-steward"><rect x="394" y="430" width="140" height="36" rx="7"/><text x="464.0" y="453.0">STEWARD</text></g>
+<g class="pill k-apply"><rect x="574" y="430" width="150" height="36" rx="7"/><text x="649.0" y="453.0">investigate → apply</text></g>
+<g class="pill k-claude"><rect x="764" y="430" width="190" height="36" rx="7"/><text x="859.0" y="453.0">Claude Code, then none</text></g>
+<line class="flow" x1="358" x2="390" y1="448.0" y2="448.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="570" y1="448.0" y2="448.0" marker-end="url(#arr)"/>
+<line class="flow" x1="726" x2="760" y1="448.0" y2="448.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="448.0" y2="448.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="453.0">Batch by sha256. You approve.</text>
+<line class="rule" x1="24" x2="1176" y1="476" y2="476"/>
+<text class="req q" x="24" y="509.0">“Prototype the IQA low-confidence flag”</text>
+<g class="pill k-builder"><rect x="394" y="486" width="140" height="36" rx="7"/><text x="464.0" y="509.0">BUILDER</text></g>
+<g class="pill k-build"><rect x="574" y="486" width="150" height="36" rx="7"/><text x="649.0" y="509.0">pair · build</text></g>
+<g class="pill k-claude"><rect x="764" y="486" width="190" height="36" rx="7"/><text x="859.0" y="509.0">Claude + verifier + Codex</text></g>
+<line class="flow" x1="358" x2="390" y1="504.0" y2="504.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="570" y1="504.0" y2="504.0" marker-end="url(#arr)"/>
+<line class="flow" x1="726" x2="760" y1="504.0" y2="504.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="504.0" y2="504.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="509.0">Proven slice, draft PR to owner</text>
+<line class="rule" x1="24" x2="1176" y1="532" y2="532"/>
+<text class="req q" x="24" y="565.0">“STEWARD keeps miscounting stale cards”</text>
+<g class="pill k-keeper"><rect x="394" y="542" width="140" height="36" rx="7"/><text x="464.0" y="565.0">CHIEF → KEEPER</text></g>
+<g class="pill k-keeper"><rect x="574" y="542" width="150" height="36" rx="7"/><text x="649.0" y="565.0">note → eval</text></g>
+<g class="pill k-codex"><rect x="764" y="542" width="190" height="36" rx="7"/><text x="859.0" y="565.0">Claude, judged by Codex</text></g>
+<line class="flow" x1="358" x2="390" y1="560.0" y2="560.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="570" y1="560.0" y2="560.0" marker-end="url(#arr)"/>
+<line class="flow" x1="726" x2="760" y1="560.0" y2="560.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="560.0" y2="560.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="565.0">Tested fix. You apply it.</text>
+<line class="rule" x1="24" x2="1176" y1="588" y2="588"/>
+<text class="req q" x="24" y="621.0">“Find the transcript for the OGD call”</text>
+<g class="pill k-chief"><rect x="394" y="598" width="140" height="36" rx="7"/><text x="464.0" y="621.0">CHIEF</text></g>
+<g class="pill k-none"><rect x="574" y="598" width="150" height="36" rx="7"/><text x="649.0" y="621.0">browser, not Mac</text></g>
+<g class="pill k-grok"><rect x="764" y="598" width="190" height="36" rx="7"/><text x="859.0" y="621.0">Grok computer</text></g>
+<line class="flow" x1="358" x2="390" y1="616.0" y2="616.0" marker-end="url(#arr)"/>
+<line class="flow" x1="536" x2="570" y1="616.0" y2="616.0" marker-end="url(#arr)"/>
+<line class="flow" x1="726" x2="760" y1="616.0" y2="616.0" marker-end="url(#arr)"/>
+<line class="flow" x1="956" x2="984" y1="616.0" y2="616.0" marker-end="url(#arr)"/>
+<text class="res" x="994" y="621.0">Saved to the Mac, after your yes</text>
+<text class="h2" x="24" y="694">How the Chief picks a lane</text>
+<text class="sub2" x="24" y="716">Cheapest lane that can do the job. Every Claude job gets a checker. Every write needs your yes on its sha256.</text>
+<g class="q"><rect x="24" y="742" width="196" height="52" rx="26"/><text x="122.0" y="773">Mail, Slack, calendar, web?</text></g>
+<line class="flow" x1="122.0" x2="122.0" y1="796" y2="836" marker-end="url(#arr)"/><text class="yn" x="130.0" y="821">yes</text>
+<g class="pill k-grok"><rect x="24" y="840" width="196" height="48" rx="7"/><text x="122.0" y="860">Chief does it itself</text><text class="small" x="122.0" y="877">Grok</text></g>
+<line class="flow" x1="222" x2="252" y1="768.0" y2="768.0" marker-end="url(#arr)"/><text class="yn" x="238.0" y="761.0" text-anchor="middle">no</text>
+<g class="q"><rect x="256" y="742" width="196" height="52" rx="26"/><text x="354.0" y="773">One command answers it?</text></g>
+<line class="flow" x1="354.0" x2="354.0" y1="796" y2="836" marker-end="url(#arr)"/><text class="yn" x="362.0" y="821">yes</text>
+<g class="pill k-cursor"><rect x="256" y="840" width="196" height="48" rx="7"/><text x="354.0" y="860">quick lane</text><text class="small" x="354.0" y="877">Cursor Agent</text></g>
+<line class="flow" x1="454" x2="484" y1="768.0" y2="768.0" marker-end="url(#arr)"/><text class="yn" x="470.0" y="761.0" text-anchor="middle">no</text>
+<g class="q"><rect x="488" y="742" width="196" height="52" rx="26"/><text x="586.0" y="773">A doc or repo change?</text></g>
+<line class="flow" x1="586.0" x2="586.0" y1="796" y2="836" marker-end="url(#arr)"/><text class="yn" x="594.0" y="821">yes</text>
+<g class="pill k-claude"><rect x="488" y="840" width="196" height="48" rx="7"/><text x="586.0" y="860">draft lane</text><text class="small" x="586.0" y="877">Claude Code</text></g>
+<line class="flow" x1="686" x2="716" y1="768.0" y2="768.0" marker-end="url(#arr)"/><text class="yn" x="702.0" y="761.0" text-anchor="middle">no</text>
+<g class="q"><rect x="720" y="742" width="196" height="52" rx="26"/><text x="818.0" y="773">Building software?</text></g>
+<line class="flow" x1="818.0" x2="818.0" y1="796" y2="836" marker-end="url(#arr)"/><text class="yn" x="826.0" y="821">yes</text>
+<g class="pill k-build"><rect x="720" y="840" width="196" height="48" rx="7"/><text x="818.0" y="860">BUILDER · pair or build</text><text class="small" x="818.0" y="877">Claude + verifier + Codex</text></g>
+<line class="flow" x1="918" x2="948" y1="768.0" y2="768.0" marker-end="url(#arr)"/><text class="yn" x="934.0" y="761.0" text-anchor="middle">no</text>
+<g class="pill k-claude"><rect x="952" y="742" width="224" height="52" rx="7"/><text x="1064.0" y="764">investigate lane</text><text class="small" x="1064.0" y="782">Claude Code, changes nothing</text></g>
+<text class="foot" x="24" y="918">Canon or label builds skip the Codex review (canon charter decision 14). Grok never runs a command on the Mac unattended: scheduled jobs start on the Mac and push receipts.</text>
+</svg>

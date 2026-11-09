@@ -25,14 +25,15 @@
 
 1. [What Problem Does This Solve?](#what-problem-does-this-solve)
 2. [The Bots](#the-bots)
-3. [The Mac](#the-mac)
-4. [The Week](#the-week)
-5. [How a Write Gets Approved](#how-a-write-gets-approved)
-6. [The Walls](#the-walls)
-7. [How It Learns](#how-it-learns)
-8. [Rules That Come First](#rules-that-come-first)
-9. [Install and Change](#install-and-change)
-10. [Project Structure](#project-structure)
+3. [Who Does What](#who-does-what)
+4. [The Mac](#the-mac)
+5. [The Week](#the-week)
+6. [How a Write Gets Approved](#how-a-write-gets-approved)
+7. [The Walls](#the-walls)
+8. [How It Learns](#how-it-learns)
+9. [Rules That Come First](#rules-that-come-first)
+10. [Install and Change](#install-and-change)
+11. [Project Structure](#project-structure)
 
 ---
 
@@ -63,6 +64,28 @@ This kit splits the work by owner and puts walls where mistakes are expensive:
 | ![keeper](https://img.shields.io/badge/KEEPER-c0392b?style=flat-square) | Audits the other bots weekly and proposes tested fixes | Fridays 13:00 | Changes a bot, skill, routine or this kit itself | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
 
 Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved as a shared Grok skill. Sources: [grokbot/](grokbot/).
+
+---
+
+## Who Does What
+
+**Grok** handles conversation, mail, Slack, calendar and routing. **Cursor Agent** answers one-command lookups for cents. **Claude Code** does anything multi-step on the repos, transcripts or data, plus every checker and verifier. **Codex** reviews Claude's builds and judges its evals, so a different model family checks the work.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/workflow-dark.svg">
+    <img src="docs/images/workflow-light.svg" alt="Who does what: nine requests traced to the bot, lane and engine, and the Chief's decision rule" width="1000">
+  </picture>
+  <br>
+  <em>Nine real requests, from the bot that takes each one to the engine that does the work, and the rule the Chief uses to pick a lane. Regenerate with <code>python3 docs/src/workflow.py</code>.</em>
+</p>
+
+| Engine | Used for | Why that one |
+| --- | --- | --- |
+| ![grok](https://img.shields.io/badge/Grok-15181e?style=flat-square) | Chat, Gmail and Slack drafts, calendar, routing, routines, the Bots' browser | It holds the connected apps and the conversation. It never touches the Mac unattended. |
+| ![cursor](https://img.shields.io/badge/Cursor_Agent-3d4452?style=flat-square) | `quick`: one read-only command, summarized | Cheapest. The script runs the command, and the model only reads the output. |
+| ![claude](https://img.shields.io/badge/Claude_Code-c96442?style=flat-square&logo=anthropic&logoColor=white) | `investigate`, `draft`, `build`, the checker, the verifier | Multi-step work with the repo's skills, under the gate, with a receipt |
+| ![codex](https://img.shields.io/badge/Codex-10a37f?style=flat-square) | Second-opinion review of builds, the blind eval judge | A different model family catches what Claude misses. Skipped for canon or label builds (decision 14). |
 
 ---
 
@@ -215,7 +238,7 @@ cos-kit/
 ├── builds-template/         a build workspace: BRIEF.md · VERIFY.md · HANDOFF.md · verify
 ├── evals/                   the core eval suite
 ├── claude-skills/           cassidy-mode, how Claude works with Cassidy
-├── docs/                    the overview page and images
+├── docs/                    the overview page, images, and docs/src/ to regenerate them
 ├── install.sh               installer and 84-check self-test
 ├── INSTALL.md               step by step
 └── PLAN.md                  the design and its reasons
