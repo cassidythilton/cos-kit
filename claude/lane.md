@@ -45,6 +45,7 @@ Team-bound output (anything that could land in data-org, data-org-notebook, a ca
 Write batches (board jobs):
 - Board writes are never run in a job. Stage them in apply.sh in the job folder, one command per line, with a `#` comment above each line that says what it does and why.
 - Allowed lines only: `make ragb|field|set-pillar|complete|promote|board-add|ship-link|context-request VAR=value…` and `gh issue comment <n> --repo wisecodeai/<repo> --body-file <job folder>/<name>.md`. Nothing else will run. Use `make field` for Pillar metric, Theme, Horizon and Target. It keeps a set value unless `REPLACE=1`, and `REPLACE=1` needs its own `#` line saying why.
-- Preview each make write with `DRY_RUN=1` during the job and quote the preview in notes.md.
-- No RAGB, Status or log comment on a card whose owner isn't cassidythilton. Those go in that owner's nudge draft instead.
+- Preview each make write with `DRY_RUN=1` first in the command (`DRY_RUN=1 make field CARD=652 FIELD=Target TO=2026-11-25`), never at the end, and quote the preview in notes.md.
+- Data questions: `lake-query <file.sql>` with the SQL in the job folder (read-only, canon aggregates only, LIMIT). If it fails on the VPN or SSO, set status=blocked with the command Cassidy should run.
+- No write of any kind (RAGB, Status, log, make field) on a card whose owner isn't cassidythilton, in apply.sh or in needs_approval. Those go in that owner's nudge draft instead.
 - At most 40 lines. Summarize the batch in the receipt: how many writes of each kind, on which cards.
