@@ -1,0 +1,8 @@
+#!/bin/bash
+# cos-db load | rebuild | sql "<select>"
+# The only writer of ~/cos/state/cos.db. Python is started with -I (stdlib only).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$HERE/cos_db.py" ]]; then SRC="$HERE/cos_db.py"
+else SRC="$HOME/cos/kit/claude/cos_db.py"; fi
+[[ -f "$SRC" ]] || { echo "cos_db.py missing" >&2; exit 1; }
+exec python3 -I "$SRC" "$@"
