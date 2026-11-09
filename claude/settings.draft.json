@@ -78,7 +78,10 @@
       "Bash(git -C * show *)",
       "Bash(git -C * rev-parse *)",
       "Bash(git -C * status)",
-      "Bash(make lint-writing *)"
+      "Bash(make lint-writing *)",
+      "Bash(make -C * lint-writing *)",
+      "Bash(make -C * board*)",
+      "Bash(make -C * stale*)"
     ],
     "deny": [
       "Bash(git push *)",

@@ -387,6 +387,78 @@ def approvals(conn) -> list[dict]:
     return applied
 
 
+def clip(text: str, limit: int = 220) -> str:
+    words = " ".join((text or "").split())
+    if len(words) <= limit:
+        return words
+    return words[: limit - 1] + "…"
+
+
+def action_log(conn, window) -> list[dict]:
+    """Every recorded Mac action in the window, newest first."""
+    start, end = window["start"], window["end"]
+    found: list[dict] = []
+    for row in rows(conn, """
+        SELECT job, lane, bot, status, summary, secs, COALESCE(started, ended) AS ts
+        FROM jobs
+        WHERE COALESCE(started, ended) >= ? AND COALESCE(started, ended) < ?
+    """, (start, end)):
+        parts = [row["lane"] or "", row["status"] or ""]
+        if row["secs"] is not None:
+            parts.append(f"{row['secs']}s")
+        if row["summary"]:
+            parts.append(clip(row["summary"], 140))
+        tail = " · ".join(part for part in parts if part)
+        found.append({
+            "id": f"run:{row['job']}", "ts": row["ts"], "bot": row["bot"] or "",
+            "kind": "run", "job": row["job"], "seq": -1,
+            "text": f"{row['job']} · {tail}" if tail else row["job"],
+        })
+    for row in rows(conn, """
+        SELECT c.job, c.seq, c.command, j.bot, COALESCE(j.started, j.ended) AS ts
+        FROM commands c JOIN jobs j ON j.job = c.job
+        WHERE COALESCE(j.started, j.ended) >= ? AND COALESCE(j.started, j.ended) < ?
+    """, (start, end)):
+        found.append({
+            "id": f"cmd:{row['job']}:{row['seq']}", "ts": row["ts"], "bot": row["bot"] or "",
+            "kind": "command", "job": row["job"], "seq": row["seq"] or 0,
+            "text": clip(row["command"] or ""),
+        })
+    for row in rows(conn, "SELECT * FROM gate_events WHERE ts >= ? AND ts < ?", (start, end)):
+        bot = ""
+        if row["job"]:
+            owner = one(conn, "SELECT bot FROM jobs WHERE job = ?", (row["job"],))
+            bot = (owner or {}).get("bot") or ""
+        found.append({
+            "id": f"gate:{row['id']}", "ts": row["ts"], "bot": bot,
+            "kind": "ask" if row["decision"] == "ask" else "block",
+            "job": row["job"] or "", "seq": 0,
+            "text": clip(row["cmd"] or row["rule"] or row["path"] or row["decision"] or ""),
+        })
+    for row in rows(conn, "SELECT * FROM pushes WHERE ts >= ? AND ts < ?", (start, end)):
+        found.append({
+            "id": f"push:{row['id']}", "ts": row["ts"], "bot": (row["bot"] or "").upper(),
+            "kind": "push", "job": row["job"] or "", "seq": 0,
+            "text": " · ".join(part for part in [row["slot"], row["job"], f"code {row['code']}" if row["code"] else ""] if part),
+        })
+    for row in rows(conn, "SELECT * FROM schedule WHERE ts >= ? AND ts < ?", (start, end)):
+        found.append({
+            "id": f"sched:{row['id']}", "ts": row["ts"], "bot": "",
+            "kind": "schedule", "job": "", "seq": 0,
+            "text": f"{row['slot']} · {clip(row['msg'] or '', 180)}",
+        })
+    for row in rows(conn, "SELECT * FROM corrections WHERE ts >= ? AND ts < ?", (start, end)):
+        found.append({
+            "id": f"note:{row['id']}", "ts": row["ts"], "bot": (row["bot"] or "").upper(),
+            "kind": "correction", "job": "", "seq": 0,
+            "text": clip(row["note"] or ""),
+        })
+    found.sort(key=lambda item: (item["ts"] or "", 1 if item["kind"] != "command" else 0, -(item.get("seq") or 0)), reverse=True)
+    for item in found:
+        item.pop("seq", None)
+    return found
+
+
 def envelope(conn, tables: list[str], sql: str, data):
     return {"source": {"tables": tables, "sql": sql}, "data_through": data_through(conn), "data": data}
 
@@ -440,6 +512,11 @@ class Handler(BaseHTTPRequestHandler):
                 payload = envelope(conn, ["jobs"],
                     "SUM cost_usd BY local day, lane; COUNT runs BY engine; COUNT has_codex",
                     spend(conn, days))
+            elif path == "/api/log":
+                window = window_of(conn, query.get("window", ["7d"])[0])
+                payload = envelope(conn, ["jobs", "commands", "gate_events", "pushes", "schedule", "corrections"],
+                    "runs, commands, gate blocks and asks, pushes, schedule lines, corrections in the window, newest first",
+                    action_log(conn, window))
             elif path == "/api/jobs":
                 payload = envelope(conn, ["jobs"],
                     "SELECT jobs filtered by bot, lane, status, window, q ORDER BY started DESC",

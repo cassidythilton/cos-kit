@@ -24,6 +24,15 @@ interface Summary {
   end_day: string;
 }
 
+interface LogRow {
+  id: string;
+  ts: string;
+  bot: string;
+  kind: string;
+  job: string;
+  text: string;
+}
+
 interface JobRow {
   job: string;
   lane: string;
@@ -80,8 +89,12 @@ const LANES = ["", "quick", "investigate", "draft", "build", "apply", "eval", "n
 const STATUSES = ["", "done", "blocked", "failed", "partial", "running"].map((id) => ({
   value: id || "all", label: id || "Every status",
 }));
+const KINDS = ["", "run", "command", "block", "ask", "push", "schedule", "correction"].map((id) => ({
+  value: id || "all", label: id || "Every kind",
+}));
 const RAIL = [
   ["summary", "Summary"],
+  ["log", "Log"],
   ["spend", "Spend"],
   ["jobs", "Jobs"],
   ["walls", "The walls"],
@@ -131,6 +144,10 @@ export default function App() {
   const [summary, setSummary] = useState<Envelope<Summary> | null>(null);
   const [spend, setSpend] = useState<Envelope<{ days: SpendDay[] }> | null>(null);
   const [jobs, setJobs] = useState<Envelope<JobRow[]> | null>(null);
+  const [log, setLog] = useState<Envelope<LogRow[]> | null>(null);
+  const [logBot, setLogBot] = useState("all");
+  const [logKind, setLogKind] = useState("all");
+  const [logQuery, setLogQuery] = useState("");
   const [gates, setGates] = useState<Envelope<GateEvent[]> | null>(null);
   const [approvals, setApprovals] = useState<Envelope<{ ts: string; job: string; sha: string; writes: number | null; ok: number | null; status: string; kind: string }[]> | null>(null);
   const [schedule, setSchedule] = useState<Envelope<{ slots: string[]; days: string[]; cells: Record<string, { outcome: string; time: string; msg: string }> }> | null>(null);
@@ -158,15 +175,16 @@ export default function App() {
       get<Summary>(`/api/summary?window=${windowId}`),
       get<{ days: SpendDay[] }>(`/api/spend?days=${windowId === "30d" ? 30 : windowId === "7d" ? 7 : 1}`),
       get<JobRow[]>(`/api/jobs?${params}`),
+      get<LogRow[]>(`/api/log?window=${windowId}`),
       get<GateEvent[]>(`/api/gate?window=${windowId}`),
       get<{ ts: string; job: string; sha: string; writes: number | null; ok: number | null; status: string; kind: string }[]>("/api/approvals"),
       get<{ slots: string[]; days: string[]; cells: Record<string, { outcome: string; time: string; msg: string }> }>("/api/schedule?days=14"),
       get<{ ts: string; bot: string; note: string }[]>(`/api/corrections?window=${windowId}`),
       get<{ run: string; ts: string; arms: string; checker_pass: string; cost: string }[]>("/api/evals"),
       get<Record<string, string>[]>("/api/board-health"),
-    ]).then(([a, b, c, d, e, f, g, h, i]) => {
+    ]).then(([a, b, c, logRows, d, e, f, g, h, i]) => {
       if (cancel) return;
-      setSummary(a); setSpend(b); setJobs(c); setGates(d); setApprovals(e);
+      setSummary(a); setSpend(b); setJobs(c); setLog(logRows); setGates(d); setApprovals(e);
       setSchedule(f); setCorrections(g); setEvals(h); setBoard(i); setError("");
     }).catch((err: Error) => { if (!cancel) setError(err.message); });
     return () => { cancel = true; };
@@ -213,6 +231,12 @@ export default function App() {
       </header>
       {error && <p className="empty"><strong>The page could not load.</strong> {error}</p>}
       <Tiles summary={summary} />
+      <ActionLog
+        log={log}
+        bot={logBot} kind={logKind} query={logQuery}
+        onBot={setLogBot} onKind={setLogKind} onQuery={setLogQuery}
+        onOpen={setOpenJob}
+      />
       <Spend spend={spend} />
       <Jobs
         jobs={jobs}
@@ -371,6 +395,56 @@ function Spend({ spend }: { spend: Envelope<{ days: SpendDay[] }> | null }) {
   );
 }
 
+function ActionLog({ log, bot, kind, query, onBot, onKind, onQuery, onOpen }: {
+  log: Envelope<LogRow[]> | null;
+  bot: string; kind: string; query: string;
+  onBot: (id: string) => void; onKind: (id: string) => void; onQuery: (q: string) => void;
+  onOpen: (job: string) => void;
+}) {
+  const needle = query.trim().toLowerCase();
+  const list = (log?.data ?? []).filter((row) => {
+    if (bot !== "all" && row.bot !== bot) return false;
+    if (kind !== "all" && row.kind !== kind) return false;
+    if (!needle) return true;
+    return `${row.bot} ${row.kind} ${row.job} ${row.text}`.toLowerCase().includes(needle);
+  });
+  return (
+    <section id="log" className="card" aria-labelledby="log-title">
+      <div className="card-head">
+        <div>
+          <h2 id="log-title" className="card-title">Log</h2>
+          <p className="card-sub">Every recorded action on this Mac, newest first. A row with a job opens that run.</p>
+        </div>
+      </div>
+      <div className="filters">
+        <label className="field">Bot<Picker options={BOTS} value={bot} onChange={onBot} /></label>
+        <label className="field">Kind<Picker options={KINDS} value={kind} onChange={onKind} /></label>
+        <input className="search" value={query} placeholder="Search the log" aria-label="Search the log" onChange={(event) => onQuery(event.target.value)} />
+      </div>
+      {list.length === 0 ? <p className="empty"><strong>No actions in this window.</strong> A run, a command, a block, a push, a schedule line, or a correction shows up here.</p> : (
+        <div className="table-wrap log-wrap">
+          <table className="data-table">
+            <thead>
+              <tr><th>Time</th><th>Bot</th><th>Kind</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              {list.map((row) => (
+                <tr key={row.id} className={row.job ? "is-clickable" : ""} onClick={() => { if (row.job) onOpen(row.job); }}>
+                  <td>{clock(row.ts)}</td>
+                  <td>{row.bot ? <BotPill bot={row.bot} /> : "—"}</td>
+                  <td className="kind">{row.kind}</td>
+                  <td className="action">{row.text || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {log && <SourceRef table={log.source.tables.join(", ")} reads={log.source.sql} />}
+    </section>
+  );
+}
+
 function Jobs({ jobs, bot, lane, status, query, onBot, onLane, onStatus, onQuery, onOpen }: {
   jobs: Envelope<JobRow[]> | null;
   bot: string; lane: string; status: string; query: string;
@@ -383,7 +457,7 @@ function Jobs({ jobs, bot, lane, status, query, onBot, onLane, onStatus, onQuery
       <div className="card-head">
         <div>
           <h2 id="jobs-title" className="card-title">Jobs</h2>
-          <p className="card-sub">Newest first. A row opens the receipt, the files and the commands.</p>
+          <p className="card-sub">One row per run. Open a row for the receipt. Every action, including the commands, is in the log.</p>
         </div>
       </div>
       <div className="filters">

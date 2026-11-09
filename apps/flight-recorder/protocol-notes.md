@@ -4,7 +4,7 @@
 
 The first cut used the light system. That was the wrong system. This page is a read-only command center, and the skill assigns those to the dark console.
 
-Kept: black `#0a0a0a`, panel `#111112`, white text, green `#5ee38f` as the one good-news signal. Bot colors stay a dot on a pill, matched to the Grokbot marks: CHIEF `#3d80f1`, OPS `#e54796`, BUILDER `#e79738`, KEEPER `#757675`, STEWARD `#e66f30`. A wrong value is white, or white inverted onto a chip. No amber and no coral.
+Kept: black `#0a0a0a`, panel `#111112`, white text, green `#5ee38f` as the one good-news signal. Bot colors stay a dot on a pill, matched to the Grokbot marks: CHIEF `#3d80f1`, OPS `#e54796`, BUILDER `#e79738`, KEEPER `#757675`, STEWARD `#e66f30`. A wrong value is white text on the dark tile. The white chip behind the number was rejected. No amber and no coral.
 
 The light palette (charcoal, ground, surface) is rejected for this page. It reads as a stakeholder report.
 

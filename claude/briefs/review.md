@@ -15,6 +15,14 @@ Judge it the way Cassidy would: does it do what the linked issue asks, does it f
 wrong, missing or unclear, does it touch his areas (the board, the roadmap, the work system, the image extractor,
 data providers) in a way that conflicts with what he has said.
 
+Evidence, for every finding (the checker fails the review without it, and it posts under Cassidy's name):
+- Add one receipt.evidence entry per finding: the diff file and line, or the exact command you ran and what it showed.
+- Check live state before stating it: gh issue view for a card, the board via `make board` or `make stale`, the
+  Makefile or scripts on ~/cos/data-org-main for how a target behaves. Never state a count you didn't read.
+- Anything you couldn't verify is written as a question to the author ("Does X happen when …?"), never as a fact.
+- Lint with exactly `make lint-writing FILE={{OUT}}/review.md` from the folder you start in (~/cos/data-org-main), and
+  record the clean result as the QUALITY proof.
+
 Write {{OUT}}/review.md, the review body, in plain Markdown that passes `make lint-writing` (point first, short
 sentences, no em dashes, no semicolons). Shape:
 - First line: what the PR does and whether it is ready, in one or two sentences.
