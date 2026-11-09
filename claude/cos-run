@@ -11,23 +11,73 @@
 #   cos-run eval        <suite> current|<proposed-lane-prompt.md>                 blinded A/B of the investigate lane on a fixed suite
 #   cos-run note        <bot> "<what went wrong, and the rule>"                   appends one correction to ~/cos/state/corrections.jsonl
 #   cos-run pause       <slot|all> <days>                                         holds a scheduled slot for N days (0 resumes)
+#   cos-run receipt     <job>                                                     a job's result, or "running" / "failed"
+#   add --async to investigate, draft, build or eval: returns at once, runs detached, pushes the receipt to the Chief
 #
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANE="${1:?lane: quick|investigate|draft|build|pair|apply|eval|note|pause}"; JOB="${2:?job-id}"; BRIEF_IN="${3:?brief}"; shift 3
+ALL_ARGS=("$@")
+LANE="${1:?lane: quick|investigate|draft|build|pair|apply|eval|note|pause|receipt}"; JOB="${2:?job-id}"; BRIEF_IN="${3:-}"
+[[ -n "$BRIEF_IN" || "$LANE" == "receipt" ]] || { echo "missing third argument (the brief, or the lane's value)" >&2; exit 64; }
+shift $(( $# < 3 ? $# : 3 ))
 export PATH="$HOME/cos/bin:$PATH"
 COS="$HOME/cos"; REPO="$HOME/Documents/Data-Org-Repos/data-org"; MAIN="$COS/data-org-main"
-IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"
+IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --in) IN="${2:?folder}"; shift 2 ;;
     --resume) RESUME=(--resume "${2:?session id}"); shift 2 ;;
     --with) WITH+=("${2:?command}"); shift 2 ;;
     --slug) SLUG="${2:?slug}"; shift 2 ;;
+    --async) ASYNC=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 64 ;;
   esac
 done
+
+# ---------------------------------------------------------------- receipt: a job's result, instantly, no model
+# cos-run receipt <job>   Prints the receipt when the job has finished, or says it is still running or failed.
+# For an async eval, the job is eval-<suite>.
+if [[ "$LANE" == "receipt" ]]; then
+  [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || { echo "bad job-id" >&2; exit 64; }
+  D="$COS/outbox/$JOB"
+  if [[ -f "$D/.running" ]]; then
+    pid="$(cat "$D/.running")"
+    if kill -0 "$pid" 2>/dev/null; then
+      jq -n --arg j "$JOB" --arg since "$(stat -f '%Sm' -t '%H:%M' "$D/.running")" '{job: $j, status: "running", since: $since, note: "Still working. The result is pushed to the Chief when it finishes."}'; exit 0
+    fi
+    jq -n --arg j "$JOB" --arg tail "$(tail -c 1500 "$D/async.log" 2>/dev/null)" '{job: $j, status: "failed", note: "The job stopped before writing a receipt.", log_tail: $tail}'; exit 1
+  fi
+  [[ -f "$D/receipt.json" ]] && { cat "$D/receipt.json"; exit 0; }
+  jq -n --arg j "$JOB" '{job: $j, status: "not found"}'; exit 66
+fi
+
+# ---------------------------------------------------------------- --async: start a long job in the background
+# Grok's terminal call can give up before a 2-5 minute job finishes. With --async the command returns in a second,
+# the job runs detached, and its receipt is pushed to the Chief's webhook when it's done (if that key exists).
+# Check any time with: cos-run receipt <job>
+if [[ $ASYNC -eq 1 ]]; then
+  [[ "$LANE" =~ ^(investigate|draft|build|eval)$ ]] || { echo "--async is for investigate, draft, build and eval" >&2; exit 64; }
+  [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || { echo "bad job-id" >&2; exit 64; }
+  AJ="$JOB"; [[ "$LANE" == eval ]] && AJ="eval-$JOB"
+  D="$COS/outbox/$AJ"; mkdir -p "$D"
+  if [[ -f "$D/.running" ]] && kill -0 "$(cat "$D/.running")" 2>/dev/null; then
+    jq -n --arg j "$AJ" '{job: $j, status: "already running", check_with: "cos-run receipt \($j)"}'; exit 0
+  fi
+  [[ -f "$D/receipt.json" ]] && mv "$D/receipt.json" "$D/receipt.prev.json"
+  REST=(); for a in "${ALL_ARGS[@]}"; do [[ "$a" == "--async" ]] || REST+=("$a"); done
+  # A new session, so the job survives the caller's terminal closing.
+  COS_ASYNC_CHILD=1 COS_ASYNC_DIR="$D" nohup perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$0" "${REST[@]}" > "$D/async.log" 2>&1 < /dev/null &
+  echo $! > "$D/.running"
+  jq -n --arg j "$AJ" --arg l "$LANE" '{job: $j, lane: $l, status: "started", note: "Running in the background. The receipt is pushed to the Chief when it finishes.", check_with: "cos-run receipt \($j)"}'
+  exit 0
+fi
+async_done() {  # in a background job: clear the marker and push the receipt to the Chief
+  [[ "${COS_ASYNC_CHILD:-}" == 1 ]] || return 0
+  rm -f "${COS_ASYNC_DIR:?}/.running"
+  "$HOME/cos/bin/cos-push" chief result "$1" >/dev/null 2>>"${COS_ASYNC_DIR}/async.log" \
+    || echo "not pushed to the Chief (no cos-webhook-chief key, or the push failed). Use: cos-run receipt" >> "${COS_ASYNC_DIR}/async.log"
+}
 
 # ---------------------------------------------------------------- note: capture a correction, no model
 # Every correction Cassidy makes to a bot or an agent lands here. KEEPER reads this file every week.
@@ -114,6 +164,10 @@ $(cat "$JUDGE_IN")" > "$RUN/judge.json" 2> "$RUN/judge.err" || true
     jq --arg a "$arm" --argjson p "${pass:-0}" --argjson n "$N" --arg c "$cost" '.checker_pass = ((.checker_pass // {}) + {($a): "\($p)/\($n)"}) | .cost_usd = ((.cost_usd // {}) + {($a): $c})' \
       "$RUN/report.json" > "$RUN/report.tmp" && mv "$RUN/report.tmp" "$RUN/report.json"
   done
+  if [[ "${COS_ASYNC_CHILD:-}" == 1 ]]; then
+    jq --arg j "eval-$JOB" '{job: $j, lane: "eval", receipt: {status: "done", summary: ("Eval report: " + ([.arms[]? | "\(.arm) mean \(.mean_score), violations \(.violations)"] | join("; ")))}, report: .}' "$RUN/report.json" > "$COS_ASYNC_DIR/receipt.json"
+    async_done "$COS_ASYNC_DIR/receipt.json"
+  fi
   echo "$RUN/report.json"; cat "$RUN/report.json"; exit 0
 fi
 
@@ -186,7 +240,7 @@ if [[ "$LANE" == "apply" ]]; then
 fi
 
 if [[ -f "$BRIEF_IN" ]]; then cp "$BRIEF_IN" "$OUT/brief.md"; else printf '%s\n' "$BRIEF_IN" > "$OUT/brief.md"; fi
-finish() { echo "$OUT/receipt.json"; cat "$OUT/receipt.json"; }
+finish() { echo "$OUT/receipt.json"; cat "$OUT/receipt.json"; async_done "$OUT/receipt.json"; }
 
 # ---------------------------------------------------------------- quick: Cursor Agent
 if [[ "$LANE" == "quick" ]]; then
