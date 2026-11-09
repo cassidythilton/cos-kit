@@ -1,0 +1,56 @@
+#!/bin/bash
+# cos-ledger <stream> key=value ...
+# Appends one JSON line to ~/cos/state/ledger/<stream>.jsonl. Always exits 0.
+# The gate sources this file and calls cos_ledger_append in its own process. A second
+# bash was about 23 ms on top of the gate; in-process stays under the 20 ms budget.
+# Other writers exec this file. A failure is swallowed either way.
+
+cos_ledger_append() {
+  local stream=$1 dir ts id line key val args filter
+  shift
+  [[ $stream =~ ^[a-z_]+$ ]] || return 0
+  dir=${COS_LEDGER_DIR:-$HOME/cos/state/ledger}
+  [[ -d $dir ]] || mkdir -p "$dir" 2>/dev/null || return 0
+  ts=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ) || return 0
+  id=$(printf '%s' "$ts$$${RANDOM}${RANDOM}" | /sbin/sha1sum) || return 0
+  id=${id%%[[:space:]]*}
+  args=(jq -nc --arg ts "$ts" --arg stream "$stream" --arg id "$id")
+  filter='{ts:$ts,stream:$stream,id:$id'
+  for kv in "$@"; do
+    key=${kv%%=*}; val=${kv#*=}
+    [[ $key =~ ^[a-z_]+$ ]] || continue
+    [[ $key == ts || $key == stream || $key == id ]] && continue
+    val=${val//$'\n'/ }; val=${val//$'\r'/ }
+    case $val in
+      *security*-w*) val="${val%%-w*}-w <redacted>" ;;
+    esac
+    case $val in
+      *ghp_*|*github_pat_*|*gho_*|*xoxb-*|*xoxp-*|*xoxa-*|*xoxs-*|*sk-*|*AKIA*|*api2.cursor.sh*|*earer\ *|*uthorization:*)
+        val=$(printf '%s' "$val" | /usr/bin/sed -E \
+          -e 's#https?://api2\.cursor\.sh/automations/[^[:space:]'\''"]*#<webhook>#g' \
+          -e 's#api2\.cursor\.sh/automations/[^[:space:]'\''"]*#<webhook>#g' \
+          -e 's/ghp_[A-Za-z0-9]+/<redacted>/g' \
+          -e 's/github_pat_[A-Za-z0-9_]+/<redacted>/g' \
+          -e 's/gho_[A-Za-z0-9]+/<redacted>/g' \
+          -e 's/xox[bpas]-[A-Za-z0-9-]+/<redacted>/g' \
+          -e 's/sk-[A-Za-z0-9_-]{20,}/<redacted>/g' \
+          -e 's/AKIA[0-9A-Z]{16}/<redacted>/g' \
+          -e 's/[Bb]earer[[:space:]]+[^[:space:]]+/Bearer <redacted>/g' \
+          -e 's/[Aa]uthorization:[[:space:]]*[^[:space:]]+/Authorization: <redacted>/g') || continue ;;
+    esac
+    if [[ $key == cmd || $key == command ]]; then val=${val:0:300}
+    elif [[ ${#val} -gt 800 ]]; then val=${val:0:800}; fi
+    args+=(--arg "$key" "$val")
+    filter+=",$key:\$$key"
+  done
+  filter+='}'
+  line=$("${args[@]}" "$filter" 2>/dev/null) || return 0
+  [[ -n $line && ${#line} -le 4000 ]] || return 0
+  printf '%s\n' "$line" >> "$dir/$stream.jsonl" 2>/dev/null || true
+  return 0
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  cos_ledger_append "$@"
+  exit 0
+fi

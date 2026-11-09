@@ -29,7 +29,10 @@ row="$(printf '%s\n' "$TABLE" | awk -F'|' -v s="$SLOT" '{k=$1; gsub(/ /,"",k)} k
 HOURS="$(echo "$row" | cut -d'|' -f3 | tr -d ' ')"; BOT="$(echo "$row" | cut -d'|' -f4 | tr -d ' ')"; LANE="$(echo "$row" | cut -d'|' -f5 | tr -d ' ')"
 JOB="$SLOT-$D"
 
-log() { printf '%s %s %s\n' "$(date +%FT%T)" "$SLOT" "$*" >> "$LOG"; }
+log() {
+  printf '%s %s %s\n' "$(date +%FT%T)" "$SLOT" "$*" >> "$LOG"
+  "$HOME/cos/bin/cos-ledger" schedule slot="$SLOT" msg="$*" >/dev/null 2>&1 || true
+}
 
 # Paused by `cos-run pause <slot|all> <days>`: skip silently until the date passes.
 TODAY="$(date +%F)"
@@ -55,10 +58,10 @@ fi
 
 log "start $JOB"
 if [[ "$LANE" == quick ]]; then
-  cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), and how many owners need a nudge. If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
+  COS_CALLER=sched cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), and how many owners need a nudge. If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
     --with "board-pulse --record" >/dev/null 2>&1
 else
-  cos-run "$LANE" "$JOB" "$BRIEFS/$SLOT.md" >/dev/null 2>&1
+  COS_CALLER=sched cos-run "$LANE" "$JOB" "$BRIEFS/$SLOT.md" >/dev/null 2>&1
 fi
 R="$COS/outbox/$JOB/receipt.json"
 [[ -f "$R" ]] || { printf '{"receipt":{"status":"failed","summary":"cos-run left no receipt; see %s"},"job":"%s"}\n' "$COS/outbox/$JOB/run.err" "$JOB" > "$COS/state/failed-$SLOT.json"; R="$COS/state/failed-$SLOT.json"; }

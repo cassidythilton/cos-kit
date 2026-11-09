@@ -15,14 +15,30 @@ cmd="$(printf '%s' "$input"  | jq -r '.tool_input.command // ""')"
 path="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
 MODE="${COS_GATE_MODE:-job}"
 
-hard() { echo "BLOCKED (hard wall): $1. This is never done by an agent. Hand it to its owner with the exact command and why." >&2; exit 2; }
+# Logging is best-effort and never decides. COS_LEDGER_OFF=1 skips it for the timing check.
+# Sourced, not executed: a second bash put the gate about 23 ms slower, over the 20 ms budget.
+gate_log() {
+  [[ "${COS_LEDGER_OFF:-}" == 1 ]] && return 0
+  if ! declare -F cos_ledger_append >/dev/null 2>&1; then
+    . "$HOME/cos/bin/cos-ledger" 2>/dev/null || return 0
+  fi
+  cos_ledger_append gate decision="$1" rule="$2" tool="$tool" job="${COS_JOB:-}" lane="${COS_LANE:-}" mode="$MODE" cmd="${cmd:0:300}" path="${path:0:300}" >/dev/null 2>&1 || true
+}
+hard() {
+  gate_log block "$1"
+  echo "BLOCKED (hard wall): $1. This is never done by an agent. Hand it to its owner with the exact command and why." >&2
+  exit 2
+}
 outward() {
   if [[ "$MODE" == "pair" ]]; then
+    gate_log ask "$1"
     jq -n --arg r "Outward action: $1. Confirm with Cassidy before running." \
       '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:$r}}'
     exit 0
   fi
-  echo "BLOCKED by chief-of-staff gate: $1. Stage it in receipt.needs_approval instead." >&2; exit 2
+  gate_log block "$1"
+  echo "BLOCKED by chief-of-staff gate: $1. Stage it in receipt.needs_approval instead." >&2
+  exit 2
 }
 
 # ---- HARD: secrets

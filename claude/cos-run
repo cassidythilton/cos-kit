@@ -23,6 +23,8 @@ LANE="${1:?lane: quick|investigate|draft|build|pair|apply|eval|note|pause|receip
 shift $(( $# < 3 ? $# : 3 ))
 export PATH="$HOME/cos/bin:$PATH"
 COS="$HOME/cos"; REPO="$HOME/Documents/Data-Org-Repos/data-org"; MAIN="$COS/data-org-main"
+# Best-effort. A ledger failure must not change the lane's exit code.
+ledger() { "$HOME/cos/bin/cos-ledger" "$@" >/dev/null 2>&1 || true; }
 IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -34,6 +36,19 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown option: $1" >&2; exit 64 ;;
   esac
 done
+
+# Every lane except receipt (a poll) records a start and an end. The end runs from EXIT so a
+# crash and a normal return both land. async is 1 on the parent that returns immediately,
+# child on the detached run, and 0 otherwise. COS_JOB and COS_LANE let the gate attribute blocks.
+if [[ "$LANE" != "receipt" ]]; then
+  export COS_JOB="$JOB" COS_LANE="$LANE"
+  COS_T0=$SECONDS
+  if [[ "${COS_ASYNC_CHILD:-}" == 1 ]]; then COS_ASYNC_FLAG=child
+  elif [[ "$ASYNC" -eq 1 ]]; then COS_ASYNC_FLAG=1
+  else COS_ASYNC_FLAG=0; fi
+  ledger jobs event=start job="$JOB" lane="$LANE" async="$COS_ASYNC_FLAG" pid="$$" caller="${COS_CALLER:-bot}"
+  trap 'rc=$?; "$HOME/cos/bin/cos-ledger" jobs event=end job="$JOB" lane="$LANE" exit="$rc" secs="$((SECONDS - COS_T0))" async="$COS_ASYNC_FLAG" >/dev/null 2>&1 || true' EXIT
+fi
 
 # ---------------------------------------------------------------- receipt: a job's result, instantly, no model
 # cos-run receipt <job>   Prints the receipt when the job has finished, or says it is still running or failed.
@@ -88,6 +103,7 @@ if [[ "$LANE" == "note" ]]; then
   [[ ${#BRIEF_IN} -le 600 ]] || { echo "keep a note under 600 characters" >&2; exit 64; }
   mkdir -p "$COS/state"
   jq -nc --arg t "$(date -u +%FT%TZ)" --arg b "$BOT" --arg n "$BRIEF_IN" '{at: $t, bot: $b, note: $n}' >> "$COS/state/corrections.jsonl"
+  ledger corrections bot="$BOT" note="$BRIEF_IN"
   echo "noted ($(wc -l < "$COS/state/corrections.jsonl" | tr -d ' ') corrections on file)"; exit 0
 fi
 
@@ -98,8 +114,9 @@ if [[ "$LANE" == "pause" ]]; then
   [[ "$SLOT_P" =~ ^(all|followups|pulse|reconcile|capture|week|opportunity|keeper)$ ]] || { echo "slot: all|followups|pulse|reconcile|capture|week|opportunity|keeper" >&2; exit 64; }
   [[ "$DAYS_P" =~ ^[0-9]{1,3}$ ]] || { echo "days: a whole number, 0 to resume" >&2; exit 64; }
   mkdir -p "$COS/state"
-  if [[ "$DAYS_P" -eq 0 ]]; then rm -f "$COS/state/pause-$SLOT_P"; echo "resumed: $SLOT_P"; exit 0; fi
+  if [[ "$DAYS_P" -eq 0 ]]; then rm -f "$COS/state/pause-$SLOT_P"; ledger pauses slot="$SLOT_P" days=0 until=""; echo "resumed: $SLOT_P"; exit 0; fi
   UNTIL="$(date -v+"${DAYS_P}"d +%F)"; echo "$UNTIL" > "$COS/state/pause-$SLOT_P"
+  ledger pauses slot="$SLOT_P" days="$DAYS_P" until="$UNTIL"
   echo "paused: $SLOT_P through $UNTIL (resume early with: cos-run pause $SLOT_P 0)"; exit 0
 fi
 
@@ -236,6 +253,7 @@ if [[ "$LANE" == "apply" ]]; then
   done < "$SCRIPT"
   jq -n --arg s "$STATUS" --arg j "$JOB" --argjson ok "$ok" --argjson n "$n" \
     '{receipt: {status: $s, summary: "\($ok) of \($n) approved board writes applied. Log: applied.log. Re-read each target to confirm."}, lane: "apply", job: $j}' > "$OUT/apply-receipt.json"
+  ledger applies job="$JOB" sha="$SHA" writes="$n" ok="$ok" status="$STATUS"
   echo "$OUT/apply-receipt.json"; cat "$OUT/apply-receipt.json"; exit 0
 fi
 

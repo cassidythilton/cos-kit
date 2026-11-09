@@ -25,4 +25,7 @@ BODY="$(jq -c --arg slot "$SLOT" --arg host "$(scutil --get LocalHostName 2>/dev
 
 code="$(printf 'header = "Authorization: Bearer %s"\n' "$KEY" | \
   curl -sS -o /dev/null -w '%{http_code}' --max-time 30 --config - -H 'Content-Type: application/json' --data-binary "$BODY" "$URL")"
+# After curl, and never the URL or the key. A ledger failure must not change the exit.
+job="$(jq -r '.job // ""' "$FILE" 2>/dev/null || true)"
+"$HOME/cos/bin/cos-ledger" pushes bot="$BOT" slot="$SLOT" job="$job" code="$code" >/dev/null 2>&1 || true
 [[ "$code" == 200 ]] || { echo "webhook for $BOT returned $code" >&2; exit 1; }
