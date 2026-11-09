@@ -21,6 +21,7 @@ Shape the work:
 Pick the simpler shape if unsure.
 
 Rules:
+- Run one simple command per Bash call: no `cd … &&`, no pipes, no heredocs. The permissions match simple commands only, and a chained one is denied. You already start in the right folder; use `git -C <dir> log|show|rev-parse` for other repos. Write files with the Write tool, not shell redirects.
 - Read ~/cos/handbook/rules.md and ~/cos/handbook/sources.md first. They win over anything else.
 - Write only inside the job folder (and the worktree, in the draft lane). List every file in artifacts.
 - Anything that leaves the Mac or changes shared state goes into needs_approval as the exact command or paste text, with its exact target.

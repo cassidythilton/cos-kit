@@ -73,7 +73,12 @@
       "Bash(make intake-sweep)",
       "Bash(make ship-reconcile)",
       "Bash(make board-intake)",
-      "Bash(make week*)"
+      "Bash(make week*)",
+      "Bash(git -C * log *)",
+      "Bash(git -C * show *)",
+      "Bash(git -C * rev-parse *)",
+      "Bash(git -C * status)",
+      "Bash(make lint-writing *)"
     ],
     "deny": [
       "Bash(git push *)",
