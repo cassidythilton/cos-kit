@@ -1,11 +1,13 @@
 # Install
 
+The kit lives in `~/cos/kit`, a git repo pushed to github.com/cassidythilton/cos-kit (private). Edit there, commit with a real message, push, then run `./install.sh` from it.
+
 The kit is versioned by this file. `install.sh` is the only install step on the Mac. The Grok bots are set up by hand, one a day.
 
 ## 1. On the Mac (about 5 minutes)
 
 ```bash
-cd cos-v2 && ./install.sh --online
+cd ~/cos/kit && ./install.sh --online
 ```
 
 It checks prerequisites, copies the kit into `~/cos/kit` (a git repo) and everything else into `~/cos`, creates `~/builds`, installs `cassidy-mode`, and proves the walls: 77 checks, no model. It creates `~/.claude/CLAUDE.md` only if you don't have one. Re-run it after every kit change. It backs up a kit-owned handbook file before replacing it and never touches your own (`people.md`, `workstreams.md`, `sources.md`).
