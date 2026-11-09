@@ -66,32 +66,29 @@ interface Detail {
   applies: { ts: string; sha: string; writes: number | null; ok: number | null; status: string }[];
 }
 
-const WINDOWS: Option[] = [
-  { id: "1d", kicker: "Window", label: "Today", proof: "The newest day in the recorder." },
-  { id: "7d", kicker: "Window", label: "7 days", proof: "Seven days ending on the newest day." },
-  { id: "30d", kicker: "Window", label: "30 days", proof: "Thirty days ending on the newest day." },
+const WINDOWS = [
+  { value: "1d", label: "Today" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
 ];
-
-const BOTS: Option[] = ["", "CHIEF", "OPS", "STEWARD", "BUILDER", "KEEPER", "EVAL", "SYSTEM"].map((id) => ({
-  id: id || "all",
-  kicker: "Bot",
-  label: id || "Every bot",
-  proof: id ? `Jobs attributed to ${id}.` : "No bot filter.",
+const BOTS = ["", "CHIEF", "OPS", "STEWARD", "BUILDER", "KEEPER", "EVAL", "SYSTEM"].map((id) => ({
+  value: id || "all", label: id || "Every bot",
 }));
-
-const LANES: Option[] = ["", "quick", "investigate", "draft", "build", "apply", "eval", "note", "pause"].map((id) => ({
-  id: id || "all",
-  kicker: "Lane",
-  label: id || "Every lane",
-  proof: id ? `The ${id} lane.` : "No lane filter.",
+const LANES = ["", "quick", "investigate", "draft", "build", "apply", "eval", "note", "pause"].map((id) => ({
+  value: id || "all", label: id || "Every lane",
 }));
-
-const STATUSES: Option[] = ["", "done", "blocked", "failed", "partial", "running"].map((id) => ({
-  id: id || "all",
-  kicker: "Status",
-  label: id || "Every status",
-  proof: id ? `Jobs marked ${id}.` : "No status filter.",
+const STATUSES = ["", "done", "blocked", "failed", "partial", "running"].map((id) => ({
+  value: id || "all", label: id || "Every status",
 }));
+const RAIL = [
+  ["summary", "Summary"],
+  ["spend", "Spend"],
+  ["jobs", "Jobs"],
+  ["walls", "The walls"],
+  ["approvals", "Approvals"],
+  ["schedule", "Schedule"],
+  ["learning", "Learning"],
+];
 
 async function get<T>(path: string): Promise<Envelope<T>> {
   const response = await fetch(path);
@@ -119,7 +116,9 @@ function clock(stamp: string | null): string {
 
 function fresh(stamp: string | null): boolean {
   if (!stamp) return false;
-  return Date.now() - new Date(stamp).getTime() < 15 * 60 * 1000;
+  const parsed = new Date(stamp).getTime();
+  if (Number.isNaN(parsed)) return false;
+  return Date.now() - parsed < 24 * 60 * 60 * 1000;
 }
 
 function parseJson<T>(text: string | undefined, fallback: T): T {
@@ -144,6 +143,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [openJob, setOpenJob] = useState<string | null>(null);
+  const [section, setSection] = useState("summary");
 
   useEffect(() => {
     let cancel = false;
@@ -174,15 +174,40 @@ export default function App() {
 
   const through = summary?.data_through ?? null;
 
+  useEffect(() => {
+    const nodes = RAIL.map(([id]) => document.getElementById(id)).filter((node): node is HTMLElement => !!node);
+    const seen = new Map<string, boolean>();
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => seen.set((entry.target as HTMLElement).id, entry.isIntersecting));
+      const visible = nodes.filter((node) => seen.get(node.id));
+      const nearest = visible.sort((a, b) => Math.abs(a.getBoundingClientRect().top) - Math.abs(b.getBoundingClientRect().top))[0];
+      if (nearest) setSection(nearest.id);
+    }, { rootMargin: "-10% 0px -40% 0px", threshold: [0.15] });
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <main className="page">
-      <header className="masthead">
+    <div className="shell">
+      <aside className="side">
+        <div className="brand"><b>Flight recorder</b><small>This Mac · read only</small></div>
+        <ul className="nav">
+          {RAIL.map(([id, label]) => (
+            <li key={id}><a className={section === id ? "on" : ""} href={`#${id}`}>{label}</a></li>
+          ))}
+        </ul>
+        <div className="meta">Local ledger and cos.db. Nothing leaves this Mac.</div>
+      </aside>
+      <main className="main">
+      <header className="topbar">
         <div>
           <p className="eyebrow">This Mac</p>
-          <h1 className="headline">What ran, what it <em>cost</em>, what got blocked.</h1>
+          <h1>What ran, what it <em>cost</em>, what got blocked.</h1>
         </div>
         <div className="masthead-tools">
-          <QuestionSelect options={WINDOWS} value={windowId} onChange={setWindowId} label="Window" />
+          <label className="field">Window
+            <Picker options={WINDOWS} value={windowId} onChange={setWindowId} width={150} />
+          </label>
           <Freshness stamp={through} />
         </div>
       </header>
@@ -203,7 +228,8 @@ export default function App() {
         <p><strong>What this cannot see.</strong> Grok’s own app calls (Gmail, Slack, calendar, its browser) and Grok usage live in the Grok app’s Activity and Settings → Usage & Billing. Cursor and Codex report no dollars, so they are counted as runs.</p>
       </footer>
       {openJob && <Drawer job={openJob} onClose={() => setOpenJob(null)} />}
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -213,32 +239,36 @@ function Freshness({ stamp }: { stamp: string | null }) {
   return (
     <p className={stale ? "freshness is-stale" : "freshness"}>
       <span className="freshness-dot" aria-hidden="true" />
-      {label}{stale ? " · older than 15 minutes" : ""}
+      {label}{stale ? " · older than 24 hours" : ""}
     </p>
   );
 }
 
 function Tiles({ summary }: { summary: Envelope<Summary> | null }) {
   const data = summary?.data;
-  if (!data) return <p className="empty"><strong>Nothing loaded yet.</strong> cos-db load fills this from the ledger and the outbox.</p>;
+  if (!data) return (
+    <section id="summary" aria-label="Summary">
+      <p className="empty"><strong>Nothing loaded yet.</strong> cos-db load fills this from the ledger and the outbox.</p>
+    </section>
+  );
   const rate = data.checker_rate == null ? "—" : `${Math.round(data.checker_rate * 100)}%`;
   const checked = data.checker_pass + data.checker_fail;
   return (
-    <section aria-label="Summary">
+    <section id="summary" aria-label="Summary">
       <div className="tiles">
         <Tile label="Jobs" value={String(data.jobs)} detail={data.partial ? "Newest day is partial." : "Full days."} tone="neutral" />
         <Tile label="Claude spend" value={money(data.claude_spend)} detail={`${data.cursor_runs} Cursor runs, ${data.codex_runs} Codex reviews, no dollars.`} tone="neutral" />
-        <Tile label="Checker pass" value={rate} detail={checked ? `${data.checker_pass} of ${checked}` : "No checker on these runs."} tone={checked === 0 ? "neutral" : data.checker_rate === 1 ? "good" : "amber"} />
-        <Tile label="Gate blocks" value={String(data.gate_blocks)} detail={`${data.gate_asks} asks`} tone={data.gate_blocks > 0 ? "coral" : "good"} />
-        <Tile label="Missed or failed" value={String(data.missed_or_failed)} detail="Scheduled runs." tone={data.missed_or_failed > 0 ? "coral" : "good"} />
-        <Tile label="Open corrections" value={String(data.open_corrections)} detail="No closed flag. Every note is open." tone={data.open_corrections > 0 ? "amber" : "good"} />
+        <Tile label="Checker pass" value={rate} detail={checked ? `${data.checker_pass} of ${checked}` : "No checker on these runs."} tone={checked === 0 ? "neutral" : data.checker_rate === 1 ? "good" : "look"} />
+        <Tile label="Gate blocks" value={String(data.gate_blocks)} detail={`${data.gate_asks} asks`} tone={data.gate_blocks > 0 ? "look" : "good"} />
+        <Tile label="Missed or failed" value={String(data.missed_or_failed)} detail="Scheduled runs." tone={data.missed_or_failed > 0 ? "look" : "good"} />
+        <Tile label="Open corrections" value={String(data.open_corrections)} detail="No closed flag. Every note is open." tone={data.open_corrections > 0 ? "look" : "good"} />
       </div>
       {summary && <SourceRef table={summary.source.tables.join(", ")} reads={summary.source.sql} />}
     </section>
   );
 }
 
-function Tile({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "neutral" | "good" | "amber" | "coral" }) {
+function Tile({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "neutral" | "good" | "look" }) {
   return (
     <article className={`tile${tone === "neutral" ? "" : ` is-${tone}`}`}>
       <p className="tile-label">{label}</p>
@@ -266,7 +296,7 @@ function Spend({ spend }: { spend: Envelope<{ days: SpendDay[] }> | null }) {
   });
   const line = points.map((point) => `${point.x + width / 2},${point.ly}`).join(" ");
   return (
-    <section className="card" aria-labelledby="spend-title">
+    <section id="spend" className="card" aria-labelledby="spend-title">
       <div className="card-head">
         <div>
           <h2 id="spend-title" className="card-title">Spend by day</h2>
@@ -276,7 +306,7 @@ function Spend({ spend }: { spend: Envelope<{ days: SpendDay[] }> | null }) {
       {days.length === 0 ? <p className="empty"><strong>No runs in this range yet.</strong> A job receipt lands here after cos-db load.</p> : (
         <div className="chart-host">
           <svg viewBox="0 0 720 220" role="img" aria-label="Claude dollars by day and run counts">
-            {points.length > 1 && <polyline points={line} fill="none" stroke="#141416" strokeWidth="1.5" />}
+            {points.length > 1 && <polyline points={line} fill="none" stroke="#ededed" strokeWidth="1.5" />}
             {points.map((point) => {
               const day = point.day;
               let y = 180;
@@ -294,21 +324,21 @@ function Spend({ spend }: { spend: Envelope<{ days: SpendDay[] }> | null }) {
                       <title>{`${day.day} ${bar.lane} $${bar.value.toFixed(2)}`}</title>
                     </rect>
                   ))}
-                  {total === 0 && <rect x={point.x} y={176} width={width} height={4} fill="#d4d4d2" />}
-                  <circle cx={point.x + width / 2} cy={point.ly} r="3.5" fill="#141416">
+                  {total === 0 && <rect x={point.x} y={176} width={width} height={4} fill="#34343a" />}
+                  <circle cx={point.x + width / 2} cy={point.ly} r="3.5" fill="#ededed">
                     <title>{`${day.day} ${point.runs} runs`}</title>
                   </circle>
-                  <text x={point.x + width / 2} y="198" textAnchor="middle" fontSize="11" fill="#6b6b70">{day.day.slice(5)}{day.partial ? "*" : ""}</text>
+                  <text x={point.x + width / 2} y="198" textAnchor="middle" fontSize="11" fill="#8a8a90">{day.day.slice(5)}{day.partial ? "*" : ""}</text>
                 </g>
               );
             })}
-            <line x1="40" y1="180" x2="700" y2="180" stroke="#dededc" />
+            <line x1="40" y1="180" x2="700" y2="180" stroke="#262628" />
           </svg>
           <ul className="legend">
             {lanes.map((lane, i) => (
               <li key={lane}><span className="swatch" style={{ background: LANE_GREY[i % LANE_GREY.length] }} />{lane}</li>
             ))}
-            <li><span className="swatch" style={{ background: "#141416", borderRadius: "50%" }} />run count</li>
+            <li><span className="swatch" style={{ background: "#ededed", borderRadius: "50%" }} />run count</li>
           </ul>
         </div>
       )}
@@ -349,7 +379,7 @@ function Jobs({ jobs, bot, lane, status, query, onBot, onLane, onStatus, onQuery
 }) {
   const list = jobs?.data ?? [];
   return (
-    <section className="card" aria-labelledby="jobs-title">
+    <section id="jobs" className="card" aria-labelledby="jobs-title">
       <div className="card-head">
         <div>
           <h2 id="jobs-title" className="card-title">Jobs</h2>
@@ -357,9 +387,9 @@ function Jobs({ jobs, bot, lane, status, query, onBot, onLane, onStatus, onQuery
         </div>
       </div>
       <div className="filters">
-        <QuestionSelect options={BOTS} value={bot} onChange={onBot} label="Bot" />
-        <QuestionSelect options={LANES} value={lane} onChange={onLane} label="Lane" />
-        <QuestionSelect options={STATUSES} value={status} onChange={onStatus} label="Status" />
+        <label className="field">Bot<Picker options={BOTS} value={bot} onChange={onBot} /></label>
+        <label className="field">Lane<Picker options={LANES} value={lane} onChange={onLane} /></label>
+        <label className="field">Status<Picker options={STATUSES} value={status} onChange={onStatus} /></label>
         <input className="search" value={query} placeholder="Search job or summary" aria-label="Search jobs" onChange={(event) => onQuery(event.target.value)} />
       </div>
       {list.length === 0 ? <p className="empty"><strong>No jobs in this window.</strong> A fresh install fills this after the first cos-run.</p> : (
@@ -403,7 +433,7 @@ function BotPill({ bot }: { bot: string }) {
 }
 
 function StatusPill({ status }: { status: string | null }) {
-  const tone = status === "failed" || status === "blocked" ? "is-coral" : status === "partial" || status === "running" ? "is-amber" : status === "done" ? "is-good" : "";
+  const tone = status === "failed" || status === "blocked" ? "is-bad" : status === "done" ? "is-good" : "";
   return <span className={`pill ${tone}`}>{status || "—"}</span>;
 }
 
@@ -422,7 +452,7 @@ function Walls({ gates }: { gates: Envelope<GateEvent[]> | null }) {
   const top = [...rules.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   const max = Math.max(1, ...days.map(([, v]) => v.block + v.ask));
   return (
-    <section className="card" aria-labelledby="walls-title">
+    <section id="walls" className="card" aria-labelledby="walls-title">
       <div className="card-head">
         <div>
           <h2 id="walls-title" className="card-title">The walls</h2>
@@ -440,17 +470,17 @@ function Walls({ gates }: { gates: Envelope<GateEvent[]> | null }) {
               const ah = (value.ask / max) * 110;
               return (
                 <g key={day}>
-                  <rect x={x} y={140 - bh - ah} width={width} height={ah} fill="#d4d4d2"><title>{`${day} ${value.ask} asks`}</title></rect>
-                  <rect x={x} y={140 - bh} width={width} height={bh} fill="#141416"><title>{`${day} ${value.block} blocks`}</title></rect>
-                  <text x={x + width / 2} y="162" textAnchor="middle" fontSize="11" fill="#6b6b70">{day.slice(5)}</text>
+                  <rect x={x} y={140 - bh - ah} width={width} height={ah} fill="#5c5c62"><title>{`${day} ${value.ask} asks`}</title></rect>
+                  <rect x={x} y={140 - bh} width={width} height={bh} fill="#ededed"><title>{`${day} ${value.block} blocks`}</title></rect>
+                  <text x={x + width / 2} y="162" textAnchor="middle" fontSize="11" fill="#8a8a90">{day.slice(5)}</text>
                 </g>
               );
             })}
-            <line x1="40" y1="140" x2="700" y2="140" stroke="#dededc" />
+            <line x1="40" y1="140" x2="700" y2="140" stroke="#262628" />
           </svg>
           <ul className="legend">
-            <li><span className="swatch" style={{ background: "#141416" }} />block</li>
-            <li><span className="swatch" style={{ background: "#d4d4d2" }} />ask</li>
+            <li><span className="swatch" style={{ background: "#ededed" }} />block</li>
+            <li><span className="swatch" style={{ background: "#5c5c62" }} />ask</li>
           </ul>
         </div>
       )}
@@ -482,7 +512,7 @@ function Walls({ gates }: { gates: Envelope<GateEvent[]> | null }) {
 function Approvals({ approvals }: { approvals: Envelope<{ ts: string; job: string; sha: string; writes: number | null; ok: number | null; status: string; kind: string }[]> | null }) {
   const list = approvals?.data ?? [];
   return (
-    <section className="card" aria-labelledby="approvals-title">
+    <section id="approvals" className="card" aria-labelledby="approvals-title">
       <h2 id="approvals-title" className="card-title">Approvals</h2>
       <p className="card-sub">Every apply batch: the sha256, the line count, the result, and the job it came from.</p>
       {list.length === 0 ? <p className="empty"><strong>No batch has been staged or applied.</strong> A job that writes apply.sh shows up here after the next load.</p> : (
@@ -513,11 +543,11 @@ function ScheduleGrid({ schedule }: { schedule: Envelope<{ slots: string[]; days
   if (!data) return null;
   const template = `120px repeat(${data.days.length}, minmax(64px, 1fr))`;
   return (
-    <section className="card" aria-labelledby="schedule-title">
+    <section id="schedule" className="card" aria-labelledby="schedule-title">
       <h2 id="schedule-title" className="card-title">Schedule health</h2>
       <p className="card-sub">One cell per slot and day. Hover for the time.</p>
       {data.days.length === 0 ? <p className="empty"><strong>No schedule rows yet.</strong> cos-sched writes these when a slot starts, skips, pauses or pushes.</p> : (
-        <div className="grid">
+        <div className="sched">
           <div className="grid-row" style={{ gridTemplateColumns: template }}>
             <span />
             {data.days.map((day) => <span key={day} className="grid-head">{day.slice(5)}</span>)}
@@ -552,7 +582,7 @@ function Learning({ corrections, evals, board }: {
   const arms = parseJson<{ arm: string; mean_score: number; violations: number }[]>(latest?.arms, []);
   const health = board?.data ?? [];
   return (
-    <section className="card" aria-labelledby="learn-title">
+    <section id="learning" className="card" aria-labelledby="learn-title">
       <h2 id="learn-title" className="card-title">Learning</h2>
       <p className="card-sub">Open corrections, the latest eval, and the board-health trend.</p>
       <div className="tiles" style={{ marginTop: 12 }}>

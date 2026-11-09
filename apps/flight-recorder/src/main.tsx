@@ -1,3 +1,5 @@
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/urbanist/300.css";
 import "@fontsource/urbanist/400.css";
 import "@fontsource/urbanist/500.css";
