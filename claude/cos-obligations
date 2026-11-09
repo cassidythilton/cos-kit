@@ -171,7 +171,17 @@ def act(items, prev, pol):
                 it['state'] = 'drafting'; continue
             rc = receipt(job)
             stale = it['job_head'] is not None and it['job_head'] != it['head']   # new commits since the draft
-            if rc is None or stale:
+            # A job that died before doing anything (no status, the checker never ran) is redrafted, up to 2 times.
+            crashed = rc is not None and not (rc.get('receipt') or {}).get('status') \
+                      and (rc.get('checker') or {}).get('failures') == ['checker did not run']
+            if crashed:
+                it['crashes'] = p.get('crashes', 0) + 1
+                log('review_crashed', id=oid, job=job, crashes=it['crashes'])
+                if it['crashes'] > 2:
+                    if not p.get('staged'):
+                        staged.append(f"Review {it['repo']}#{it['number']}: the draft job crashed 3 times. See {job_dir(job)}/run.err")
+                    it['staged'] = True; continue
+            if rc is None or stale or crashed:
                 if reviews < MAX_REVIEWS_PER_RUN:
                     start_review(it); it['job_head'] = it['head']; it['state'] = 'drafting'; reviews += 1
                     it['submitted'] = it['staged'] = False

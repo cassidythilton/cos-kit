@@ -9,7 +9,8 @@
 # can't wait for that. So the Mac runs its own schedule and hands the result to the bot, which reports or stays quiet.
 # The bot never runs a command here on a schedule. Interactive work (Cassidy in a chat) still goes bot -> cos-run.
 set -uo pipefail
-export PATH="$HOME/cos/bin:$PATH"
+# launchd starts jobs with a bare PATH. Name every tool's home, so claude, agent, gh and uv are found.
+export PATH="$HOME/cos/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 COS="$HOME/cos"; BRIEFS="$COS/claude/briefs"; LOG="$COS/state/sched.log"; mkdir -p "$COS/state"
 SLOT="${1:?slot or list}"; DRY=0; [[ "${2:-}" == "--dry-run" ]] && DRY=1
 D="$(date +%Y%m%d)"
