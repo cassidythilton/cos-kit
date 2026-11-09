@@ -53,10 +53,14 @@ Then set a baseline for the eval suite (about $20; KEEPER compares every propose
 For each Bot with a webhook routine, open the routine (click the Bot's name → Details → Routines → the routine). Copy **POST to** and **key**, then run this in your own terminal, so the key never goes through a chat:
 
 ```bash
+security add-generic-password -U -a cos-url -s cos-webhook-steward -w 'PASTE-THE-POST-TO-URL-HERE'
+```
+
+```bash
 security add-generic-password -U -a cos -s cos-webhook-steward -w
 ```
 
-It prompts twice: paste the URL, a space, and the key (`https://… abc123`). Typed at the prompt, it stays out of your shell history.
+The first stores the URL, which isn't secret. The second prompts twice for the key: paste it, press Enter, paste it again, press Enter. Nothing shows as you paste, and the key stays out of your shell history.
 
 Repeat with `cos-webhook-ops`, `cos-webhook-builder` and `cos-webhook-keeper`. Then:
 

@@ -1,18 +1,20 @@
 #!/bin/bash
 # cos-push <bot> <slot> <receipt.json>: hand a finished job's receipt to a bot's Grok routine webhook.
 #
-# The webhook URL and key live in the macOS Keychain, one item per bot, set once by Cassidy:
-#   security add-generic-password -U -a cos -s cos-webhook-<bot> -w      (prompts; enter '<POST-to URL> <key>')
+# The webhook URL and key live in the macOS Keychain, two items per bot, set once by Cassidy:
+#   security add-generic-password -U -a cos-url -s cos-webhook-<bot> -w '<POST-to URL>'     (the URL isn't secret)
+#   security add-generic-password -U -a cos     -s cos-webhook-<bot> -w                     (prompts twice for the key)
 # The key is never printed, logged or put on a command line (curl reads it from stdin).
 # A 200 means Grok accepted the call and started a run, not that the bot finished.
 set -uo pipefail
 BOT="${1:?bot}"; SLOT="${2:?slot}"; FILE="${3:?receipt.json}"
 [[ "$BOT" =~ ^(chief|ops|steward|builder|keeper)$ ]] || { echo "unknown bot: $BOT" >&2; exit 64; }
 [[ -f "$FILE" ]] || { echo "no file: $FILE" >&2; exit 66; }
-ITEM="$(security find-generic-password -a cos -s "cos-webhook-$BOT" -w 2>/dev/null)" || {
-  echo "no Keychain item cos-webhook-$BOT. Set it once (see INSTALL.md, step 4)." >&2; exit 69; }
-URL="${ITEM%% *}"; KEY="${ITEM#* }"
-[[ "$URL" =~ ^https:// && -n "$KEY" && "$KEY" != "$ITEM" ]] || { echo "Keychain item cos-webhook-$BOT should be '<https URL> <key>'" >&2; exit 65; }
+KEY="$(security find-generic-password -a cos -s "cos-webhook-$BOT" -w 2>/dev/null)" || {
+  echo "no Keychain key for cos-webhook-$BOT. Set it once (see INSTALL.md, step 4)." >&2; exit 69; }
+URL="$(security find-generic-password -a cos-url -s "cos-webhook-$BOT" -w 2>/dev/null)" || URL=""
+if [[ -z "$URL" && "$KEY" == https://*" "* ]]; then URL="${KEY%% *}"; KEY="${KEY#* }"; fi   # older one-item form
+[[ "$URL" =~ ^https:// && -n "$KEY" ]] || { echo "Keychain needs the URL (account cos-url) and the key (account cos) for cos-webhook-$BOT" >&2; exit 65; }
 
 # Only the fields a bot needs, capped, so a runaway receipt can't flood a chat.
 BODY="$(jq -c --arg slot "$SLOT" --arg host "$(scutil --get LocalHostName 2>/dev/null || hostname)" \
