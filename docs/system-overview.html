@@ -12,11 +12,11 @@
   --muted: #5a6170;
   --rule: #dfe2e8;
   --accent: #2f55c8;
-  --chief: #2f55c8;
-  --ops: #0f8a7e;
-  --steward: #b26a00;
-  --builder: #8a3fb5;
-  --keeper: #c0392b;
+  --chief: #3d80f1;
+  --ops: #e54796;
+  --steward: #e66f30;
+  --builder: #e79738;
+  --keeper: #757675;
   --mac: #3d4452;
   --chip-bg: #eef0f4;
   --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
@@ -26,13 +26,13 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111318; --surface: #191c23; --ink: #e8eaf0; --muted: #9aa1b0; --rule: #2b303b; --accent: #7d9bff;
-    --chief: #7d9bff; --ops: #3cc4b4; --steward: #e9a23b; --builder: #c38bea; --keeper: #f07b6e; --mac: #aab2c2; --chip-bg: #232733;
+    --chief: #5b97ff; --ops: #f06aa8; --steward: #f0884f; --builder: #f0ac55; --keeper: #a3a4a3; --mac: #aab2c2; --chip-bg: #232733;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #111318; --surface: #191c23; --ink: #e8eaf0; --muted: #9aa1b0; --rule: #2b303b; --accent: #7d9bff;
-  --chief: #7d9bff; --ops: #3cc4b4; --steward: #e9a23b; --builder: #c38bea; --keeper: #f07b6e; --mac: #aab2c2; --chip-bg: #232733;
+  --chief: #5b97ff; --ops: #f06aa8; --steward: #f0884f; --builder: #f0ac55; --keeper: #a3a4a3; --mac: #aab2c2; --chip-bg: #232733;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -104,9 +104,9 @@ a { color: var(--accent); }
 <div class="wrap">
 
 <header>
-  <div class="eyebrow">Cassidy Hilton · data org · as of November 9, 2026</div>
+  <div class="eyebrow">Cassidy Hilton · data org · v6 · as of November 9, 2026</div>
   <h1>Chief of Staff System</h1>
-  <p class="lede">Five Grok bots and one Mac. You talk to the Chief. The other four each own one part of the work. Your Mac does everything that touches the repos, the board, transcripts or data, and it runs its own schedule. Nothing leaves the team, merges, or changes shared state without your yes on that exact action.</p>
+  <p class="lede">Five Grok bots and one Mac. You talk to the Chief. The other four each own one part of the work. Your Mac does everything that touches the repos, the board, transcripts or data, and it runs its own schedule. It owns what's waiting on you until it's closed. Nothing leaves the team, merges, or changes shared state without your yes on that exact action, except the two kinds of work you pre-approved.</p>
   <div class="meta">
     <span class="chip">kit: ~/cos/kit (git)</span>
     <span class="chip">engines: Claude Code, Cursor Agent</span>
@@ -165,7 +165,7 @@ a { color: var(--accent); }
   <div class="bots">
     <article class="bot c-chief">
       <div class="head"><span class="name">CHIEF</span><span class="when">whenever you message it</span></div>
-      <p class="job">Your one contact. Restates each request as a brief, picks the cheapest way to do it, gets your yes, and reports in five lines.</p>
+      <p class="job">Your one contact and the only door: the only bot that runs commands or writes anywhere. Restates each request as a brief, gets your yes, reports finished jobs.</p>
       <dl>
         <dt>Owns</dt><dd>Routing, open loops, approvals, mail, Slack and calendar errands</dd>
         <dt>Never</dt><dd>Sends, merges, or edits a sheet or calendar without your yes on that exact change</dd>
@@ -174,10 +174,10 @@ a { color: var(--accent); }
     </article>
     <article class="bot c-ops">
       <div class="head"><span class="name">OPS</span><span class="when">weekdays 06:30</span></div>
-      <p class="job">Your clock. The morning brief, with follow-up drafts from yesterday's calls.</p>
+      <p class="job">Your clock, and what's waiting on you. The morning brief, follow-up drafts, and the obligations ledger, owned until each item is closed.</p>
       <dl>
         <dt>Owns</dt><dd>Today's meetings and prep, replies you owe, overdue items, blockers</dd>
-        <dt>Never</dt><dd>Sends anything, or runs commands on your Mac</dd>
+        <dt>Never</dt><dd>Sends anything, or runs a command</dd>
         <dt>Talks to</dt><dd>You through its brief. Receives the Mac's 06:15 follow-ups.</dd>
       </dl>
     </article>
@@ -236,6 +236,7 @@ a { color: var(--accent); }
         <tr><td class="t">eval</td><td>Tests a prompt change blind on six real requests</td><td>Claude, judged by Codex</td><td>about $4</td></tr>
         <tr><td class="t">note</td><td>Records a correction for KEEPER</td><td>no model</td><td>free</td></tr>
         <tr><td class="t">pause</td><td>Holds a scheduled job for N days</td><td>no model</td><td>free</td></tr>
+        <tr><td class="t">receipt</td><td>A job's result, or "running" or "failed". Long lanes run with <code>--async</code> and push their result to the Chief.</td><td>no model</td><td>free</td></tr>
       </tbody>
     </table>
   </div>
@@ -255,6 +256,7 @@ a { color: var(--accent); }
         <tr><td class="t">Mon 08:30</td><td>Build opportunities</td><td class="who c-builder">BUILDER</td><td>Up to three, each tied to a card</td></tr>
         <tr><td class="t">Fri 10:00</td><td>The weekly pass, in David's order</td><td class="who c-steward">STEWARD</td><td>The packet for you and Melanie</td></tr>
         <tr><td class="t">Fri 13:00</td><td>The audit of every bot and lane</td><td class="who c-keeper">KEEPER</td><td>A scorecard and up to three fixes</td></tr>
+        <tr><td class="t">Weekdays 8–16, every 2 h</td><td>What's waiting on you: reviews, finished cards, mentions</td><td class="who c-ops">OPS</td><td>What the Mac finished under standing approval, and what needs one tap</td></tr>
       </tbody>
     </table>
   </div>
@@ -297,7 +299,9 @@ a { color: var(--accent); }
 <section>
   <h2>The walls</h2>
   <div class="walls">
-    <div class="wall"><strong>Approval cards</strong><span>Every command on your Mac shows the exact command first. Mac execution is set to ask every time.</span></div>
+    <div class="wall"><strong>One door</strong><span>Only the Chief runs commands or writes. Approval cards appear in one chat.</span></div>
+    <div class="wall"><strong>Permissions</strong><span>Read-only cos-run lanes run without a card. Every other Mac command, and every write, asks first.</span></div>
+    <div class="wall"><strong>Standing approvals</strong><span>Only comment-only PR reviews and closing finished cards, with checks, a day's notice and a veto.</span></div>
     <div class="wall"><strong>Custom Rules</strong><span>Sending, posting, calendar, sheets, GitHub writes, purchases and Zoom sign-in always stop and ask.</span></div>
     <div class="wall"><strong>The gate</strong><span>Blocks secrets, production writes, infrastructure, force-push, canon values and edits to the system's own controls in every job.</span></div>
     <div class="wall"><strong>Approval by hash</strong><span>A write batch runs only if it matches the sha256 you approved, once.</span></div>
@@ -336,7 +340,7 @@ a { color: var(--accent); }
 </section>
 
 <footer>
-  <span>Open items: the AI Data Stewardship Field Guide (Tolga) isn't found yet; PR #610 is unmerged; the Chief's old 7:30 brief and 4:30 sweep run until OPS and STEWARD prove out.</span>
+  <span>Open items: the AI Data Stewardship Field Guide (Tolga) isn't found yet; PR #610 is unmerged; Grok's GitHub app needs a wisecodeai owner's approval; the Chief's old 7:30 brief and 4:30 sweep run until OPS and STEWARD prove out.</span>
   <span>KEEPER keeps this page current. The source is docs/system-overview.html in the kit.</span>
 </footer>
 

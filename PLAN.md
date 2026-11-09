@@ -1,10 +1,25 @@
 # Chief of staff v2
 
-As of November 9, 2026 (v5). Builds on `chief-of-staff-support-and-access-2026-11-07.md`.
+As of November 9, 2026 (v6). Builds on `chief-of-staff-support-and-access-2026-11-07.md`.
 
 ## In one paragraph
 
 You talk to one Grok bot, the **Chief**. It handles mail, Slack and calendar itself. When a job needs your Mac (the repo, GitHub, transcripts), it runs one command, `cos-run`, and picks the cheapest engine that can do the job. **Cursor Agent** answers quick repo questions for pennies. **Claude Code** does multi-step work, with the same settings, skills and model you use in Cursor every day. Both engines follow the repo's own playbook: `AGENTS.md` and the 28 data-org skills. A second bot, **OPS**, runs your personal routines. A third, **STEWARD**, keeps the initiatives board and the roadmap true every business day. A fourth, **BUILDER**, runs engineering builds from opportunity to a proven prototype to a candidate for The Pantry. A fifth, **KEEPER**, looks after the other four: every Friday it finds what keeps going wrong and proposes a tested fix. Scheduled work starts on your Mac, not in a bot, and the results are pushed to the bots.
+
+## What the first live day changed (November 9, evening)
+
+The design held up where it was strict and failed where it was passive or loose. Every fix below is in the kit, and INSTALL.md (v6) has the steps.
+
+| What happened | Why | The change |
+| --- | --- | --- |
+| A review request on #722 was "handled" with a comment somewhere else, and #704 sat untouched | The bots flagged obligations and stopped. Nothing owned them to closure. | `cos-obligations`: everything waiting on Cassidy is owned until its system of record shows it closed. Standing approvals for comment-only PR reviews and for closing finished cards. |
+| Cassidy approved the same job about ten times | A 3-minute job outran Grok's terminal call, and the Chief re-asked | `--async`, `cos-run receipt`, and a results webhook to the Chief |
+| STEWARD asked for approval in its own chat, with raw GitHub mutations | Its rule said it never runs commands "on a schedule". Live requests slipped through. | The one-door rule: only the Chief runs commands or writes. Approvals happen in one chat. |
+| Every scheduled Claude job failed | launchd's bare PATH didn't include `~/.local/bin` | An explicit PATH in `cos-sched`. Proved in a launchd-equivalent environment. |
+| A card per lookup | Mac execution set to ask every time | Read-only `cos-run` lanes run without a card. Everything else still asks. |
+| No single view of what ran | The evidence was scattered across folders | The flight recorder: ledger, `cos.db` and a local page |
+
+The first standing-approval rule would have closed #423 because its PR had merged. Its body still had six open milestones. A card with an unchecked box is never closed by the Mac now, and every close is announced a day ahead.
 
 ## What changed on November 9: the devil's-advocate pass
 
@@ -287,6 +302,9 @@ There are three different "memories". Each needs different care.
 5. **After two weeks: KEEPER.** Its first audit replaces the old Friday receipt. Cut whatever you wouldn't miss.
 
 ## Honest limits
+
+- Standing approvals post under Cassidy's name. A comment-only review is submitted only after its checker passes, with one evidence entry per finding. He chose that trade on 2026-11-09, and can turn it off in `~/cos/handbook/standing-approvals.json`.
+- Grok's GitHub app can't see wisecodeai repos until an org owner approves it. Cassidy is a member, not an owner. Until then, GitHub work goes through his Mac's `gh`.
 
 - Your Mac must be awake for any `cos-run` job. Scheduled runs it slept through are skipped and reported as MISSED, never replayed late.
 - Grok doesn't document a way for one Bot to read another's conversation. KEEPER works from receipts and the corrections you record, so a correction you don't record is a lesson it can't learn.

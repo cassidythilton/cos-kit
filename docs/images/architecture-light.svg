@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 460" width="900" height="460" role="img" aria-label="You ask the Chief. The Chief hands work to OPS, STEWARD, BUILDER and KEEPER, and runs cos-run on the Mac after your tap. The Mac clock starts scheduled jobs and pushes each receipt to the bot that owns it. cos-run reads the repos, board, transcripts, Slack and the lake.">
-  <style>svg{--bg:#f6f7f9;--surface:#ffffff;--ink:#15181e;--muted:#5a6170;--rule:#c9ced8;--amber:#b26a00;--chief:#2f55c8;--ops:#0f8a7e;--steward:#b26a00;--builder:#8a3fb5;--keeper:#c0392b;--mac:#3d4452}
+  <style>svg{--bg:#f6f7f9;--surface:#ffffff;--ink:#15181e;--muted:#5a6170;--rule:#c9ced8;--amber:#b26a00;--chief:#3d80f1;--ops:#e54796;--steward:#e66f30;--builder:#e79738;--keeper:#757675;--mac:#3d4452}
 text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
 .bg{fill:var(--bg);stroke:var(--rule);stroke-width:1}
 .edges line{stroke:var(--muted);stroke-width:1.4}

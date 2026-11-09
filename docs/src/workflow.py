@@ -13,6 +13,7 @@ ROWS=[
  dict(req="Daily capture onto the board", tag='SCHEDULED 16:00', bot=('STEWARD','steward'), lane=('investigate → apply','apply'), eng=('Claude Code, then none','claude'), res="Batch by sha256. You approve."),
  dict(req="Prototype the IQA low-confidence flag", bot=('BUILDER','builder'), lane=('pair · build','build'), eng=('Claude + verifier + Codex','claude'), res="Proven slice, draft PR to owner"),
  dict(req="STEWARD keeps miscounting stale cards", bot=('CHIEF → KEEPER','keeper'), lane=('note → eval','keeper'), eng=('Claude, judged by Codex','codex'), res="Tested fix. You apply it."),
+ dict(req="Review requested on PR #704", tag='EVERY 2 HOURS', bot=('OPS · obligations','ops'), lane=('investigate → standing','apply'), eng=('Claude Code, review brief','claude'), res="Review posted, told after"),
  dict(req="Find the transcript for the OGD call", bot=('CHIEF','chief'), lane=('browser, not Mac','none'), eng=('Grok computer','grok'), res="Saved to the Mac, after your yes"),
 ]
 TOP=150; RH=56; BH=36
@@ -84,12 +85,12 @@ css='''text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Ar
 .rule{stroke:var(--rule);stroke-width:1}
 .req{font-size:13.5px;font-weight:500}
 .req.q{font-style:italic}
-.tag{fill:none;stroke:var(--steward);stroke-width:1.2}
-.tagt{font-size:10px;font-weight:700;letter-spacing:.06em;fill:var(--steward)}
+.tag{fill:none;stroke:var(--muted);stroke-width:1.2}
+.tagt{font-size:10px;font-weight:700;letter-spacing:.06em;fill:var(--muted)}
 .pill rect{fill:var(--surface);stroke:var(--c);stroke-width:1.8}
 .pill text{font-size:12.5px;font-weight:600;text-anchor:middle}
 .pill text.small{font-size:11px;font-weight:400;fill:var(--muted)}
-.k-chief{--c:var(--chief)}.k-steward{--c:var(--steward)}.k-builder{--c:var(--builder)}.k-keeper{--c:var(--keeper)}
+.k-chief{--c:var(--chief)}.k-ops{--c:var(--ops)}.k-steward{--c:var(--steward)}.k-builder{--c:var(--builder)}.k-keeper{--c:var(--keeper)}
 .k-mac{--c:var(--mac)}.k-apply{--c:var(--amber)}.k-build{--c:var(--builder)}.k-grok{--c:var(--ink)}
 .k-cursor{--c:var(--mac)}.k-claude{--c:var(--claude)}.k-codex{--c:var(--codex)}
 .k-none rect{stroke-dasharray:4 3}.k-none{--c:var(--muted)}
@@ -105,10 +106,10 @@ css='''text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Ar
 .yn{font-size:11px;fill:var(--muted);font-weight:600}
 .foot{font-size:11.5px;fill:var(--muted)}'''
 themes={
- 'light':'--bg:#f6f7f9;--surface:#ffffff;--band:#eceef3;--ink:#15181e;--muted:#5a6170;--rule:#d3d7df;--amber:#b26a00;--chief:#2f55c8;--steward:#b26a00;--builder:#8a3fb5;--keeper:#c0392b;--mac:#3d4452;--claude:#c96442;--codex:#10a37f',
- 'dark':'--bg:#161b22;--surface:#0d1117;--band:#1d232c;--ink:#e8eaf0;--muted:#9aa1b0;--rule:#30363d;--amber:#e9a23b;--chief:#7d9bff;--steward:#e9a23b;--builder:#c38bea;--keeper:#f07b6e;--mac:#aab2c2;--claude:#e8916f;--codex:#3ccfa0',
+ 'light':'--bg:#f6f7f9;--surface:#ffffff;--band:#eceef3;--ink:#15181e;--muted:#5a6170;--rule:#d3d7df;--amber:#b26a00;--chief:#3d80f1;--ops:#e54796;--steward:#e66f30;--builder:#e79738;--keeper:#757675;--mac:#3d4452;--claude:#c96442;--codex:#10a37f',
+ 'dark':'--bg:#161b22;--surface:#0d1117;--band:#1d232c;--ink:#e8eaf0;--muted:#9aa1b0;--rule:#30363d;--amber:#e9a23b;--chief:#5b97ff;--ops:#f06aa8;--steward:#f0884f;--builder:#f0ac55;--keeper:#a3a4a3;--mac:#aab2c2;--claude:#e8916f;--codex:#3ccfa0',
 }
-head=f'<text class="title" x="24" y="42">Who does what</text><text class="lede" x="24" y="66">Nine real requests, traced from the bot that takes them to the engine that does the work.</text><text class="lede" x="24" y="84">Grok handles conversation, mail and routing. Cursor answers one-command lookups. Claude Code does anything multi-step. Codex checks Claude.</text>'
+head=f'<text class="title" x="24" y="42">Who does what</text><text class="lede" x="24" y="66">Ten real requests, traced from the bot that takes them to the engine that does the work.</text><text class="lede" x="24" y="84">Grok handles conversation, mail and routing. Cursor answers one-command lookups. Claude Code does anything multi-step. Codex checks Claude.</text>'
 for name,vars_ in themes.items():
     svg=f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-label="Routing: nine example requests traced through the Grok bot that takes them, the Mac lane, and the engine, with the Chief's decision rule for picking a lane.">
 <style>svg{{{vars_}}}

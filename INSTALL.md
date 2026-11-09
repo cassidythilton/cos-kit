@@ -10,7 +10,7 @@ The kit is versioned by this file. `install.sh` is the only install step on the 
 cd ~/cos/kit && ./install.sh --online
 ```
 
-It checks prerequisites, copies the kit into `~/cos/kit` (a git repo) and everything else into `~/cos`, creates `~/builds`, installs `cassidy-mode`, and proves the walls: 77 checks, no model. It creates `~/.claude/CLAUDE.md` only if you don't have one. Re-run it after every kit change. It backs up a kit-owned handbook file before replacing it and never touches your own (`people.md`, `workstreams.md`, `sources.md`).
+It checks prerequisites, copies the kit into `~/cos/kit` (a git repo) and everything else into `~/cos`, creates `~/builds`, installs `cassidy-mode`, and proves the walls: 107 checks, no model. It creates `~/.claude/CLAUDE.md` only if you don't have one. Re-run it after every kit change. It backs up a kit-owned handbook file before replacing it and never touches your own (`people.md`, `workstreams.md`, `sources.md`).
 
 Then three smoke tests, in order:
 
@@ -36,19 +36,25 @@ Then set a baseline for the eval suite (about $20; KEEPER compares every propose
 
 ## 2. Grok Bot settings (once, for every Bot)
 
-1. **Settings → Computer → Your computer → Execution on this computer: Ask every time.** Each Mac command shows a card with the exact command, and tapping it is your approval. Don't choose Always allow.
-2. **Settings → Permissions (Auto-review on): add the Custom Rules**, one Ask first rule each, from the bottom half of `grokbot/ops-and-custom-rules.md`. They cover the cloud computer and connected apps, not the Mac.
-3. **Skills:** save `claude-skills/cassidy-mode/SKILL.md` as a private skill called `cassidy-mode`, and enable it for every Bot.
+Do these in order, so the rules are in place before the per-command card goes away.
+
+1. **Settings → Permissions** (Auto-review on). **Always Ask**, one rule each: send an email or Slack message or post anywhere · create, change or delete a calendar event or respond to an invitation · edit a Google Sheet, Doc or Slide that isn't a new draft · comment on, approve, merge or close anything on GitHub, or edit a GitHub Project · buy anything or enter payment details · sign in to Zoom or download anything from Zoom · open more than 5 web pages for one task, or start a task expected to take more than 15 minutes · retry a step that already failed twice · run any command on my Mac that isn't ~/cos/bin/cos-run · run ~/cos/bin/cos-run with the draft, build, apply or eval lane.
+2. **Settings → Permissions → Allow without Asking:** run ~/cos/bin/cos-run with the quick, investigate, receipt, note or pause lane. Leave the Plugin allowlist empty.
+3. **Settings → Computer → Execution on this computer: Always allow.** Auto-review still checks every command against the rules above.
+4. Save `claude-skills/cassidy-mode/SKILL.md` as the `cassidy-mode` skill, the voice skill as `cassidy-voice` (with `references/samples.md`), and `handbook/system-map.md` as `system-map`. Skills are shared by every Bot.
+5. Never press **Always allow** on a `cos-run apply` card. Each batch needs its own yes for its own sha256.
 
 ## 3. The Bots (personal Bots have no description field: first message + skill + routine)
 
 | When | Bot | Steps |
 |---|---|---|
-| Week 1, day 1 | Chief (your existing bot) | send the REMEMBER block; "save PLAYBOOK as a private skill called chief-playbook"; test one request per lane |
+| Week 1, day 1 | Chief (your existing bot) | send the REMEMBER block; "save PLAYBOOK as a skill called chief-playbook"; create its results webhook routine; test one request per lane |
 | Week 1, day 2 | OPS | REMEMBER; save `ops-playbook`; ask for the 06:30 routine and the webhook routine |
 | Week 1, day 3 | STEWARD | REMEMBER; save `steward-playbook`; ask for the webhook routine; approve one small batch by hash |
 | First build | BUILDER | REMEMBER; save `builder-playbook`; webhook routine; pick one opportunity, `cos-run pair` it, approve its BRIEF.md and VERIFY.md |
 | After 2 weeks | KEEPER | REMEMBER; save `keeper-playbook`; save `handbook/system-map.md` as the `system-map` skill and enable it for KEEPER and the Chief; webhook routine. Its first Friday audit replaces the old receipt. |
+
+Every specialist (OPS, STEWARD, BUILDER, KEEPER) also gets the one-door rule as a lasting rule. It's in each file's REMEMBER block: the Chief is the only Bot that runs commands or writes anywhere, so every approval happens in the Chief's chat.
 
 ## 4. Webhook keys into the Keychain, then the schedule
 
@@ -64,7 +70,7 @@ security add-generic-password -U -a cos -s cos-webhook-steward -w
 
 The first stores the URL, which isn't secret. The second prompts twice for the key: paste it, press Enter, paste it again, press Enter. Nothing shows as you paste, and the key stays out of your shell history.
 
-Repeat with `cos-webhook-ops`, `cos-webhook-builder` and `cos-webhook-keeper`. Then:
+Repeat with `cos-webhook-ops`, `cos-webhook-builder`, `cos-webhook-keeper` and `cos-webhook-chief` (the Chief's results webhook: finished `--async` jobs report there). Then:
 
 ```bash
 cd ~/cos/kit && ./install.sh --online --schedule
@@ -141,6 +147,14 @@ Created at runtime: `~/cos/kit` (this kit, as a git repo), `~/cos/state/correcti
 
 ## Changes from the last install
 
+- v6 (Nov 9, evening): what the first live day taught.
+  - **Off his plate:** `cos-obligations` owns review requests, finished cards and unanswered mentions until GitHub shows them closed. Standing approvals for comment-only PR reviews and for closing a finished card (no unchecked box, a day's notice, a veto). RSVPs and card logs stay one tap. `--schedule=obligations`.
+  - **One door:** only the Chief runs commands or writes. A loophole ("never on a schedule") let STEWARD try raw GitHub mutations from its own chat.
+  - **Async:** long lanes take `--async`, `cos-run receipt` reads a result, and finished jobs push to the Chief's results webhook. The Chief had re-asked one job about ten times.
+  - **The flight recorder:** an append-only ledger, `~/cos/state/cos.db`, and a dark-console page at http://127.0.0.1:8787. `--schedule=dashboard` refreshes it every five minutes.
+  - **Permissions:** read-only `cos-run` lanes run without a card. Everything else asks.
+  - **Fixed:** scheduled jobs couldn't find `claude` under launchd's bare PATH. A job that never ran is redrafted, not handed to Cassidy. Dry runs no longer log skips. Review drafts carry one evidence entry per finding and lint in the allowed form. The installer checks Python scripts as Python.
+  - 107 install checks.
 - v5.2 (Nov 9, first live install): OPS brief at 06:30, follow-ups at 06:15. Fixed from the smoke tests: the gate blocked reads of the handbook (any `>` near a control path), and copies *from* a control file; it now blocks only writes into one. Report-only `make intake-holders`, `intake-sweep`, `board-intake` and `ship-reconcile` are allowed without `EXECUTE=1`. Jobs get read-only `cat`, `head`, `grep`, `jq` and `git -C … log/show`, and are told to run one simple command per call. The quick lane flags ESCALATE anywhere in the answer. The checker knows the exact apply allowlist.
 - v5.1 (Nov 9): conformance pass against data-org and data-org-notebook (origin/main). The system map. Draft branches renamed `cassidy/cos-<job>`. The notebook read from a fresh `~/cos/notebook-main`. The writing standard, the boundary and `context/` enforced in jobs and the checker. Canon charter decision 14: no second-provider review of canon or label builds, and no canon or label text to the Grok bots. The Zoom web ladder. A sixth eval case for the boundary.
 - v5 (Nov 9): the devil's-advocate pass against Grok Bot's docs. Bots install as REMEMBER + playbook skill (no description field). The Mac runs the schedule and pushes to webhook routines. Builds get baseline-vs-treatment, an independent verifier and proof records. `cos-run eval` (blinded, Codex judge) and `cos-run note`. KEEPER. `cassidy-mode` for Claude, Cursor and Grok. The kit lives in `~/cos/kit` under git. Fixed: bash 3.2 empty-array crash, Zoom transcripts unreadable by jobs. The gate now blocks edits to the system's own controls.

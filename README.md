@@ -1,13 +1,13 @@
 # cos-kit
 
-> **Five bots, one Mac, nothing unapproved.** Cassidy's chief-of-staff system. Five Grok bots split the work: a Chief he talks to, and four specialists for his clock, the board, engineering builds and the bots themselves. His Mac does everything that touches the repos, the board, transcripts or data, through one front desk and its own clock. Nothing leaves the team, merges, or changes shared state without his yes on that exact action.
+> **Five bots, one Mac, nothing unapproved.** Cassidy's chief-of-staff system. Five Grok bots split the work: a Chief he talks to, and four specialists for his clock, the board, engineering builds and the bots themselves. His Mac does everything that touches the repos, the board, transcripts or data, through one front desk and its own clock. It owns what's waiting on him until it's closed. Nothing leaves the team, merges, or changes shared state without his yes on that exact action, except the two kinds of work he pre-approved.
 
-![version](https://img.shields.io/badge/version-5.2-2f55c8?style=flat-square)
+![version](https://img.shields.io/badge/version-6.0-3d80f1?style=flat-square)
 ![status](https://img.shields.io/badge/status-installed_2026--11--09-56E39F?style=flat-square)
 ![bots](https://img.shields.io/badge/bots-Grok_Bot_·_5-15181e?style=flat-square)
 ![engines](https://img.shields.io/badge/engines-Claude_Code_·_Cursor_Agent-D97757?style=flat-square&logo=anthropic&logoColor=white)
 ![mac](https://img.shields.io/badge/Mac-launchd_·_bash_·_gh-3d4452?style=flat-square&logo=apple&logoColor=white)
-![checks](https://img.shields.io/badge/install_checks-103%2F103-56E39F?style=flat-square)
+![checks](https://img.shields.io/badge/install_checks-107%2F107-56E39F?style=flat-square)
 ![license](https://img.shields.io/badge/license-private-5B6C5D?style=flat-square)
 
 <p align="center">
@@ -26,15 +26,16 @@
 1. [What Problem Does This Solve?](#what-problem-does-this-solve)
 2. [The Bots](#the-bots)
 3. [Who Does What](#who-does-what)
-4. [The Mac](#the-mac)
-5. [The Flight Recorder](#the-flight-recorder)
-6. [The Week](#the-week)
-7. [How a Write Gets Approved](#how-a-write-gets-approved)
-8. [The Walls](#the-walls)
-9. [How It Learns](#how-it-learns)
-10. [Rules That Come First](#rules-that-come-first)
-11. [Install and Change](#install-and-change)
-12. [Project Structure](#project-structure)
+4. [What's Waiting on Cassidy](#whats-waiting-on-cassidy)
+5. [The Mac](#the-mac)
+6. [The Flight Recorder](#the-flight-recorder)
+7. [The Week](#the-week)
+8. [How a Write Gets Approved](#how-a-write-gets-approved)
+9. [The Walls](#the-walls)
+10. [How It Learns](#how-it-learns)
+11. [Rules That Come First](#rules-that-come-first)
+12. [Install and Change](#install-and-change)
+13. [Project Structure](#project-structure)
 
 ---
 
@@ -46,11 +47,12 @@ This kit splits the work by owner and puts walls where mistakes are expensive:
 
 | Need | How the kit meets it |
 | --- | --- |
-| ![one](https://img.shields.io/badge/One_contact-2f55c8?style=flat-square) | Cassidy talks only to the Chief, which restates each ask as a brief and routes it |
-| ![fresh](https://img.shields.io/badge/Fresh_facts-0f8a7e?style=flat-square) | Owners, dates, RAGB and status are fetched from their system of record every time, never remembered |
-| ![board](https://img.shields.io/badge/Board_kept_true-b26a00?style=flat-square) | STEWARD runs the repo's own `make` targets daily and stages writes for his yes |
-| ![proof](https://img.shields.io/badge/Proof,_not_promises-8a3fb5?style=flat-square) | Builds are verified before and after, by an independent verifier and a second model |
-| ![learn](https://img.shields.io/badge/Gets_better-c0392b?style=flat-square) | KEEPER turns repeated mistakes into checks and tested fixes |
+| ![one](https://img.shields.io/badge/One_door-3d80f1?style=flat-square) | Cassidy talks only to the Chief. It's the only bot that runs commands or writes anywhere, so every approval happens in one chat |
+| ![plate](https://img.shields.io/badge/Off_his_plate-56E39F?style=flat-square) | Review requests, mentions and finished cards are owned until GitHub shows them closed, not just flagged |
+| ![fresh](https://img.shields.io/badge/Fresh_facts-e54796?style=flat-square) | Owners, dates, RAGB and status are fetched from their system of record every time, never remembered |
+| ![board](https://img.shields.io/badge/Board_kept_true-e66f30?style=flat-square) | STEWARD runs the repo's own `make` targets daily and stages writes for his yes |
+| ![proof](https://img.shields.io/badge/Proof,_not_promises-e79738?style=flat-square) | Builds are verified before and after, by an independent verifier and a second model |
+| ![learn](https://img.shields.io/badge/Gets_better-757675?style=flat-square) | KEEPER turns repeated mistakes into checks and tested fixes |
 
 ---
 
@@ -58,13 +60,15 @@ This kit splits the work by owner and puts walls where mistakes are expensive:
 
 | Bot | Job | Runs | Never | Status |
 | --- | --- | --- | --- | --- |
-| ![chief](https://img.shields.io/badge/CHIEF-2f55c8?style=flat-square) | The only bot Cassidy talks to. Restates each ask as a brief, picks the lane, gets his yes. | When he messages it | Sends, merges, or changes a sheet or calendar without his yes | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
-| ![ops](https://img.shields.io/badge/OPS-0f8a7e?style=flat-square) | The morning brief, with follow-up drafts from yesterday's calls | Weekdays 06:30 | Sends anything, or runs commands on the Mac | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
-| ![steward](https://img.shields.io/badge/STEWARD-b26a00?style=flat-square) | The board (Project 1) and the Data Roadmap sheet, run on the repo's own targets | Daily, Tue/Thu, Fri | Writes on another owner's card, runs `EXECUTE=1`, edits the sheet | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
-| ![builder](https://img.shields.io/badge/BUILDER-8a3fb5?style=flat-square) | Turns board work that needs engineering into proven prototypes and draft PRs for their owners | Mondays 08:30 | Builds off the board, merges, deploys, touches production | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
-| ![keeper](https://img.shields.io/badge/KEEPER-c0392b?style=flat-square) | Audits the other bots weekly and proposes tested fixes | Fridays 13:00 | Changes a bot, skill, routine or this kit itself | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
+| ![chief](https://img.shields.io/badge/CHIEF-3d80f1?style=flat-square) | The only bot Cassidy talks to, and the only one that runs commands. Restates each ask as a brief, picks the lane, gets his yes, reports finished jobs. | When he messages it | Sends, merges, or changes a sheet or calendar without his yes | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
+| ![ops](https://img.shields.io/badge/OPS-e54796?style=flat-square) | The morning brief, with follow-up drafts from yesterday's calls. Owns the obligations ledger until each item is closed. | Weekdays 06:30, and every two hours | Sends anything, or runs a command | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
+| ![steward](https://img.shields.io/badge/STEWARD-e66f30?style=flat-square) | The board (Project 1) and the Data Roadmap sheet, run on the repo's own targets | Daily, Tue/Thu, Fri | Writes on another owner's card, runs `EXECUTE=1`, edits the sheet | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
+| ![builder](https://img.shields.io/badge/BUILDER-e79738?style=flat-square) | Turns board work that needs engineering into proven prototypes and draft PRs for their owners | Mondays 08:30 | Builds off the board, merges, deploys, touches production | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
+| ![keeper](https://img.shields.io/badge/KEEPER-757675?style=flat-square) | Audits the other bots weekly and proposes tested fixes | Fridays 13:00 | Changes a bot, skill, routine or this kit itself | ![live](https://img.shields.io/badge/-live-56E39F?style=flat-square) |
 
 Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved as a shared Grok skill. Sources: [grokbot/](grokbot/).
+
+**The Chief is the only door.** The four specialists never run a command and never write to GitHub, the board, a calendar or a sheet. They may keep Gmail and Slack drafts and their own notes. Everything else goes to the Chief, so approval cards appear in one chat. This rule closed a loophole on 2026-11-09, when STEWARD tried raw GitHub mutations from its own chat and an Ask first rule stopped it.
 
 ---
 
@@ -75,10 +79,10 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/workflow-dark.svg">
-    <img src="docs/images/workflow-light.svg" alt="Who does what: nine requests traced to the bot, lane and engine, and the Chief's decision rule" width="1000">
+    <img src="docs/images/workflow-light.svg" alt="Who does what: ten requests traced to the bot, lane and engine, and the Chief's decision rule" width="1000">
   </picture>
   <br>
-  <em>Nine real requests, from the bot that takes each one to the engine that does the work, and the rule the Chief uses to pick a lane. Regenerate with <code>python3 docs/src/workflow.py</code>.</em>
+  <em>Ten real requests, from the bot that takes each one to the engine that does the work, and the rule the Chief uses to pick a lane. Regenerate with <code>python3 docs/src/workflow.py</code>.</em>
 </p>
 
 | Engine | Used for | Why that one |
@@ -87,6 +91,29 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 | ![cursor](https://img.shields.io/badge/Cursor_Agent-3d4452?style=flat-square) | `quick`: one read-only command, summarized | Cheapest. The script runs the command, and the model only reads the output. |
 | ![claude](https://img.shields.io/badge/Claude_Code-c96442?style=flat-square&logo=anthropic&logoColor=white) | `investigate`, `draft`, `build`, the checker, the verifier | Multi-step work with the repo's skills, under the gate, with a receipt |
 | ![codex](https://img.shields.io/badge/Codex-10a37f?style=flat-square) | Second-opinion review of builds, the blind eval judge | A different model family catches what Claude misses. Skipped for canon or label builds (decision 14). |
+
+---
+
+## What's Waiting on Cassidy
+
+The system's job is to take things off his plate, not to list them. `cos-obligations` runs every two hours on workdays. It collects everything waiting on him, and the item stays owned until its system of record shows it closed.
+
+| Kind | Found by | Closed when |
+| --- | --- | --- |
+| ![review](https://img.shields.io/badge/Review_request-e54796?style=flat-square) | `gh search prs --review-requested=@me` | GitHub no longer lists him as a requested reviewer |
+| ![close](https://img.shields.io/badge/Finished_card-e66f30?style=flat-square) | his open work-items whose linked PRs (`Tile:`, `Refs`) have all merged | the issue is closed by `make complete` |
+| ![reply](https://img.shields.io/badge/Unanswered_mention-e54796?style=flat-square) | mentions in the last 14 days with no comment from him after them | he comments after the mention |
+
+**Standing approvals**, chosen by Cassidy on 2026-11-09, in [handbook/standing-approvals.json](handbook/standing-approvals.json) (his copy lives in `~/cos/handbook/`):
+
+| Work | Mode | Safeguards |
+| --- | --- | --- |
+| ![a](https://img.shields.io/badge/Comment--only_PR_review-56E39F?style=flat-square) | the Mac finishes it, then tells him | a Claude job drafts it with one evidence entry per finding, lint clean, checker pass, head commit unchanged, and the exact line `gh pr review N --comment …` (never approve, never request changes) |
+| ![d](https://img.shields.io/badge/Close_a_finished_card-56E39F?style=flat-square) | the Mac finishes it, then tells him | his own work-items only, never an epic, every linked PR merged, **no unchecked box in the body**, announced a day ahead, vetoable with `cos-obligations --veto` |
+| ![b](https://img.shields.io/badge/RSVPs-5B6C5D?style=flat-square) | one tap, after he looks | |
+| ![c](https://img.shields.io/badge/His_card_logs_and_RAGB-5B6C5D?style=flat-square) | one tap, after he looks | |
+
+The unchecked-box rule exists because the first version would have closed #423: its PR merged, but six milestones were still open. A job that fails without spending anything (no login, no PATH) is redrafted, not handed to him. Sources: [claude/cos-obligations](claude/cos-obligations), [claude/briefs/review.md](claude/briefs/review.md).
 
 ---
 
@@ -99,12 +126,15 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 | ![quick](https://img.shields.io/badge/quick-3d4452?style=flat-square) | Answers from one read-only command | Cursor Agent | cents |
 | ![investigate](https://img.shields.io/badge/investigate-3d4452?style=flat-square) | Digs in and changes nothing | Claude Code | about $0.30 to $3 |
 | ![draft](https://img.shields.io/badge/draft-3d4452?style=flat-square) | Prepares a doc or repo change on a `cassidy/cos-<job>` branch, never pushed | Claude Code | up to $12 |
-| ![build](https://img.shields.io/badge/build-8a3fb5?style=flat-square) | One build slice, then before-and-after checks, an independent verifier and a second model's review | Claude Code · Codex | up to $20, plus about $6 |
-| ![pair](https://img.shields.io/badge/pair-8a3fb5?style=flat-square) | Scaffolds a build workspace Cassidy drives in Cursor | none | free |
+| ![build](https://img.shields.io/badge/build-e79738?style=flat-square) | One build slice, then before-and-after checks, an independent verifier and a second model's review | Claude Code · Codex | up to $20, plus about $6 |
+| ![pair](https://img.shields.io/badge/pair-e79738?style=flat-square) | Scaffolds a build workspace Cassidy drives in Cursor | none | free |
 | ![apply](https://img.shields.io/badge/apply-eab308?style=flat-square) | Runs a write batch he approved by its sha256, once | none | free |
-| ![eval](https://img.shields.io/badge/eval-c0392b?style=flat-square) | Tests a prompt change blind on the [core suite](evals/core.json) | Claude Code, judged by Codex | about $4 |
-| ![note](https://img.shields.io/badge/note-c0392b?style=flat-square) | Records a correction for KEEPER | none | free |
+| ![eval](https://img.shields.io/badge/eval-757675?style=flat-square) | Tests a prompt change blind on the [core suite](evals/core.json) | Claude Code, judged by Codex | about $4 |
+| ![note](https://img.shields.io/badge/note-757675?style=flat-square) | Records a correction for KEEPER | none | free |
 | ![pause](https://img.shields.io/badge/pause-5B6C5D?style=flat-square) | Holds a scheduled slot for N days, `0` resumes | none | free |
+| ![receipt](https://img.shields.io/badge/receipt-5B6C5D?style=flat-square) | A job's result, or "running" or "failed" | none | free |
+
+**Long jobs run with `--async`.** Grok's terminal call gives up before a 3-minute job ends, and the Chief used to re-ask until Cassidy had approved the same job ten times. Now `investigate`, `draft`, `build` and `eval` return in under a second, run detached, and push their receipt to the Chief's results webhook when they finish. The Chief never re-runs a job because a reply didn't come back; it checks with `cos-run receipt`.
 
 Source: [claude/cos-run](claude/cos-run).
 
@@ -118,8 +148,8 @@ Every action on the Mac appends one line to `~/cos/state/ledger/`. `cos-db load`
 | --- | --- |
 | ![jobs](https://img.shields.io/badge/Jobs_and_cost-141416?style=flat-square) | `jobs`, from the ledger plus each receipt |
 | ![walls](https://img.shields.io/badge/Gate_blocks-c0392b?style=flat-square) | `gate_events`. Allows are not recorded |
-| ![schedule](https://img.shields.io/badge/Schedule-0f8a7e?style=flat-square) | `schedule`, including runs the Mac slept through |
-| ![learn](https://img.shields.io/badge/Corrections_and_evals-b26a00?style=flat-square) | `corrections`, `evals`, `board_health` |
+| ![schedule](https://img.shields.io/badge/Schedule-e54796?style=flat-square) | `schedule`, including runs the Mac slept through |
+| ![learn](https://img.shields.io/badge/Corrections_and_evals-757675?style=flat-square) | `corrections`, `evals`, `board_health` |
 
 <p align="center">
   <img src="docs/images/flight-recorder.png" alt="The flight recorder: jobs, spend, and what got blocked" width="900">
@@ -145,17 +175,21 @@ Source: [claude/cos-ledger](claude/cos-ledger), [claude/cos-db](claude/cos-db), 
  10:00                                                       week     ▶ STEWARD
  13:00                                                       keeper   ▶ KEEPER
  16:00   capture   ─────────────────────────────────────────────────▶ STEWARD
+ 08–16   obligations every two hours ───────────────────────────────▶ OPS
 ```
 
 | Slot | When | Goes to | What Cassidy sees |
 | --- | --- | --- | --- |
-| ![followups](https://img.shields.io/badge/followups-0f8a7e?style=flat-square) | Weekdays 06:15 | OPS | Drafts inside the 06:30 brief |
-| ![pulse](https://img.shields.io/badge/pulse-b26a00?style=flat-square) | Weekdays 08:10 | STEWARD | Three lines and owner nudge drafts, before the ops meeting |
-| ![capture](https://img.shields.io/badge/capture-b26a00?style=flat-square) | Weekdays 16:00 | STEWARD | A write batch for his cards, by sha256 |
-| ![reconcile](https://img.shields.io/badge/reconcile-b26a00?style=flat-square) | Tue, Thu 10:00 | STEWARD | Drift, which side should move, sheet paste text |
-| ![week](https://img.shields.io/badge/week-b26a00?style=flat-square) | Fri 10:00 | STEWARD | The weekly packet for him and Melanie |
-| ![opportunity](https://img.shields.io/badge/opportunity-8a3fb5?style=flat-square) | Mon 08:30 | BUILDER | Up to three build ideas, each tied to a card |
-| ![keeper](https://img.shields.io/badge/keeper-c0392b?style=flat-square) | Fri 13:00 | KEEPER | A scorecard and up to three fixes |
+| ![followups](https://img.shields.io/badge/followups-e54796?style=flat-square) | Weekdays 06:15 | OPS | Drafts inside the 06:30 brief |
+| ![pulse](https://img.shields.io/badge/pulse-e66f30?style=flat-square) | Weekdays 08:10 | STEWARD | Three lines and owner nudge drafts, before the ops meeting |
+| ![capture](https://img.shields.io/badge/capture-e66f30?style=flat-square) | Weekdays 16:00 | STEWARD | A write batch for his cards, by sha256 |
+| ![reconcile](https://img.shields.io/badge/reconcile-e66f30?style=flat-square) | Tue, Thu 10:00 | STEWARD | Drift, which side should move, sheet paste text |
+| ![week](https://img.shields.io/badge/week-e66f30?style=flat-square) | Fri 10:00 | STEWARD | The weekly packet for him and Melanie |
+| ![opportunity](https://img.shields.io/badge/opportunity-e79738?style=flat-square) | Mon 08:30 | BUILDER | Up to three build ideas, each tied to a card |
+| ![keeper](https://img.shields.io/badge/keeper-757675?style=flat-square) | Fri 13:00 | KEEPER | A scorecard and up to three fixes |
+| ![obligations](https://img.shields.io/badge/obligations-e54796?style=flat-square) | Weekdays 08, 10, 12, 14, 16 | OPS | What the Mac finished under standing approval, and what needs one tap |
+
+Scheduled jobs run with an explicit PATH (`~/.local/bin`, `/opt/homebrew/bin`), because launchd's bare PATH hid the Claude CLI on the first day. A dry run records nothing.
 
 Sources: [claude/cos-sched](claude/cos-sched), [claude/briefs/](claude/briefs/).
 
@@ -186,11 +220,11 @@ Allowed lines: the repo's own write targets (`make ragb`, `field`, `set-pillar`,
 
 | Wall | What it stops | Where |
 | --- | --- | --- |
-| ![cards](https://img.shields.io/badge/Approval_cards-2f55c8?style=flat-square) | Any Mac command Cassidy hasn't seen | Grok: Mac execution set to ask every time |
-| ![rules](https://img.shields.io/badge/Custom_Rules-2f55c8?style=flat-square) | Sends, posts, calendar, sheets, GitHub writes, purchases, Zoom sign-in | Grok: Settings, Permissions |
+| ![door](https://img.shields.io/badge/One_door-3d80f1?style=flat-square) | Any specialist running a command or writing outside a draft | each bot's REMEMBER block |
+| ![rules](https://img.shields.io/badge/Permissions-3d80f1?style=flat-square) | Allowed without asking: `cos-run` quick, investigate, receipt, note, pause. Always asks: any other Mac command, `cos-run` draft, build, apply or eval, sends, posts, calendar, sheets, GitHub writes, purchases, Zoom sign-in | Grok: Settings, Permissions and Computer |
 | ![gate](https://img.shields.io/badge/The_gate-c0392b?style=flat-square) | Secrets, production writes, infrastructure, force-push, canon values, `context/` edits, edits to this kit | [claude/gate.sh](claude/gate.sh) |
 | ![hash](https://img.shields.io/badge/Approval_by_hash-eab308?style=flat-square) | Any batch that differs from the one approved | [claude/cos-run](claude/cos-run) |
-| ![lake](https://img.shields.io/badge/lake--query-0f8a7e?style=flat-square) | Writes, non-aggregate canon reads, unbounded queries | [claude/lake-query](claude/lake-query) |
+| ![lake](https://img.shields.io/badge/lake--query-3d4452?style=flat-square) | Writes, non-aggregate canon reads, unbounded queries | [claude/lake-query](claude/lake-query) |
 | ![merge](https://img.shields.io/badge/No_merges-5B6C5D?style=flat-square) | Any agent merging or deploying. The furthest it goes is a draft PR, after his yes. | [handbook/engineering-standard.md](handbook/engineering-standard.md) |
 
 ---
@@ -237,7 +271,7 @@ The full map of sources, rules and what may cross which wire is [handbook/system
 cd ~/cos/kit && ./install.sh --online
 ```
 
-`install.sh` checks prerequisites, copies the kit into `~/cos`, installs `cassidy-mode` for Claude and Cursor, and proves the walls with 103 checks. `--schedule` loads the launchd jobs, and `--schedule=<slot,…>` loads only those. Full steps, including the Grok setup and webhook keys, are in [INSTALL.md](INSTALL.md). The design and its reasons are in [PLAN.md](PLAN.md). A one-page overview is [docs/system-overview.html](docs/system-overview.html).
+`install.sh` checks prerequisites, copies the kit into `~/cos`, installs `cassidy-mode` for Claude and Cursor, and proves the walls with 107 checks. `--schedule` loads the launchd jobs, and `--schedule=<slot,…>` loads only those (`--schedule=obligations,dashboard` adds the obligations ledger and the five-minute dashboard refresh). Full steps, including the Grok setup and webhook keys, are in [INSTALL.md](INSTALL.md). The design and its reasons are in [PLAN.md](PLAN.md). A one-page overview is [docs/system-overview.html](docs/system-overview.html).
 
 This folder is the only source. A change is an edit here, a commit with its reason, a push, then `./install.sh`. To undo one, revert the commit and reinstall.
 
@@ -250,6 +284,7 @@ cos-kit/
 ├── claude/                  the Mac side
 │   ├── cos-run              front desk: quick · investigate · draft · build · pair · apply · eval · note · pause
 │   ├── cos-sched            the clock (launchd) · cos-push hands receipts to Grok webhooks
+│   ├── cos-obligations      what's waiting on Cassidy, owned to closure, with his standing approvals
 │   ├── cos-ledger           append-only ledger · cos-db loads it into cos.db · cos-dash opens the page
 │   ├── gate.sh              the wall in front of every job
 │   ├── lake-query           read-only data, canon aggregates only
@@ -257,7 +292,7 @@ cos-kit/
 │   ├── briefs/              the scheduled jobs' briefs
 │   └── *.md, *.json         lane prompts, the verifier, settings, the receipt schema
 ├── grokbot/                 each bot's REMEMBER block and PLAYBOOK, the Custom Rules, the rules skill
-├── handbook/                rules, the board standard, the engineering standard, the system map
+├── handbook/                rules, the board and engineering standards, the system map, standing approvals
 ├── builds-template/         a build workspace: BRIEF.md · VERIFY.md · HANDOFF.md · verify
 ├── evals/                   the core eval suite
 ├── claude-skills/           cassidy-mode, how Claude works with Cassidy
