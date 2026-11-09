@@ -28,13 +28,19 @@ gh auth status >/dev/null 2>&1 && pass "gh signed in" || fail "gh not signed in 
 [[ -d "$HOME/meetings" ]] && pass "~/meetings" || fail "~/meetings missing"
 
 echo "2. The kit, versioned"
-# The kit lives in ~/cos/kit as a git repo, so every change KEEPER proposes is a diff you can read and revert.
-mkdir -p "$COS/kit"
-if [[ "$KIT" != "$COS/kit" ]]; then rsync -a --delete --exclude .git "$KIT/" "$COS/kit/"; fi
-[[ -d "$COS/kit/.git" ]] || git -C "$COS/kit" init -q -b main
-git -C "$COS/kit" add -A
-if git -C "$COS/kit" diff --cached --quiet; then pass "~/cos/kit unchanged ($(git -C "$COS/kit" log -1 --format=%h 2>/dev/null || echo new))"
-else git -C "$COS/kit" -c user.name="cos install" -c user.email="cos@localhost" commit -qm "Install kit $(date +%F\ %T)" && pass "~/cos/kit committed ($(git -C "$COS/kit" log -1 --format=%h))"; fi
+# ~/cos/kit is the only source (a git repo, pushed to github.com/cassidythilton/cos-kit). Edit there, commit with a real
+# message, then run this installer from it. A copy elsewhere may only seed a kit that doesn't exist yet.
+if [[ "$KIT" != "$COS/kit" ]]; then
+  if [[ -d "$COS/kit/.git" ]]; then echo "  ✗ ~/cos/kit already exists. Edit and install from it: cd ~/cos/kit && ./install.sh"; exit 1; fi
+  mkdir -p "$COS/kit"; rsync -a --exclude .git "$KIT/" "$COS/kit/"; git -C "$COS/kit" init -q -b main
+  git -C "$COS/kit" add -A && git -C "$COS/kit" commit -qm "Seed kit" && pass "seeded ~/cos/kit"
+fi
+if [[ -n "$(git -C "$COS/kit" status --porcelain)" ]]; then fail "~/cos/kit has uncommitted changes: commit them with a message first (git -C ~/cos/kit commit -am '<why>')"
+else pass "~/cos/kit clean at $(git -C "$COS/kit" log -1 --format=%h)"; fi
+if git -C "$COS/kit" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+  ahead="$(git -C "$COS/kit" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
+  [[ "$ahead" -eq 0 ]] && pass "~/cos/kit matches GitHub" || printf '  · %s commit(s) not pushed yet (git -C ~/cos/kit push)\n' "$ahead"
+fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
