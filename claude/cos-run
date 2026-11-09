@@ -10,11 +10,12 @@
 #                                                                                  then baseline-vs-treatment ./verify and an independent verifier
 #   cos-run eval        <suite> current|<proposed-lane-prompt.md>                 blinded A/B of the investigate lane on a fixed suite
 #   cos-run note        <bot> "<what went wrong, and the rule>"                   appends one correction to ~/cos/state/corrections.jsonl
+#   cos-run pause       <slot|all> <days>                                         holds a scheduled slot for N days (0 resumes)
 #
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANE="${1:?lane: quick|investigate|draft|build|pair|apply|eval|note}"; JOB="${2:?job-id}"; BRIEF_IN="${3:?brief}"; shift 3
+LANE="${1:?lane: quick|investigate|draft|build|pair|apply|eval|note|pause}"; JOB="${2:?job-id}"; BRIEF_IN="${3:?brief}"; shift 3
 export PATH="$HOME/cos/bin:$PATH"
 COS="$HOME/cos"; REPO="$HOME/Documents/Data-Org-Repos/data-org"; MAIN="$COS/data-org-main"
 IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"
@@ -38,6 +39,18 @@ if [[ "$LANE" == "note" ]]; then
   mkdir -p "$COS/state"
   jq -nc --arg t "$(date -u +%FT%TZ)" --arg b "$BOT" --arg n "$BRIEF_IN" '{at: $t, bot: $b, note: $n}' >> "$COS/state/corrections.jsonl"
   echo "noted ($(wc -l < "$COS/state/corrections.jsonl" | tr -d ' ') corrections on file)"; exit 0
+fi
+
+# ---------------------------------------------------------------- pause: hold a scheduled slot for N days, no model
+# cos-run pause <slot|all> <days>   (0 resumes). cos-sched skips the slot silently until the date passes.
+if [[ "$LANE" == "pause" ]]; then
+  SLOT_P="$JOB"; DAYS_P="$BRIEF_IN"
+  [[ "$SLOT_P" =~ ^(all|followups|pulse|reconcile|capture|week|opportunity|keeper)$ ]] || { echo "slot: all|followups|pulse|reconcile|capture|week|opportunity|keeper" >&2; exit 64; }
+  [[ "$DAYS_P" =~ ^[0-9]{1,3}$ ]] || { echo "days: a whole number, 0 to resume" >&2; exit 64; }
+  mkdir -p "$COS/state"
+  if [[ "$DAYS_P" -eq 0 ]]; then rm -f "$COS/state/pause-$SLOT_P"; echo "resumed: $SLOT_P"; exit 0; fi
+  UNTIL="$(date -v+"${DAYS_P}"d +%F)"; echo "$UNTIL" > "$COS/state/pause-$SLOT_P"
+  echo "paused: $SLOT_P through $UNTIL (resume early with: cos-run pause $SLOT_P 0)"; exit 0
 fi
 
 # ---------------------------------------------------------------- eval: blinded A/B on a fixed suite

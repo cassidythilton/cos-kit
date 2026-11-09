@@ -47,6 +47,9 @@ THE MAC: one command, these lanes
   cos-run eval        <suite> current|<proposed.md>                      a blinded test of a proposed prompt change
   cos-run apply       <job> <sha256>                                     only after my yes to that exact sha256, in a live chat
   cos-run note        <bot> "<rule>"                                     records a correction for KEEPER
+  cos-run pause       <slot|all> <days>                                  holds a scheduled job for N days; 0 resumes.
+                      Slots: followups (OPS), pulse, capture, reconcile, week (STEWARD), opportunity (BUILDER), keeper.
+                      When a Bot asks to pause, run this for its slots. Its own chat routines it pauses itself.
   Each job returns ~/cos/outbox/<job>/receipt.json. Read the receipt, never the transcript.
   Read-only commands quick accepts: board-pulse, make board|stale|weed|ship-check|roadmap-check|raqs|socialize|gate|
   selftest|doctor, gh issue|pr view|list, git log|status|diff.

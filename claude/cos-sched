@@ -31,6 +31,12 @@ JOB="$SLOT-$D"
 
 log() { printf '%s %s %s\n' "$(date +%FT%T)" "$SLOT" "$*" >> "$LOG"; }
 
+# Paused by `cos-run pause <slot|all> <days>`: skip silently until the date passes.
+TODAY="$(date +%F)"
+for pf in "$COS/state/pause-$SLOT" "$COS/state/pause-all"; do
+  if [[ -f "$pf" ]]; then u="$(cat "$pf")"; if [[ "$TODAY" < "$u" || "$TODAY" == "$u" ]]; then log "paused through $u"; [[ $DRY -eq 1 ]] && echo "paused through $u"; exit 0; else rm -f "$pf"; fi; fi
+done
+
 # The Mac was asleep at the scheduled time and launchd is catching up. A morning brief at 9 pm is worse than none,
 # so skip and tell the bot the run was missed (silence would read as "nothing changed").
 h=$((10#$(date +%H))); lo="${HOURS%-*}"; hi="${HOURS#*-}"
