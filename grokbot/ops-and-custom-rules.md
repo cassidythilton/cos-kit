@@ -37,7 +37,9 @@ ROUTINES (ask OPS in chat to create these)
 
 # Account-wide settings (they apply to every Bot)
 
-## 1. Custom Rules: Settings → Bot → Auto-review, Custom Rules
+## 1. Custom Rules: Settings → Permissions (Auto-review on), Custom Rules, one Ask first rule per line below
+
+Older docs say Settings → General → Bot. Newer app versions have a Permissions pane. An approval card's Manage settings button also opens it.
 
 These govern actions on the Bots' computer and in connected apps. "Ask first" wins over "Always allow".
 Connected apps act as me: a Slack post from a Bot is a post from me.
@@ -48,9 +50,11 @@ Ask first before you:
 - edit a Google Sheet, Doc or Slide that isn't a new draft you created
 - comment, approve, merge or close anything on GitHub, or edit a GitHub Project
 - buy anything, or enter any payment details
+- sign in to Zoom, or download anything from Zoom
 - open more than 5 web pages for one task, or start a task you expect to take more than 15 minutes
 - re-run a step that already failed twice
 When you ask, say in one line what you want to do and why.
+Never press Always allow on a `cos-run apply` card: each batch needs its own yes for its own sha256.
 
 ## 2. Commands on my Mac: Settings → Computer → Your computer → Execution on this computer
 

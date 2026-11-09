@@ -35,7 +35,7 @@ Then set a baseline for the eval suite (about $20; KEEPER compares every propose
 ## 2. Grok Bot settings (once, for every Bot)
 
 1. **Settings → Computer → Your computer → Execution on this computer: Ask every time.** Each Mac command shows a card with the exact command, and tapping it is your approval. Don't choose Always allow.
-2. **Settings → Bot → Auto-review: add the Custom Rules** from the bottom half of `grokbot/ops-and-custom-rules.md`. They cover the cloud computer and connected apps, not the Mac.
+2. **Settings → Permissions (Auto-review on): add the Custom Rules**, one Ask first rule each, from the bottom half of `grokbot/ops-and-custom-rules.md`. They cover the cloud computer and connected apps, not the Mac.
 3. **Skills:** save `claude-skills/cassidy-mode/SKILL.md` as a private skill called `cassidy-mode`, and enable it for every Bot.
 
 ## 3. The Bots (personal Bots have no description field: first message + skill + routine)
