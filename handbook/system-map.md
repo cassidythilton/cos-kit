@@ -36,7 +36,7 @@ Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin
 | Warehouse (app Postgres) and The Pantry (DuckLake) | the data | `lake-query` only (VPN, `<env>-laker` SSO) | never | canon: aggregates and IDs only; read-only always |
 | Gmail and Google Calendar | mail, schedule | not used | Gmail and Calendar apps | drafts only; no calendar change without a yes |
 | Google Drive and Docs | charters, decks, memos | Drive connector, read-only | Drive app | no edits to others' files |
-| Cassidy's Claude and Cursor transcripts | how she works | only a path she names, or the monthly cassidy-mode re-mine of her own projects | no | never glob across other people's or unrelated projects |
+| Cassidy's Claude and Cursor transcripts | how he works | only a path he names, or the monthly cassidy-mode re-mine of his own projects | no | never glob across other people's or unrelated projects |
 | `~/cos/outbox/*/receipt.json` | what every job did, cost, checker and verifier results | direct read | webhook bodies | receipts summarize; read artifacts for detail |
 | `~/cos/state/` | corrections, schedule log, board-health trend | direct read | no | team numbers only, never per person in public |
 | `~/cos/evals/` | eval suites and reports | direct read | through KEEPER's report | |
@@ -49,16 +49,16 @@ Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin
 |---|---|
 | Read for work signals (capture, opportunities, follow-ups) | `#data-team` (C0BMLSDDNDT), `#the-pantry` (C0CFNFA6UGY), `#garde-manger` (C0C3TL2NSG3, The Pantry datalake), `#canon-charter` (C0CD46EQ57U), `#datasembly-data` (C0BLJ76B6TZ), `#customer-new-issues` (C0C7PPG89UM, the ticket flow), `#ai-at-wisecode` (C0B6AM7HY3D), `#wisecode-ai-alpha` (C0BLN84P4R2) |
 | Read only when Cassidy names a thread | `#data-org-water-cooler` (C0C3L96NMD5), `#not-data-org-leads` (C0BMS2QMLGZ), incident channels, `#general` |
-| Never read for this system | `#hiring-announcements`, `#hiring-software-developer-and-data-engineer`, any personnel or HR channel, DMs she hasn't pointed to, `#owls` (individual recognition), `#random`, `#socialmedia` |
+| Never read for this system | `#hiring-announcements`, `#hiring-software-developer-and-data-engineer`, any personnel or HR channel, DMs he hasn't pointed to, `#owls` (individual recognition), `#random`, `#socialmedia` |
 
-Channels that appear in her work but not in her membership list (for example the infra channel with Steve, and Nicholas's pipeline channel) are read only through a thread link she gives.
+Channels that appear in his work but not in his membership list (for example the infra channel with Steve, and Nicholas's pipeline channel) are read only through a thread link he gives.
 
 ## 4. Getting a call transcript: the escalation ladder
 
 1. `~/meetings/<date>-<slug>.md`: the note and its transcript.
 2. `~/Documents/Zoom/<meeting name>.txt`.
 3. Ask Cassidy whether a transcript exists, and where.
-4. **Last resort: Zoom web.** Only when steps 1 to 3 fail, only for one named meeting, and only after Cassidy says yes to that meeting. The Chief opens zoom.us in the Bots' browser, signed in as Cassidy (a Vault or 1Password login, or she takes over for single sign-on). It goes to Recordings, finds that meeting's cloud recording, and downloads the transcript file only (`.vtt` or `.txt`), never the video or audio. It moves the file to `~/Documents/Zoom/` on the Mac (an approval card), then deletes its copy from the Bots' computer, which every Bot shares. It never changes Zoom settings, shares a recording link, or opens a meeting it wasn't asked for. Then the job that needed it re-runs from step 2.
+4. **Last resort: Zoom web.** Only when steps 1 to 3 fail, only for one named meeting, and only after Cassidy says yes to that meeting. The Chief opens zoom.us in the Bots' browser, signed in as Cassidy (a Vault or 1Password login, or he takes over for single sign-on). It goes to Recordings, finds that meeting's cloud recording, and downloads the transcript file only (`.vtt` or `.txt`), never the video or audio. It moves the file to `~/Documents/Zoom/` on the Mac (an approval card), then deletes its copy from the Bots' computer, which every Bot shares. It never changes Zoom settings, shares a recording link, or opens a meeting it wasn't asked for. Then the job that needed it re-runs from step 2.
 
 A Mac job never logs into Zoom. When it needs a missing transcript, it returns status `blocked` with "needs transcript: <meeting, date>", and the Chief offers step 3 or 4.
 

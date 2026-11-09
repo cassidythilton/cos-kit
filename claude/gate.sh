@@ -6,7 +6,7 @@
 #            canon values entering the model's context.
 #   OUTWARD  leaves the Mac or changes shared state: push, PR/issue/board writes, connector writes, outbound HTTP,
 #            deletes. Blocked in headless jobs (staged in the receipt instead). In pair mode (Cassidy at the keyboard,
-#            COS_GATE_MODE=pair) it becomes "ask": Claude must get her yes in the session.
+#            COS_GATE_MODE=pair) it becomes "ask": Claude must get his yes in the session.
 #
 # Exit 2 blocks; stderr goes back to Claude. An "ask" is JSON on stdout with exit 0.
 input="$(cat)"

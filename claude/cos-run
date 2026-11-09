@@ -129,7 +129,7 @@ if [[ -z "$IN" ]]; then
   git -C "$REPO" fetch -q origin cassidy/375-board-maintenance 2>/dev/null || true   # PR #610 cold start, until it merges
   if [[ -d "$MAIN" ]]; then git -C "$MAIN" checkout -q --detach origin/main; else git -C "$REPO" worktree add -q --detach "$MAIN" origin/main; fi
   # The notebook's rules (AGENTS.md, HANDOFF.md, queries/lib) are also read from origin/main, never Cassidy's checkout.
-  # lake-query still runs from her checkout, because that's where the per-checkout .env lives.
+  # lake-query still runs from his checkout, because that's where the per-checkout .env lives.
   NBREPO="$HOME/Documents/Data-Org-Repos/data-org-notebook"; NBMAIN="$COS/notebook-main"
   if [[ -d "$NBREPO/.git" ]]; then git -C "$NBREPO" fetch -q origin main 2>/dev/null || true
     if [[ -d "$NBMAIN" ]]; then git -C "$NBMAIN" checkout -q --detach origin/main 2>/dev/null || true; else git -C "$NBREPO" worktree add -q --detach "$NBMAIN" origin/main 2>/dev/null || true; fi; fi

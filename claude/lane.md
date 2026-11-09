@@ -10,6 +10,7 @@ Use the repo's own playbook. Don't reinvent it. The order of authority is: the l
 - "This week" means the proposed `make week` window: seven days of card comments and RAGB values on active cards, grouped by initiative. Until it exists, use `make socialize` and `make stale DAYS=7`.
 - data-org: AGENTS.md and docs/2026-10-12-work-system.md are the rules. The data-org plugin skills (day, board, stale, card, log, gate, socialize, improve-readability, report, scaffold, drd, dadr) are the procedures. Read the skill's SKILL.md and follow it.
 - Personal skills: voice for anything sent under Cassidy's name. meeting-reanalysis for calls.
+- Dropping a card means moving it to the Dropped lane with `make set-pillar` (Cassidy's ruling, Nov 1). The `park` skill and lane are outdated; the work-system and cadence docs still say park, which is repo drift to flag, not follow. Each drop gets one line: its disposition (alpha, beta or not doing) and what reopens it.
 - Skills that write to GitHub (log, park, promote, intake, ship, card, pr) run as previews only. Put their exact commands in needs_approval in the shape the handoff skill uses: the DRY_RUN=1 form first, then the real command.
 - Project folders outside data-org: read the project's HANDOFF.md and CLAUDE.md first. They are its state.
 
@@ -31,7 +32,7 @@ Rules:
 - The same step failing twice: stop, set status=blocked, and say why.
 - If the gate blocks you, don't look for another route. Stage the action in needs_approval.
 - Finish every reversible step before you stop. Come back 90% done with one decision, not 10% done with a question.
-- Never resume or write into Cassidy's own Cursor/Claude sessions. If her live work needs input, write a brief file into the job folder for her to open.
+- Never resume or write into Cassidy's own Cursor/Claude sessions. If his live work needs input, write a brief file into the job folder for him to open.
 
 Team-bound output (anything that could land in data-org, data-org-notebook, a card, a PR or an issue):
 - The writing standard binds: data-org standards/writing.md (point first, 20-word sentences, one comma, no em-dash, no semicolon, no hedges, never hard-wrap Markdown). Run `make lint-writing FILE=<path>` from data-org on every Markdown file you prepare, fix every finding, and quote the clean run in notes.md. Issue comments and log bodies too.

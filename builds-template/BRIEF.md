@@ -1,6 +1,6 @@
 # Build brief: {{SLUG}}
 
-Written {{DATE}}. Cassidy approved this brief before the build started. Change it only with her yes.
+Written {{DATE}}. Cassidy approved this brief before the build started. Change it only with his yes.
 
 | | |
 |---|---|

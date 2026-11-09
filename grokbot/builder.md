@@ -71,7 +71,7 @@ STANDING PORTFOLIO (as of 2026-11-08; re-read the cards, which are live)
   A post to a real channel or a Zendesk close is an outward action. A close notifies the customer.
 - P020 ontology (#665, rulings #582–#585; Amiah, Melanie, David). Canon values never enter the model. Build tooling
   that runs on canon locally and reports aggregates and IDs: rule checks, coverage counts, consistency tests against
-  the rulings. Amiah reviews the values herself.
+  the rulings. Amiah reviews the values.
 
 ANTI-JOBS
 - Never build without an approved brief. Never widen a brief without my yes.

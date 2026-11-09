@@ -17,7 +17,7 @@ Always read from `origin/main`. Never from Cassidy's working checkout, which may
 ## The mandate (from the Nov 3–6 calls)
 
 - David hands roadmap and visibility work to Cassidy and Melanie: "Melanie and Cassidy are now doing this. Don't bother me." and "the keys of the kingdom in your capable hands." (roadmap session, Nov 6, 15:19:31, 15:35:50)
-- Cassidy is "driving to" reconciling the sheet and the board (workshop, Nov 5, 15:29:30). She is "gonna merchandise what we do" (Nov 6, 15:22:43).
+- Cassidy is "driving to" reconciling the sheet and the board (workshop, Nov 5, 15:29:30). He is "gonna merchandise what we do" (Nov 6, 15:22:43).
 - "All of our items that are in the board are fully and explicitly representative of what we have in the roadmap through the end of the fiscal year." (Cassidy, Nov 6, 15:18:44)
 - Cassidy sends each person a to-do list so their cards line up with the new fields (Nov 6, 15:27:03).
 - The maintenance doc: David handed Cassidy and Melanie the board helpers.
@@ -34,7 +34,7 @@ Always read from `origin/main`. Never from Cassidy's working checkout, which may
 | A card's Target matches its milestone (the roadmap row's date). Resolve drift the same week, one way or the other. | `make roadmap-check`, drift list |
 | Theme and Horizon go only on cards that serve a roadmap row. A blank Theme means the card isn't on the roadmap. A sub-item takes its parent's Pillar metric. | the PMC · Roadmap and PMC · Pillars views |
 | Initiative, DRD and KPI are derived and never typed. A missing one is a context request, not a card. (weeding doc, `day`) | not checked: `make board-fill` is proposed, not built |
-| Dropped is not a backlog: `Dropped: why we can't do it today. Bring it back when…` (work-system, `park`) | `make weed`, then `park` |
+| Dropped is not a backlog: `Dropped: why we can't do it today. Bring it back when…` (work-system, `park`) | `make weed`, then a move to Dropped with `make set-pillar` (park is outdated, Nov 1) |
 | Zendesk reports are never cards. They hang under intake holders. Never bulk-close them, because a close notifies the customer. (weeding doc) | `make intake-holders`, `make intake-sweep` (dry run) |
 | Delivered means it's in ops stores and in prod (David, Nov 3, 15:05:19). Data-flow work has a golden test set (David, Nov 5, 15:38:14). | a Steward check in the Friday packet |
 | The board matches the roadmap through year end (Cassidy, Nov 6) | `make roadmap-check` plus a read of the Data Roadmap sheet |
@@ -59,7 +59,7 @@ Always read from `origin/main`. Never from Cassidy's working checkout, which may
 ## Boundaries (maintenance doc, CONTRIBUTING)
 
 - Never approve, merge, close or reopen a PR. Never rename or delete a branch. Never force-push.
-- Don't park a card unless the plan names `park`. Don't invent a P-id. Don't edit `context/`.
+- Never use `park`: drops move to the Dropped lane (Cassidy's ruling, Nov 1). Never use `make promote` to move a lane, because it closes the issue; a card closing as done uses `make complete CARD=<n> WHY="..."`. Don't invent a P-id. Don't edit `context/`.
 - No personnel, compensation or individual performance on a card, in the repo, or in a team channel. Team numbers are fine. Per-person lists go only to that person and to Cassidy.
 - Don't post to Slack. Don't send email. Drafts only.
 - Touch only the cards the approved plan names. Re-read the live issue before any write. One log a day: edit today's comment rather than adding a second.

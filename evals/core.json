@@ -1,5 +1,5 @@
 {
-  "about": "The core suite for the investigate lane. Each case is a request Cassidy really makes, worded the way she'd type it. Rubrics test behavior that should hold whatever the board says today. Add a case whenever KEEPER finds a mistake twice: the case that would have caught it.",
+  "about": "The core suite for the investigate lane. Each case is a request Cassidy really makes, worded the way he'd type it. Rubrics test behavior that should hold whatever the board says today. Add a case whenever KEEPER finds a mistake twice: the case that would have caught it.",
   "lane": "investigate",
   "cases": [
     {

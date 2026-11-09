@@ -160,9 +160,9 @@ Every bot reply and every bot-to-bot message costs usage, so the bots stay silen
 
 ## Verification and evals: Lauren's method, without auto-merge
 
-Lauren's talk, as the posts summarize it: **trust is the bottleneck.** She goes agent → skill → verification → eval → subagents. "Every failure became a skill, every skill an eval." Her pstack plugin (poteto/plugins) has a `prove-it-works` principle, `verify-this` (a falsifiable claim, baseline vs treatment, one verdict), an orchestrator's verifier ("Run the code. Reading the diff is not verification"), a blinded `eval` playbook, and `reflect` (route each lesson into a skill edit, with a person's approval). Chonsy's post adds the proof contract. You've ruled out auto-merge. Everything up to the merge carries over.
+Lauren's talk, as the posts summarize it: **trust is the bottleneck.** The sequence is agent → skill → verification → eval → subagents. "Every failure became a skill, every skill an eval." Lauren's pstack plugin (poteto/plugins) has a `prove-it-works` principle, `verify-this` (a falsifiable claim, baseline vs treatment, one verdict), an orchestrator's verifier ("Run the code. Reading the diff is not verification"), a blinded `eval` playbook, and `reflect` (route each lesson into a skill edit, with a person's approval). Chonsy's post adds the proof contract. You've ruled out auto-merge. Everything up to the merge carries over.
 
-| Her practice | Here |
+| Lauren's practice | Here |
 |---|---|
 | Proof requirements: BASELINE, BEHAVIOR, QUALITY, PERFORMANCE, SKILL, each a PASS / FAIL / NOT_RUN evidence record | `receipt.proofs` on every build. The checker fails a missing proof, an unfixed FAIL, or a NOT_RUN with no blocker. |
 | A verification skill per feature (entry point, preconditions, actions, expected result, failure states) | `VERIFY.md` in every build workspace. `./verify` implements it. Regressions it caught are kept. |
@@ -294,4 +294,4 @@ There are three different "memories". Each needs different care.
 - `cos-run eval` and the verifier cost money: about $20 for a baseline eval, and about $6 per build job for checking. KEEPER's scorecard shows it.
 - The receipt's `structured_output` field and Cursor's `--trust` flag in headless runs are verified by the smoke test, not before it.
 - The data-org skill sets differ between Cursor (28) and the Claude plugin (18). Claude jobs read `handoff`, `orient`, `draft-drd` and `draft-dadr` from `.cursor/skills/` by path.
-- I couldn't watch Lauren's videos. What I adopted comes from her published pstack repo and the posts' quotes of her.
+- I couldn't watch Lauren's videos. What I adopted comes from Lauren's published pstack repo and the posts' quotes.
