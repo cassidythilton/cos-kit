@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { QuestionSelect, type Option } from "./components/QuestionSelect";
+import { Picker } from "./components/Picker";
 import { SourceRef } from "./components/SourceRef";
 import { BOT_COLOR, LANE_GREY } from "./lib/theme";
 

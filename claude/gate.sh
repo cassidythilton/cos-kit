@@ -51,7 +51,7 @@ if [[ "$cmd" =~ (security[[:space:]]+find-|printenv|(^|[;&|[:space:]])env([[:spa
 ctl_re='(/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|\.claude/(skills|settings)|LaunchAgents)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]] && [[ "$path" =~ $ctl_re ]]; then hard "editing the system's own controls ($path)"; fi
 if [[ "$tool" == "Bash" ]]; then
-  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-sched)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
+  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-sched|cos-obligations)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
   # Writes into a control path only: a redirect or tee into it, an in-place edit of it, a copy or move onto it, or git in it.
   C='[^[:space:];&|]*/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|[^[:space:];&|]*\.claude/(skills|settings)|[^[:space:];&|]*LaunchAgents'
   w1=">>?[[:space:]]*[\"']?($C)"; w2="tee[[:space:]]+(-a[[:space:]]+)?[\"']?($C)"; w3="(sed|perl)[[:space:]]+-[a-zA-Z]*i[^;&|]*($C)"

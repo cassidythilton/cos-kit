@@ -1,0 +1,7 @@
+{
+  "about": "Actions the Mac may finish without a tap. Chosen by Cassidy on 2026-11-09. Set a value to false to turn it off; the item then comes to him as one tap. Only cos-obligations reads this, and only cos-sched runs it.",
+  "pr_comment_review": true,
+  "complete_merged_issue": true,
+  "rsvp_internal_meeting": false,
+  "own_card_log_and_ragb": false
+}

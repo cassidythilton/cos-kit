@@ -1,0 +1,289 @@
+#!/usr/bin/env -S python3 -I
+"""cos-obligations: everything waiting on Cassidy, owned until it is closed in its system of record.
+
+  cos-obligations            collect and print the ledger (read-only)
+  cos-obligations --act      collect, then do the standing-approved work and stage the rest
+  cos-obligations --selftest check the policy file and the standing-action patterns (no network)
+
+Run by cos-sched on workdays. Never by a bot, never inside a job (the gate blocks it there).
+
+Kinds of obligation and when each is closed:
+  review  a PR requests Cassidy's review   closed when GitHub no longer lists him as a requested reviewer
+  close   his work-item's PRs have merged    closed when the issue is closed (make complete)
+  reply   someone mentioned him, no answer   closed when he comments after the mention
+
+Standing approvals live in ~/cos/handbook/standing-approvals.json. Cassidy chose (2026-11-09):
+  pr_comment_review      submit a comment-only review (never approve, never request changes)
+  complete_merged_issue  make complete on his own work-item when every linked PR has merged
+Everything else is staged for one tap.
+"""
+import json, os, re, subprocess, sys, datetime, hashlib
+
+HOME = os.path.expanduser('~')
+COS = os.path.join(HOME, 'cos')
+STATE = os.path.join(COS, 'state')
+LEDGER = os.path.join(STATE, 'obligations.json')
+LOG = os.path.join(STATE, 'obligations-log.jsonl')
+POLICY = os.path.join(COS, 'handbook', 'standing-approvals.json')
+VETO = os.path.join(STATE, 'obligations-veto.json')
+NOTICE_HOURS = 20          # a close is announced one run-day before it happens
+MAIN = os.path.join(COS, 'data-org-main')
+OUTBOX = os.path.join(COS, 'outbox')
+BRIEF = os.environ.get('COS_REVIEW_BRIEF') or os.path.join(COS, 'claude', 'briefs', 'review.md')
+ME = 'cassidythilton'
+REPOS = ['wisecodeai/data-org']          # where his work-items live
+MAX_REVIEWS_PER_RUN = 3
+MAX_CLOSES_PER_RUN = 5
+NOW = datetime.datetime.now(datetime.timezone.utc)
+
+STANDING_REVIEW = re.compile(
+    r'^gh pr review (\d+) --repo (wisecodeai/[A-Za-z0-9._-]+) --comment --body-file '
+    + re.escape(OUTBOX) + r'/(review-[a-z0-9._-]+)/review\.md$')
+REF = lambda n: re.compile(r'(?im)\b(tile|refs?|closes|fixes|resolves)\s*:?\s*#' + str(n) + r'\b')
+
+
+def gh(*args, parse=True):
+    r = subprocess.run(['gh', *args], capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args[:3])}: {r.stderr.strip()[:300]}")
+    return json.loads(r.stdout) if parse else r.stdout
+
+
+def log(event, **kv):
+    os.makedirs(STATE, exist_ok=True)
+    with open(LOG, 'a') as f:
+        f.write(json.dumps({'ts': NOW.isoformat(timespec='seconds'), 'event': event, **kv}) + '\n')
+
+
+def policy():
+    try:
+        return json.load(open(POLICY))
+    except Exception:
+        return {}            # no file means no standing approvals: everything is one tap
+
+
+def slug(repo):
+    return repo.split('/')[-1].lower().replace('_', '-')
+
+
+# ---------------------------------------------------------------- collect
+def collect():
+    items = {}
+    # 1. Review requests
+    for pr in gh('search', 'prs', '--review-requested=@me', '--state=open', '--limit', '50',
+                 '--json', 'number,repository,title,url,updatedAt,author'):
+        repo = pr['repository']['nameWithOwner']; n = pr['number']
+        head = gh('pr', 'view', str(n), '--repo', repo, '--json', 'headRefOid')['headRefOid']
+        if f'review:{repo}#{n}' in vetoed():
+            continue
+        items[f'review:{repo}#{n}'] = dict(kind='review', repo=repo, number=n, title=pr['title'], url=pr['url'],
+            author=pr['author']['login'], head=head, owner='OPS', auto='pr_comment_review',
+            closes_when='GitHub no longer lists cassidythilton as a requested reviewer')
+    # 2. His work-items whose PRs have all merged
+    for repo in REPOS:
+        for it in gh('issue', 'list', '--repo', repo, '--assignee', '@me', '--state', 'open', '--limit', '200',
+                     '--json', 'number,title,url,labels,body'):
+            labels = {l['name'] for l in it['labels']}
+            if 'type/epic' in labels or any('definition' in l for l in labels):
+                continue      # initiatives end at Delivered or Dropped; Definition issues close by ship-reconcile
+            n = it['number']
+            if re.search(r'(?m)^\s*[-*] \[ \]', it.get('body') or ''):
+                continue      # unchecked milestones in the body: the work isn't finished, whatever merged
+            if f'close:{repo}#{n}' in vetoed():
+                continue
+            prs = gh('pr', 'list', '--repo', repo, '--state', 'all', '--search', f'#{n} in:body', '--limit', '20',
+                     '--json', 'number,state,mergedAt,body,url')
+            refs = [p for p in prs if REF(n).search(p.get('body') or '')]
+            if refs and all(p['mergedAt'] for p in refs):
+                nums = ', '.join(f"#{p['number']}" for p in refs)
+                items[f'close:{repo}#{n}'] = dict(kind='close', repo=repo, number=n, title=it['title'], url=it['url'],
+                    prs=[p['number'] for p in refs], owner='STEWARD', auto='complete_merged_issue',
+                    why=f"its PRs merged ({nums})", closes_when='the issue is closed by make complete')
+    # 3. Mentions with no reply from him (last 14 days)
+    since = (NOW - datetime.timedelta(days=14)).date().isoformat()
+    for it in gh('search', 'issues', '--mentions=@me', '--state=open', f'--updated=>={since}', '--limit', '20',
+                 '--json', 'number,repository,title,url'):
+        repo = it['repository']['nameWithOwner']; n = it['number']
+        comments = gh('api', f'repos/{repo}/issues/{n}/comments?per_page=100')
+        mine = [c['created_at'] for c in comments if c['user']['login'] == ME]
+        asks = [c for c in comments if c['user']['login'] != ME and f'@{ME}' in (c.get('body') or '')]
+        if asks and (not mine or asks[-1]['created_at'] > max(mine)):
+            a = asks[-1]
+            items[f'reply:{repo}#{n}'] = dict(kind='reply', repo=repo, number=n, title=it['title'], url=a['html_url'],
+                asked_by=a['user']['login'], asked_at=a['created_at'], owner='OPS', auto=None,
+                closes_when='Cassidy comments after the mention')
+    return items
+
+
+def vetoed():
+    try:
+        return set(json.load(open(VETO)))
+    except Exception:
+        return set()
+
+
+# ---------------------------------------------------------------- act
+def job_dir(job):
+    return os.path.join(OUTBOX, job)
+
+
+def receipt(job):
+    try:
+        return json.load(open(os.path.join(job_dir(job), 'receipt.json')))
+    except Exception:
+        return None
+
+
+def running(job):
+    p = os.path.join(job_dir(job), '.running')
+    if not os.path.exists(p):
+        return False
+    try:
+        os.kill(int(open(p).read().strip()), 0); return True
+    except Exception:
+        return False
+
+
+def start_review(it):
+    job = f"review-{slug(it['repo'])}-{it['number']}"
+    out = job_dir(job)
+    brief = open(BRIEF).read()
+    for k, v in {'REPO': it['repo'], 'N': str(it['number']), 'URL': it['url'], 'TITLE': it['title'],
+                 'OUT': out, 'HEAD': it['head']}.items():
+        brief = brief.replace('{{' + k + '}}', v)
+    r = subprocess.run([os.path.join(COS, 'bin', 'cos-run'), 'investigate', job, brief, '--async'],
+                       capture_output=True, text=True, timeout=60)
+    log('review_started', id=f"review:{it['repo']}#{it['number']}", job=job, head=it['head'], rc=r.returncode)
+    return job
+
+
+def act(items, prev, pol):
+    done, staged, notes = [], [], []
+    reviews = closes = 0
+    for oid, it in items.items():
+        p = prev.get(oid, {})
+        if it['kind'] == 'review':
+            job = f"review-{slug(it['repo'])}-{it['number']}"
+            it['job_head'] = p.get('job_head')
+            if p.get('submitted') and it['job_head'] == it['head']:
+                it['submitted'] = True; it['state'] = 'submitted, waiting for GitHub to clear the request'; continue
+            if running(job):
+                it['state'] = 'drafting'; continue
+            rc = receipt(job)
+            stale = it['job_head'] is not None and it['job_head'] != it['head']   # new commits since the draft
+            if rc is None or stale:
+                if reviews < MAX_REVIEWS_PER_RUN:
+                    start_review(it); it['job_head'] = it['head']; it['state'] = 'drafting'; reviews += 1
+                    it['submitted'] = it['staged'] = False
+                continue
+            if it['job_head'] is None:
+                it['job_head'] = it['head']      # a draft from before the ledger existed
+            standing = os.path.join(job_dir(job), 'standing.sh')
+            line = open(standing).read().strip() if os.path.exists(standing) else ''
+            m = STANDING_REVIEW.match(line)
+            ok = (rc.get('receipt', {}).get('status') == 'done' and rc.get('checker', {}).get('verdict') == 'pass'
+                  and m and int(m.group(1)) == it['number'] and m.group(2) == it['repo'] and m.group(3) == job
+                  and it['job_head'] == it['head'] and pol.get('pr_comment_review'))
+            if ok and not p.get('submitted'):
+                r = subprocess.run(line, shell=True, capture_output=True, text=True, timeout=120)
+                it['submitted'] = r.returncode == 0
+                log('review_submitted' if r.returncode == 0 else 'review_submit_failed', id=oid, job=job,
+                    rc=r.returncode, err=r.stderr[-300:])
+                (done if r.returncode == 0 else staged).append(
+                    f"{'Reviewed' if r.returncode == 0 else 'Could not submit review on'} {it['repo']}#{it['number']} "
+                    f"({it['title'][:60]}): comment review from {job}/review.md")
+            elif not ok and not p.get('staged'):
+                why = ('the checker failed: ' + '; '.join(rc.get('checker', {}).get('failures', [])[:2])) if rc.get('checker', {}).get('verdict') != 'pass' \
+                      else 'the job judged it needs you (no standing line)' if not m else 'standing approval is off'
+                staged.append(f"Review {it['repo']}#{it['number']} needs you: {why}. Draft: {job_dir(job)}/review.md")
+                it['staged'] = True
+            else:
+                it['submitted'] = p.get('submitted'); it['staged'] = p.get('staged')
+        elif it['kind'] == 'close':
+            if not pol.get('complete_merged_issue'):
+                if not p.get('staged'):
+                    staged.append(f"Close #{it['number']} ({it['title'][:60]}): {it['why']}. One tap: make complete CARD={it['number']} WHY=\"{it['why']}\"")
+                it['staged'] = True; continue
+            since = datetime.datetime.fromisoformat(p['since']) if p.get('since') else NOW
+            if (NOW - since).total_seconds() < NOTICE_HOURS * 3600:
+                if not p.get('noticed'):
+                    staged.append(f"Will complete #{it['number']} ({it['title'][:60]}) tomorrow: {it['why']}, no open boxes. "
+                                  f"To stop it: ~/cos/bin/cos-obligations --veto close:{it['repo']}#{it['number']}")
+                it['noticed'] = True; continue
+            if closes >= MAX_CLOSES_PER_RUN or p.get('complete_failed'):
+                it['complete_failed'] = p.get('complete_failed'); continue
+            env = dict(os.environ, CARD=str(it['number']), WHY=it['why'])
+            pre = subprocess.run(['make', 'complete'], cwd=MAIN, env=dict(env, DRY_RUN='1'), capture_output=True, text=True, timeout=120)
+            r = subprocess.run(['make', 'complete'], cwd=MAIN, env=env, capture_output=True, text=True, timeout=120) if pre.returncode == 0 else pre
+            closes += 1
+            log('complete' if r.returncode == 0 else 'complete_failed', id=oid, rc=r.returncode, err=r.stderr[-300:])
+            if r.returncode == 0:
+                done.append(f"Completed #{it['number']} ({it['title'][:60]}): {it['why']}")
+            else:
+                it['complete_failed'] = True
+                staged.append(f"Could not complete #{it['number']}: {(r.stderr or r.stdout)[-200:].strip()}")
+        elif it['kind'] == 'reply':
+            if not p.get('staged'):
+                staged.append(f"{it['asked_by']} asked you on {it['repo']}#{it['number']} ({it['title'][:50]}): {it['url']}. OPS drafts the reply.")
+            it['staged'] = True
+    return done, staged, notes
+
+
+# ---------------------------------------------------------------- main
+def main():
+    args = sys.argv[1:]
+    if '--veto' in args:
+        oid = args[args.index('--veto') + 1]
+        if not re.match(r'^(close|review|reply):wisecodeai/[A-Za-z0-9._-]+#\d+$', oid):
+            print('veto id looks like close:wisecodeai/data-org#423', file=sys.stderr); sys.exit(64)
+        v = vetoed(); v.add(oid); os.makedirs(STATE, exist_ok=True); json.dump(sorted(v), open(VETO, 'w'), indent=1)
+        log('veto', id=oid); print(f'vetoed {oid}'); sys.exit(0)
+    if '--selftest' in args:
+        pol = policy()
+        good = f"gh pr review 704 --repo wisecodeai/data-org --comment --body-file {OUTBOX}/review-data-org-704/review.md"
+        bad = [good.replace('--comment', '--approve'), good.replace('--comment', '--request-changes'),
+               good + '; rm -rf ~', good.replace('wisecodeai', 'someone')]
+        ok = STANDING_REVIEW.match(good) and not any(STANDING_REVIEW.match(b) for b in bad)
+        print(json.dumps({'policy': pol, 'patterns_ok': bool(ok)})); sys.exit(0 if ok else 1)
+    prev = {}
+    try:
+        prev = json.load(open(LEDGER)).get('items', {})
+    except Exception:
+        pass
+    items = collect()
+    pol = policy()
+    done, staged, notes = act(items, prev, pol) if '--act' in args else ([], [], [])
+    gone = [k for k in prev if k not in items and prev[k].get('status', 'open') == 'open']
+    closed, dropped = [], []
+    for k in gone:     # closed only when the system of record says so
+        it = prev[k]
+        if it['kind'] == 'close':
+            st = gh('issue', 'view', str(it['number']), '--repo', it['repo'], '--json', 'state')['state']
+            (closed if st == 'CLOSED' else dropped).append(k)
+        else:
+            closed.append(k)   # review: no longer requested · reply: he answered or the issue closed
+    for k in closed:
+        log('closed', id=k, kind=prev[k]['kind'])
+    for k in dropped:
+        log('no_longer_qualifies', id=k, kind=prev[k]['kind'])
+    new = [k for k in items if k not in prev]
+    for k in items:
+        items[k]['status'] = 'open'; items[k]['since'] = prev.get(k, {}).get('since', NOW.isoformat(timespec='seconds'))
+    json.dump({'updated': NOW.isoformat(timespec='seconds'), 'items': items}, open(LEDGER, 'w'), indent=1)
+    counts = {k: sum(1 for i in items.values() if i['kind'] == k) for k in ('review', 'close', 'reply')}
+    changed = bool(done or staged or closed or new)
+    summary = ('NO CHANGE' if not changed else
+               f"Open: {counts['review']} reviews, {counts['close']} closable, {counts['reply']} replies. "
+               f"Done now: {len(done)}. Needs you: {len(staged)}. Closed since last run: {len(closed)}.")
+    out = {'job': f"obligations-{NOW.strftime('%Y%m%d')}", 'lane': 'obligations',
+           'receipt': {'status': 'done', 'summary': summary,
+                       'needs_approval': [{'action': s, 'target': '', 'why': 'standing approval does not cover it'} for s in staged],
+                       'open_questions': [], 'artifacts': [LEDGER, LOG],
+                       'done': done, 'closed': closed}}
+    d = job_dir(out['job']); os.makedirs(d, exist_ok=True)
+    json.dump(out, open(os.path.join(d, 'receipt.json'), 'w'), indent=1)
+    print(json.dumps(out, indent=1))
+
+
+if __name__ == '__main__':
+    main()
