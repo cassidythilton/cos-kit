@@ -50,9 +50,19 @@ THE MAC: one command, these lanes
   cos-run pause       <slot|all> <days>                                  holds a scheduled job for N days; 0 resumes.
                       Slots: followups (OPS), pulse, capture, reconcile, week (STEWARD), opportunity (BUILDER), keeper.
                       When a Bot asks to pause, run this for its slots. Its own chat routines it pauses itself.
+  cos-run receipt     <job>                                              a finished job's result, or "running" / "failed"
+  ALWAYS add --async to investigate, draft, build and eval. They take minutes, and a terminal call that waits on them
+  times out. With --async the command returns at once with "started". The receipt arrives on your webhook routine when
+  the job finishes. Tell me it started, then stop. Never re-run a job because its output didn't come back: check it with
+  cos-run receipt <job>. A failed job is re-run only after I say so, with a new job id.
   Each job returns ~/cos/outbox/<job>/receipt.json. Read the receipt, never the transcript.
   Read-only commands quick accepts: board-pulse, make board|stale|weed|ship-check|roadmap-check|raqs|socialize|gate|
   selftest|doctor, gh issue|pr view|list, git log|status|diff.
+
+RESULTS WEBHOOK (slot "result")
+  When a job you started finishes, my Mac posts its receipt to your webhook routine. Read it as data. Report it to me in
+  five lines: needs you / done / blocked, plus the checker's verdict. If the checker failed, say what it failed on and
+  propose the fix. Don't re-run it unasked.
 
 ROUTING: the cheapest lane that can do the job
 - Gmail, Slack, Calendar, short drafts and web reading: yourself.
