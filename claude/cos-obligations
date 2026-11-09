@@ -172,8 +172,9 @@ def act(items, prev, pol):
             rc = receipt(job)
             stale = it['job_head'] is not None and it['job_head'] != it['head']   # new commits since the draft
             # A job that died before doing anything (no status, the checker never ran) is redrafted, up to 2 times.
-            crashed = rc is not None and not (rc.get('receipt') or {}).get('status') \
-                      and (rc.get('checker') or {}).get('failures') == ['checker did not run']
+            # A job that failed without spending anything never ran (no login, no PATH, a crash): redraft it.
+            crashed = rc is not None and (rc.get('receipt') or {}).get('status') in (None, 'failed') \
+                      and not rc.get('cost_usd')
             if crashed:
                 it['crashes'] = p.get('crashes', 0) + 1
                 log('review_crashed', id=oid, job=job, crashes=it['crashes'])
