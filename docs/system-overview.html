@@ -56,7 +56,17 @@ section > .intro { color: var(--muted); }
 code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
 code { background: var(--chip-bg); padding: 1px 5px; border-radius: 4px; }
 .diagram { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 20px; overflow-x: auto; }
-.diagram pre { margin: 0; text-align: center; }
+.sys { display: block; width: 100%; min-width: 640px; height: auto; font-family: var(--font-body); }
+.sys .edges line { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.sys .arrowhead { fill: var(--muted); }
+.sys .elabel text { fill: var(--muted); font-size: 12px; font-family: var(--font-body); }
+.sys .node rect { fill: var(--surface); stroke: var(--c); stroke-width: 2; }
+.sys .node text { fill: var(--ink); font-size: 15px; font-weight: 600; text-anchor: middle; font-family: var(--font-display); letter-spacing: 0.02em; }
+.sys .node text.sub { font-family: var(--font-mono); font-size: 12px; font-weight: 400; fill: var(--muted); letter-spacing: 0; }
+.sys .n-you { --c: var(--ink); } .sys .n-chief { --c: var(--chief); } .sys .n-ops { --c: var(--ops); } .sys .n-steward { --c: var(--steward); }
+.sys .n-builder { --c: var(--builder); } .sys .n-keeper { --c: var(--keeper); } .sys .n-mac { --c: var(--mac); } .sys .n-src { --c: var(--rule); }
+.sys .n-src rect { stroke-dasharray: 5 4; }
+.sys .n-src text { font-family: var(--font-body); font-weight: 500; font-size: 13px; }
 .bots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
 .bot { background: var(--surface); border: 1px solid var(--rule); border-top: 4px solid var(--c); border-radius: 10px; padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
 .bot .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -107,21 +117,45 @@ a { color: var(--accent); }
 <section>
   <h2>How the parts connect</h2>
   <div class="diagram">
-<pre class="mermaid">
-flowchart LR
-  you(["You"]) -- "ask and approve" --> chief["CHIEF"]
-  chief -- "hands off" --> ops["OPS"]
-  chief -- "hands off" --> stew["STEWARD"]
-  chief -- "hands off" --> bld["BUILDER"]
-  chief -- "hands off" --> kpr["KEEPER"]
-  chief -- "runs, after your tap" --> run[["Mac: cos-run"]]
-  clock[["Mac clock: cos-sched"]] -- "starts jobs" --> run
-  clock -- "pushes receipts" --> ops
-  clock -- "pushes receipts" --> stew
-  clock -- "pushes receipts" --> bld
-  clock -- "pushes receipts" --> kpr
-  run -- "reads" --> src[("Repos, board, transcripts, Slack, lake")]
-</pre>
+<svg class="sys" viewBox="0 0 900 440" role="img" aria-label="You talk to the Chief. The Chief hands work to OPS, STEWARD, BUILDER and KEEPER, and runs cos-run on the Mac after your tap. The Mac's clock starts scheduled jobs and pushes each receipt to the bot that owns it. cos-run reads the repos, board, transcripts, Slack and the lake.">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+  <!-- edges -->
+  <g class="edges">
+    <line x1="120" y1="196" x2="176" y2="196" marker-end="url(#arr)"/>
+    <line x1="310" y1="196" x2="416" y2="52" marker-end="url(#arr)"/>
+    <line x1="310" y1="196" x2="416" y2="132" marker-end="url(#arr)"/>
+    <line x1="310" y1="196" x2="416" y2="212" marker-end="url(#arr)"/>
+    <line x1="310" y1="196" x2="416" y2="292" marker-end="url(#arr)"/>
+    <line x1="245" y1="221" x2="416" y2="376" marker-end="url(#arr)"/>
+    <line x1="700" y1="168" x2="574" y2="52" marker-end="url(#arr)"/>
+    <line x1="700" y1="168" x2="574" y2="132" marker-end="url(#arr)"/>
+    <line x1="700" y1="168" x2="574" y2="212" marker-end="url(#arr)"/>
+    <line x1="700" y1="168" x2="574" y2="292" marker-end="url(#arr)"/>
+    <line x1="780" y1="196" x2="574" y2="372" marker-end="url(#arr)"/>
+    <line x1="570" y1="398" x2="696" y2="398" marker-end="url(#arr)"/>
+  </g>
+  <!-- edge labels -->
+  <g class="elabel">
+    <text x="148" y="186" text-anchor="middle">asks</text>
+    <text x="352" y="110" text-anchor="middle" transform="rotate(-53 352 110)">hands off</text>
+    <text x="300" y="320" text-anchor="middle" transform="rotate(42 300 320)">runs, after your tap</text>
+    <text x="652" y="88" text-anchor="middle" transform="rotate(43 652 88)">pushes receipts</text>
+    <text x="700" y="300" text-anchor="middle" transform="rotate(-40 700 300)">starts jobs</text>
+    <text x="633" y="390" text-anchor="middle">reads</text>
+  </g>
+  <!-- nodes -->
+  <g class="node n-you"><rect x="20" y="171" width="100" height="50" rx="25"/><text x="70" y="201">You</text></g>
+  <g class="node n-chief"><rect x="180" y="171" width="130" height="50" rx="8"/><text x="245" y="201">CHIEF</text></g>
+  <g class="node n-ops"><rect x="420" y="30" width="150" height="44" rx="8"/><text x="495" y="57">OPS</text></g>
+  <g class="node n-steward"><rect x="420" y="110" width="150" height="44" rx="8"/><text x="495" y="137">STEWARD</text></g>
+  <g class="node n-builder"><rect x="420" y="190" width="150" height="44" rx="8"/><text x="495" y="217">BUILDER</text></g>
+  <g class="node n-keeper"><rect x="420" y="270" width="150" height="44" rx="8"/><text x="495" y="297">KEEPER</text></g>
+  <g class="node n-mac"><rect x="700" y="140" width="180" height="56" rx="4"/><text x="790" y="164">Mac clock</text><text class="sub" x="790" y="184">cos-sched</text></g>
+  <g class="node n-mac"><rect x="420" y="354" width="150" height="56" rx="4"/><text x="495" y="378">Mac front desk</text><text class="sub" x="495" y="398">cos-run</text></g>
+  <g class="node n-src"><rect x="700" y="354" width="180" height="70" rx="4"/><text x="790" y="380">Repos, board,</text><text x="790" y="398">transcripts,</text><text x="790" y="416">Slack, lake</text></g>
+</svg>
   </div>
   <p class="intro">Two paths reach the Mac. When you ask, the Chief runs <code>cos-run</code> and you approve the card that shows the exact command. On a schedule, the Mac runs the job itself and hands the result to the bot that owns it. A bot never runs anything on your Mac while you're not looking.</p>
 </section>
