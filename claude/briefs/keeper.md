@@ -5,10 +5,11 @@ Read first, in this order:
 2. The rules it names, fresh from origin/main: data-org AGENTS.md, CONTRIBUTING.md (the boundary), standards/writing.md, the work-system, commands-by-cadence and board-weeding docs, the Makefile help (`make help` or the Makefile's ## lines) in ~/cos/data-org-main; data-org-notebook AGENTS.md and HANDOFF.md in ~/cos/notebook-main; canon charter decisions 14 and 28.
 3. The kit's own rules: ~/cos/handbook/rules.md, board-standard.md, engineering-standard.md, ~/cos/claude/lane.md, build-lane.md, verifier.md, the briefs, and ~/cos/kit/grokbot/*.md (what each bot was told).
 
-Then the week's evidence (last 7 days):
-- ~/cos/state/corrections.jsonl: every correction Cassidy recorded, by bot.
-- Every ~/cos/outbox/*/receipt.json: status, checker verdict and failures, verifier level, baseline reading, cost. run.err when a job failed.
-- ~/cos/state/sched.log: missed, failed, skipped and no-change runs.
+Then the week's evidence (last 7 days). Read `~/cos/state/cos.db` first, with `cos-db sql`. It already holds the scorecard, the gate blocks, the schedule health and the costs. Open the raw folders only when a row needs the detail behind it.
+- `jobs`, `gate_events`, `schedule`, `corrections`: runs, checker pass rate, verifier levels, cost, blocks, misses, notes.
+- ~/cos/state/corrections.jsonl: the note text, if the database row is not enough.
+- ~/cos/outbox/<job>/: the receipt, checker failures, verifier criteria, and run.err when a job failed.
+- ~/cos/state/sched.log: the schedule line, if a cell needs the exact words.
 - ~/cos/evals/runs/*/report.json: the latest eval results.
 - ~/cos/kit git log, and git log on data-org and data-org-notebook origin/main for the week: what changed in the system and in the rules it wraps.
 - Slack, read-only, only the channels system-map.md lists for work signals: any message where someone corrected or questioned something a bot drafted for Cassidy.

@@ -39,6 +39,8 @@ Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin
 | Cassidy's Claude and Cursor transcripts | how he works | only a path he names, or the monthly cassidy-mode re-mine of his own projects | no | never glob across other people's or unrelated projects |
 | `~/cos/outbox/*/receipt.json` | what every job did, cost, checker and verifier results | direct read | webhook bodies | receipts summarize; read artifacts for detail |
 | `~/cos/state/` | corrections, schedule log, board-health trend | direct read | no | team numbers only, never per person in public |
+| `~/cos/state/ledger/*.jsonl` | append-only record of jobs, gate blocks and asks, pushes, applies, the schedule, corrections, pauses | direct read | no | commands and paths only; secrets redacted; never file contents or canon values |
+| `~/cos/state/cos.db` | the flight recorder: jobs, costs, files touched, commands, gate events, schedule, corrections, evals, board health | `cos-db sql`, read-only | no | built by `cos-db load` from the ledger and the folders; writers never open it |
 | `~/cos/evals/` | eval suites and reports | direct read | through KEEPER's report | |
 | `~/cos/kit` (git) | the system itself | direct read; changes by Cassidy only | no | the gate blocks agent edits |
 | `~/builds/*/HANDOFF.md`, `BRIEF.md`, `VERIFY.md` | each build's state | direct read | through BUILDER | |

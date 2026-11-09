@@ -70,7 +70,23 @@ Repeat with `cos-webhook-ops`, `cos-webhook-builder` and `cos-webhook-keeper`. T
 cd ~/cos/kit && ./install.sh --online --schedule
 ```
 
-`--online` confirms each key is present. `--schedule` loads the launchd jobs (`~/cos/bin/cos-sched list` shows them). `./install.sh --unschedule` removes them.
+`--online` confirms each key is present. `--schedule` loads the launchd jobs (`~/cos/bin/cos-sched list` shows them). `./install.sh --unschedule` removes them, including the dashboard refresher below.
+
+## The flight recorder
+
+```bash
+~/cos/bin/cos-dash
+```
+
+Builds the page if it needs a build, starts it, and opens `http://127.0.0.1:8787`. `~/cos/bin/cos-dash --stop` stops it. The page reads `~/cos/state/cos.db`. Nothing on it leaves this Mac.
+
+To refresh that database every five minutes, run this yourself:
+
+```bash
+cd ~/cos/kit && ./install.sh --schedule=dashboard
+```
+
+That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, every 300 seconds) and loads it. It does not load the slot schedule. Add it to a slot list when you want both: `--schedule=followups,dashboard`.
 
 ## 5. Your own files (rough is fine)
 
@@ -90,6 +106,10 @@ cd ~/cos/kit && ./install.sh --online --schedule
 | `claude/cos-run` | `~/cos/bin/` | the front desk: lanes `quick`, `investigate`, `draft`, `build`, `pair`, `apply`, `eval`, `note` |
 | `claude/cos-sched` | `~/cos/bin/` | the Mac's schedule (run by launchd): runs each scheduled job, skips if the Mac woke too late |
 | `claude/cos-push` | `~/cos/bin/` | hands a receipt to a Bot's webhook routine; key read from the Keychain, never printed |
+| `claude/cos-ledger` | `~/cos/bin/` | appends one redacted JSON line to `~/cos/state/ledger/<stream>.jsonl`. Always exits 0 |
+| `claude/cos-db` | `~/cos/bin/` | `load`, `rebuild`, and read-only `sql`. The only writer of `~/cos/state/cos.db` |
+| `claude/cos-dash` | `~/cos/bin/` | builds and opens the flight recorder at `http://127.0.0.1:8787` |
+| `apps/flight-recorder/` | stays in the kit | the page and the read-only API |
 | `claude/briefs/*.md` | `~/cos/claude/briefs/` | the scheduled jobs' briefs: followups, capture, reconcile, week, opportunity, keeper |
 | `claude/verifier.md` | `~/cos/claude/` | the independent verifier's prompt (after every build job) |
 | `evals/core.json` | `~/cos/evals/` | the core eval suite: five real requests with rubrics and must-nots |

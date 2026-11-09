@@ -27,13 +27,14 @@
 2. [The Bots](#the-bots)
 3. [Who Does What](#who-does-what)
 4. [The Mac](#the-mac)
-5. [The Week](#the-week)
-6. [How a Write Gets Approved](#how-a-write-gets-approved)
-7. [The Walls](#the-walls)
-8. [How It Learns](#how-it-learns)
-9. [Rules That Come First](#rules-that-come-first)
-10. [Install and Change](#install-and-change)
-11. [Project Structure](#project-structure)
+5. [The Flight Recorder](#the-flight-recorder)
+6. [The Week](#the-week)
+7. [How a Write Gets Approved](#how-a-write-gets-approved)
+8. [The Walls](#the-walls)
+9. [How It Learns](#how-it-learns)
+10. [Rules That Come First](#rules-that-come-first)
+11. [Install and Change](#install-and-change)
+12. [Project Structure](#project-structure)
 
 ---
 
@@ -106,6 +107,27 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 | ![pause](https://img.shields.io/badge/pause-5B6C5D?style=flat-square) | Holds a scheduled slot for N days, `0` resumes | none | free |
 
 Source: [claude/cos-run](claude/cos-run).
+
+---
+
+## The Flight Recorder
+
+Every action on the Mac appends one line to `~/cos/state/ledger/`. `cos-db load` builds `~/cos/state/cos.db` from that ledger and the folders that already exist. The page at `http://127.0.0.1:8787` reads the database and nothing else. It never leaves this Mac.
+
+| What you see | Where it comes from |
+| --- | --- |
+| ![jobs](https://img.shields.io/badge/Jobs_and_cost-141416?style=flat-square) | `jobs`, from the ledger plus each receipt |
+| ![walls](https://img.shields.io/badge/Gate_blocks-c0392b?style=flat-square) | `gate_events`. Allows are not recorded |
+| ![schedule](https://img.shields.io/badge/Schedule-0f8a7e?style=flat-square) | `schedule`, including runs the Mac slept through |
+| ![learn](https://img.shields.io/badge/Corrections_and_evals-b26a00?style=flat-square) | `corrections`, `evals`, `board_health` |
+
+<p align="center">
+  <img src="docs/images/flight-recorder.png" alt="The flight recorder: jobs, spend, and what got blocked" width="900">
+  <br>
+  <em>Open it with <code>cos-dash</code>. Cursor and Codex report no dollars, so they show up as run counts. Grok's own app calls stay in the Grok app.</em>
+</p>
+
+Source: [claude/cos-ledger](claude/cos-ledger), [claude/cos-db](claude/cos-db), [apps/flight-recorder](apps/flight-recorder).
 
 ---
 
@@ -228,6 +250,7 @@ cos-kit/
 ├── claude/                  the Mac side
 │   ├── cos-run              front desk: quick · investigate · draft · build · pair · apply · eval · note · pause
 │   ├── cos-sched            the clock (launchd) · cos-push hands receipts to Grok webhooks
+│   ├── cos-ledger           append-only ledger · cos-db loads it into cos.db · cos-dash opens the page
 │   ├── gate.sh              the wall in front of every job
 │   ├── lake-query           read-only data, canon aggregates only
 │   ├── board-pulse          the board readout from the repo's make targets
@@ -238,8 +261,9 @@ cos-kit/
 ├── builds-template/         a build workspace: BRIEF.md · VERIFY.md · HANDOFF.md · verify
 ├── evals/                   the core eval suite
 ├── claude-skills/           cassidy-mode, how Claude works with Cassidy
+├── apps/flight-recorder/    the local page: what ran, what it cost, what got blocked
 ├── docs/                    the overview page, images, and docs/src/ to regenerate them
-├── install.sh               installer and 84-check self-test
+├── install.sh               installer and self-test
 ├── INSTALL.md               step by step
 └── PLAN.md                  the design and its reasons
 ```
