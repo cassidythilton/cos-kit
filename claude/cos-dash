@@ -1,0 +1,50 @@
+#!/bin/bash
+# cos-dash: build the flight recorder UI if needed, start it on 127.0.0.1:8787, open it.
+# cos-dash --stop  stops the server.
+set -uo pipefail
+APP="$HOME/cos/kit/apps/flight-recorder"
+PID="$HOME/cos/state/dashboard.pid"
+LOG="$HOME/cos/state/dashboard.log"
+PORT="${COS_DASH_PORT:-8787}"
+URL="http://127.0.0.1:$PORT"
+
+if [[ "${1:-}" == "--stop" ]]; then
+  if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
+    kill "$(cat "$PID")" 2>/dev/null || true
+    rm -f "$PID"
+    echo "stopped"
+  else
+    rm -f "$PID"
+    echo "not running"
+  fi
+  exit 0
+fi
+
+if [[ ! -d "$APP/node_modules" ]]; then
+  (cd "$APP" && npm install) || { echo "npm install failed" >&2; exit 1; }
+fi
+need=0
+[[ -f "$APP/dist/index.html" ]] || need=1
+if [[ $need -eq 0 ]]; then
+  newer="$(find "$APP/src" "$APP/index.html" "$APP/package.json" -newer "$APP/dist/index.html" 2>/dev/null | head -1)"
+  [[ -n "$newer" ]] && need=1
+fi
+if [[ $need -eq 1 ]]; then
+  (cd "$APP" && npm run build) || { echo "build failed" >&2; exit 1; }
+fi
+
+if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
+  echo "already running at $URL"
+  open "$URL"
+  exit 0
+fi
+
+"$HOME/cos/bin/cos-db" load >/dev/null || { echo "cos-db load failed" >&2; exit 1; }
+python3 -I "$APP/server.py" >> "$LOG" 2>&1 &
+echo $! > "$PID"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  curl -sf -o /dev/null "$URL/api/summary?window=1d" && break
+  sleep 0.2
+done
+echo "$URL"
+open "$URL"
