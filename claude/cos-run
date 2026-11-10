@@ -22,7 +22,10 @@ LANE="${1:?lane: quick|investigate|draft|build|pair|apply|eval|note|pause|receip
 [[ -n "$BRIEF_IN" || "$LANE" == "receipt" ]] || { echo "missing third argument (the brief, or the lane's value)" >&2; exit 64; }
 shift $(( $# < 3 ? $# : 3 ))
 export PATH="$HOME/cos/bin:$PATH"
-COS="$HOME/cos"; REPO="$HOME/Documents/Data-Org-Repos/data-org"; MAIN="$COS/data-org-main"
+# Jobs use their own clones under ~/cos/repos. launchd jobs cannot read ~/Documents (macOS privacy, TCC),
+# so nothing a job needs may live there. Cassidy's checkout in ~/Documents is never touched.
+COS="$HOME/cos"; REPO="$COS/repos/data-org"; MAIN="$COS/data-org-main"; NBREPO="$COS/repos/data-org-notebook"
+ZOOM=""; for z in "$COS/zoom" "$HOME/Documents/Zoom"; do [[ -d "$z" && -r "$z" ]] && { ZOOM="$z"; break; }; done
 # Best-effort. A ledger failure must not change the lane's exit code.
 ledger() { "$HOME/cos/bin/cos-ledger" "$@" >/dev/null 2>&1 || true; }
 IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0
@@ -214,7 +217,7 @@ if [[ -z "$IN" ]]; then
   if [[ -d "$MAIN" ]]; then git -C "$MAIN" checkout -q --detach origin/main; else git -C "$REPO" worktree add -q --detach "$MAIN" origin/main; fi
   # The notebook's rules (AGENTS.md, HANDOFF.md, queries/lib) are also read from origin/main, never Cassidy's checkout.
   # lake-query still runs from his checkout, because that's where the per-checkout .env lives.
-  NBREPO="$HOME/Documents/Data-Org-Repos/data-org-notebook"; NBMAIN="$COS/notebook-main"
+  NBMAIN="$COS/notebook-main"
   if [[ -d "$NBREPO/.git" ]]; then git -C "$NBREPO" fetch -q origin main 2>/dev/null || true
     if [[ -d "$NBMAIN" ]]; then git -C "$NBMAIN" checkout -q --detach origin/main 2>/dev/null || true; else git -C "$NBREPO" worktree add -q --detach "$NBMAIN" origin/main 2>/dev/null || true; fi; fi
   IN="$MAIN"
@@ -297,8 +300,8 @@ LANE_PROMPT="$COS/claude/lane.md"; [[ "$LANE" == "build" ]] && LANE_PROMPT="$COS
 # Only the eval lane sets COS_LANE_PROMPT (a proposed prompt under test). The gate and settings still apply in full.
 [[ "$LANE" == "investigate" && -n "${COS_LANE_PROMPT:-}" && -f "${COS_LANE_PROMPT}" ]] && LANE_PROMPT="$COS_LANE_PROMPT"
 # Read access beyond the workdir. Writes stay limited by the lane settings (the job folder, or the build workspace).
-EXTRA_DIRS=(); for d in "$HOME/Documents/Zoom" "$COS/notebook-main" "$MAIN" "$COS/state" "$COS/evals" "$COS/outbox" "$COS/kit" "$BUILDS"; do [[ -d "$d" ]] && EXTRA_DIRS+=("$d"); done
-[[ "$LANE" == "build" ]] && EXTRA_DIRS=("$MAIN" "$HOME/Documents/Data-Org-Repos/data-org-notebook")
+EXTRA_DIRS=(); for d in ${ZOOM:+"$ZOOM"} "$COS/notebook-main" "$MAIN" "$COS/state" "$COS/evals" "$COS/outbox" "$COS/kit" "$BUILDS"; do [[ -d "$d" ]] && EXTRA_DIRS+=("$d"); done
+[[ "$LANE" == "build" ]] && EXTRA_DIRS=("$MAIN" "$NBREPO")
 
 SCHEMA="$(cat "$COS/claude/receipt.schema.json")"
 PROMPT="Job: $JOB  Lane: $LANE  Job folder: $OUT

@@ -27,6 +27,16 @@ gh auth status >/dev/null 2>&1 && pass "gh signed in" || fail "gh not signed in 
 [[ -d "$HOME/Documents/Data-Org-Repos/data-org/.git" ]] && pass "data-org repo" || fail "data-org repo missing at ~/Documents/Data-Org-Repos/data-org"
 [[ -f "$HOME/Documents/Data-Org-Repos/data-org-notebook/scripts/run_query.py" ]] && pass "data-org-notebook (lake-query)" || fail "data-org-notebook missing (lake-query won't work)"
 [[ -d "$HOME/meetings" ]] && pass "~/meetings" || fail "~/meetings missing"
+# Scheduled jobs run under launchd, which macOS keeps out of ~/Documents (TCC). Jobs get their own clones in ~/cos/repos.
+mkdir -p "$COS/repos"
+for r in data-org data-org-notebook; do
+  [[ -d "$COS/repos/$r/.git" ]] || git clone -q "https://github.com/wisecodeai/$r.git" "$COS/repos/$r" 2>/dev/null
+  [[ -d "$COS/repos/$r/.git" ]] && pass "job clone ~/cos/repos/$r" || fail "could not clone wisecodeai/$r into ~/cos/repos"
+done
+for w in data-org-main notebook-main; do
+  if [[ -f "$COS/$w/.git" ]] && grep -q "/Documents/" "$COS/$w/.git"; then fail "~/cos/$w is linked into ~/Documents; scheduled jobs can't read it (remove it; the next job rebuilds it)"; else pass "~/cos/$w is outside ~/Documents"; fi
+done
+[[ -d "$COS/zoom" ]] && pass "~/cos/zoom (Zoom transcripts jobs can read)" || fail "~/cos/zoom missing: set Zoom's local recording folder to ~/cos/zoom"
 
 echo "2. The kit, versioned"
 # ~/cos/kit is the only source (a git repo, pushed to github.com/cassidythilton/cos-kit). Edit there, commit with a real

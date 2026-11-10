@@ -9,7 +9,7 @@
 #   board-pulse --week ...      the weekly window: make stale DAYS=7, plus make socialize
 #                               (stand-ins for the proposed `make week`, per docs/2026-10-29-commands-by-cadence.md)
 set -euo pipefail
-COS="${COS_HOME:-$HOME/cos}"; REPO="${DATA_ORG_REPO:-$HOME/Documents/Data-Org-Repos/data-org}"
+COS="${COS_HOME:-$HOME/cos}"; REPO="${DATA_ORG_REPO:-$COS/repos/data-org}"   # not ~/Documents: launchd cannot read it (TCC)
 MAIN="$COS/data-org-main"; STATE="${COS_STATE:-$COS/state}"
 RECORD=0; JSON=0; WEEK=0
 for a in "$@"; do case "$a" in --record) RECORD=1 ;; --json) JSON=1 ;; --week) WEEK=1 ;; *) echo "unknown: $a" >&2; exit 64 ;; esac; done

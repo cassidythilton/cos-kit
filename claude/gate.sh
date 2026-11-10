@@ -67,7 +67,7 @@ if [[ "$tool" == "Bash" ]]; then
 fi
 
 # ---- HARD: data-org context/ is a published snapshot the CDO's private repo owns. Cite it, never edit it.
-dctx_re='(Data-Org-Repos/data-org/(\.worktrees/[^/]+/)?context/|cos/data-org-main/context/)'
+dctx_re='(Data-Org-Repos/data-org/(\.worktrees/[^/]+/)?context/|cos/repos/data-org/(\.worktrees/[^/]+/)?context/|cos/data-org-main/context/)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit)$ ]] && [[ "$path" =~ $dctx_re ]]; then hard "editing data-org context/ (read-only; file a context-request)"; fi
 
 # ---- Connectors: read verbs only
