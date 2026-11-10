@@ -37,6 +37,8 @@ for w in data-org-main notebook-main; do
   if [[ -f "$COS/$w/.git" ]] && grep -q "/Documents/" "$COS/$w/.git"; then fail "~/cos/$w is linked into ~/Documents; scheduled jobs can't read it (remove it; the next job rebuilds it)"; else pass "~/cos/$w is outside ~/Documents"; fi
 done
 [[ -d "$COS/zoom" ]] && pass "~/cos/zoom (Zoom transcripts jobs can read)" || fail "~/cos/zoom missing: set Zoom's local recording folder to ~/cos/zoom"
+# Zoom's saved transcripts ignore the recording folder setting and always go to ~/Documents/Zoom, so that path is a link.
+[[ -L "$HOME/Documents/Zoom" && "$(readlink "$HOME/Documents/Zoom")" == "$COS/zoom" ]] && pass "~/Documents/Zoom links to ~/cos/zoom" || fail "~/Documents/Zoom is not a link to ~/cos/zoom: Zoom transcripts will land where jobs can't read them"
 
 echo "2. The kit, versioned"
 # ~/cos/kit is the only source (a git repo, pushed to github.com/cassidythilton/cos-kit). Edit there, commit with a real

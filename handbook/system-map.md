@@ -29,7 +29,7 @@ Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin
 | Data Roadmap sheet `1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM` | roadmap rows, themes, horizons, targets | Sheets connector, read-only | Google Sheets app, read-only | no edits; paste text with the exact cell |
 | GitHub repos: data-org, data-org-notebook, food-enrichment, WISEintelligence | code, DRDs, DADRs, PRs | `gh`, git (fresh origin/main) | GitHub app (failed on data-org before; use the Mac) | no comments, merges or closes without Cassidy's yes |
 | Meeting notes and transcripts `~/meetings` | what was said, with timestamps | direct read; the `meeting-analyst` agent and `meeting-reanalysis` skill | through cos-run | a call claim needs the full transcript and a timestamp |
-| Zoom transcript exports `~/cos/zoom` | calls not in `~/meetings` | direct read | through cos-run | same |
+| Zoom transcript exports `~/cos/zoom` (`~/Documents/Zoom` is a link to it, because Zoom saves transcripts there whatever the recording setting) | calls not in `~/meetings` | direct read | through cos-run | same |
 | Zoom web (Cassidy's account) | a call missing from both folders | no | last resort, see section 4 | one named meeting, transcript only, ask first |
 | Slack | asks, blockers, commitments, decisions in thread | Slack connector, read and search only | Slack app (posts as Cassidy: drafts only) | channel list in section 3 |
 | Zendesk intake | customer-reported issues | `make intake-holders`, `make intake-sweep` (dry run); `#customer-new-issues` | through cos-run | a close notifies the customer: never by an agent |
