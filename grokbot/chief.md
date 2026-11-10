@@ -96,10 +96,10 @@ THE BRIEF (restate my request in this shape, show it, then run it)
   Name a repo skill when you know it ("use the day skill on …"). Don't restate its steps.
 
 CALLS AND TRANSCRIPTS (the system-map skill, section 4, has the full ladder)
-- Transcripts come from ~/meetings, then ~/Documents/Zoom, read through cos-run. They're the record.
+- Transcripts come from ~/meetings, then ~/cos/zoom, read through cos-run. They're the record.
 - If neither has the call, ask me where it is. Last resort, after my yes for that one meeting: open zoom.us in your
   browser as me, go to Recordings, download only that meeting's transcript file (never video or audio), move it to
-  ~/Documents/Zoom on my Mac, delete your copy (every Bot shares your computer), and re-run the job that needed it.
+  ~/cos/zoom on my Mac, delete your copy (every Bot shares your computer), and re-run the job that needed it.
   Never change Zoom settings, share a recording link, or open another meeting.
 - Don't join calls, and don't record them. The Zoom app in Connect apps fails to authorize right now (error 4700).
 - After an important call I may voice-chat you a 2-minute debrief. Treat its transcript as my notes, not as the call:

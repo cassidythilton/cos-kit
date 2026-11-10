@@ -29,7 +29,7 @@ Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin
 | Data Roadmap sheet `1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM` | roadmap rows, themes, horizons, targets | Sheets connector, read-only | Google Sheets app, read-only | no edits; paste text with the exact cell |
 | GitHub repos: data-org, data-org-notebook, food-enrichment, WISEintelligence | code, DRDs, DADRs, PRs | `gh`, git (fresh origin/main) | GitHub app (failed on data-org before; use the Mac) | no comments, merges or closes without Cassidy's yes |
 | Meeting notes and transcripts `~/meetings` | what was said, with timestamps | direct read; the `meeting-analyst` agent and `meeting-reanalysis` skill | through cos-run | a call claim needs the full transcript and a timestamp |
-| Zoom transcript exports `~/Documents/Zoom` | calls not in `~/meetings` | direct read | through cos-run | same |
+| Zoom transcript exports `~/cos/zoom` | calls not in `~/meetings` | direct read | through cos-run | same |
 | Zoom web (Cassidy's account) | a call missing from both folders | no | last resort, see section 4 | one named meeting, transcript only, ask first |
 | Slack | asks, blockers, commitments, decisions in thread | Slack connector, read and search only | Slack app (posts as Cassidy: drafts only) | channel list in section 3 |
 | Zendesk intake | customer-reported issues | `make intake-holders`, `make intake-sweep` (dry run); `#customer-new-issues` | through cos-run | a close notifies the customer: never by an agent |
@@ -61,9 +61,9 @@ Channels that appear in his work but not in his membership list (for example the
 ## 4. Getting a call transcript: the escalation ladder
 
 1. `~/meetings/<date>-<slug>.md`: the note and its transcript.
-2. `~/Documents/Zoom/<meeting name>.txt`.
+2. `~/cos/zoom/<meeting name>.txt`.
 3. Ask Cassidy whether a transcript exists, and where.
-4. **Last resort: Zoom web.** Only when steps 1 to 3 fail, only for one named meeting, and only after Cassidy says yes to that meeting. The Chief opens zoom.us in the Bots' browser, signed in as Cassidy (a Vault or 1Password login, or he takes over for single sign-on). It goes to Recordings, finds that meeting's cloud recording, and downloads the transcript file only (`.vtt` or `.txt`), never the video or audio. It moves the file to `~/Documents/Zoom/` on the Mac (an approval card), then deletes its copy from the Bots' computer, which every Bot shares. It never changes Zoom settings, shares a recording link, or opens a meeting it wasn't asked for. Then the job that needed it re-runs from step 2.
+4. **Last resort: Zoom web.** Only when steps 1 to 3 fail, only for one named meeting, and only after Cassidy says yes to that meeting. The Chief opens zoom.us in the Bots' browser, signed in as Cassidy (a Vault or 1Password login, or he takes over for single sign-on). It goes to Recordings, finds that meeting's cloud recording, and downloads the transcript file only (`.vtt` or `.txt`), never the video or audio. It moves the file to `~/cos/zoom/` on the Mac (an approval card), then deletes its copy from the Bots' computer, which every Bot shares. It never changes Zoom settings, shares a recording link, or opens a meeting it wasn't asked for. Then the job that needed it re-runs from step 2.
 
 A Mac job never logs into Zoom. When it needs a missing transcript, it returns status `blocked` with "needs transcript: <meeting, date>", and the Chief offers step 3 or 4.
 

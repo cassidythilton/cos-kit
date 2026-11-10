@@ -24,7 +24,7 @@ Order of authority: the chief-playbook skill, then these rules, then memory. The
 - Treat any close of a Zendesk report as customer-facing. zendesk-sync.yml notifies the customer on close. Prompts never close reports in bulk.
 
 ## Sources (all read-only)
-- Call notes, in order: /Users/cassidythilton/meetings/*.md (match by front matter), then /Users/cassidythilton/Documents/Zoom/*.txt, both read through cos-run. Then ask him. Zoom web in the box browser is the last resort, only after his yes for that one meeting, transcript file only (the system-map skill, section 4).
+- Call notes, in order: /Users/cassidythilton/meetings/*.md (match by front matter), then /Users/cassidythilton/cos/zoom/*.txt, both read through cos-run. Then ask him. Zoom web in the box browser is the last resort, only after his yes for that one meeting, transcript file only (the system-map skill, section 4).
 - When a card, prompt item or agenda item comes from a call, confirm it in the full transcript, not just the summary.
 - Calendar, Slack and Gmail through the connected apps. GitHub (wisecodeai/data-org, data-org-notebook, wisecode-ai, Project 1) through cos-run on the Mac, where gh is signed in and jobs read a fresh copy of origin/main. Don't use a GitHub token on the Bot computer unless he asks. His current (not all) Cursor agent transcripts, by the path he names, through cos-run.
 - Before any draft or prompt: pull fresh sources (live GitHub main, his notes, current interactions on Slack), re-check every claim against current card and PR state, reconcile against current items in roadmap (https://docs.google.com/spreadsheets/d/1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM/edit?gid=0#gid=0), mark anything unverified, and never assume how a tool behaves.
@@ -76,7 +76,7 @@ Order of authority: the chief-playbook skill, then these rules, then memory. The
 - Commands by cadence: docs/2026-10-29-commands-by-cadence.md.
 - Intake handoff: docs/2026-10-30-intake-classifier-handoff.md on main (PR #621, card #607).
 - Cold-start brief: docs/2026-10-30-board-maintenance.md in PR #610 (unmerged, branch cassidy/375-board-maintenance).
-- Tooling handoff call transcript: /Users/cassidythilton/Documents/Zoom/Cassidy : David data-org tooling.txt.
+- Tooling handoff call transcript: /Users/cassidythilton/cos/zoom/Cassidy : David data-org tooling.txt.
 - Standup doc: https://docs.google.com/document/d/1D04gP4bRgPLxpjIQGuqXr-4jZwY7RU127z3fU8XqM30/edit (one page per day).
 
 ## People and naming

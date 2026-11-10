@@ -33,11 +33,11 @@ I read Grok Bot's own documentation (cursor.com/docs/grok-bot and /help/grok-bot
 | 4 | "Start a new chat per task" | **Each Bot has one conversation**, with memory and summaries managed by Grok. | Removed that advice. The playbook lives in skills, so a long conversation doesn't erode it. |
 | 5 | Separate bots are separate boundaries | **All your Bots share one cloud computer, its files and its logins,** and connected apps act as you (a Slack post from a bot is a post from you). | The walls that matter are Auto-review "Ask first" rules, the Mac setting, and `gate.sh`. No tokens go on the cloud computer. |
 | 6 | The kit could live where it was built | It sat in a folder this app deletes with the session. | `install.sh` now keeps it in **`~/cos/kit` as a git repo**. Every change is a commit you can read and revert. |
-| 7 | `cos-run` was tested | The self-test never ran a Claude lane. A dry trace found that **macOS's bash 3.2 crashes on empty arrays**, so every `investigate` without `--resume` would have died. Jobs also couldn't read `~/Documents/Zoom`. | Both fixed. A live smoke test is still the first install step. |
+| 7 | `cos-run` was tested | The self-test never ran a Claude lane. A dry trace found that **macOS's bash 3.2 crashes on empty arrays**, so every `investigate` without `--resume` would have died. Jobs also couldn't read `~/cos/zoom`. | Both fixed. A live smoke test is still the first install step. |
 | 8 | One checker was enough | The checker was the same model family as the worker, and it read claims rather than running anything. | Builds now get a **baseline-vs-treatment run, an independent verifier that runs the code, and a different-family review** (below). |
 | 9 | OPS's Friday receipt audited the system | It overlapped with KEEPER's job. | It moved to KEEPER. |
 
-**On the Zoom bot.** I found no documented Grok Bot feature that joins calls. What exists is a **Zoom app connector**, which **fails to authorize from the desktop app today (error 4700, no workaround)**, per Grok's help center. Third-party services can put a bot into a call. Even when the connector works, I'd **keep `~/meetings` and `~/Documents/Zoom` as the record**:
+**On the Zoom bot.** I found no documented Grok Bot feature that joins calls. What exists is a **Zoom app connector**, which **fails to authorize from the desktop app today (error 4700, no workaround)**, per Grok's help center. Third-party services can put a bot into a call. Even when the connector works, I'd **keep `~/meetings` and `~/cos/zoom` as the record**:
 - They're full, local and timestamped, and every claim rule ("a call claim needs the transcript and a timestamp") rests on them.
 - A bot joining calls is a visible recorder in partner calls (Datasembly, OGD), and it sends WISEcode conversations to a third party.
 - Two transcript sources would disagree, and then neither is the record.
@@ -73,7 +73,7 @@ Seven gaps, all fixed:
 
 `handbook/system-map.md` (also a Grok skill for KEEPER and the Chief) is the one place that lists:
 - every rule, in order of authority;
-- every source (board, roadmap sheet, repos, `~/meetings`, `~/Documents/Zoom`, Zoom web, Slack, Zendesk, the lake, Gmail, Drive, your transcripts, receipts, evals, the kit), with how a Mac job and a Grok bot each reach it;
+- every source (board, roadmap sheet, repos, `~/meetings`, `~/cos/zoom`, Zoom web, Slack, Zendesk, the lake, Gmail, Drive, your transcripts, receipts, evals, the kit), with how a Mac job and a Grok bot each reach it;
 - which Slack channels to read, and which never to read (the hiring channels, `#owls`, DMs you haven't pointed to);
 - what may cross which wire.
 
@@ -85,9 +85,9 @@ KEEPER's Friday audit reads it first, then the rules fresh from both repos, then
 ## Getting a call transcript: the ladder
 
 1. `~/meetings`.
-2. `~/Documents/Zoom`.
+2. `~/cos/zoom`.
 3. Ask you.
-4. **Last resort, after your yes for that one meeting:** the Chief signs in to zoom.us in its browser as you, downloads only that meeting's transcript file (never video or audio), moves it to `~/Documents/Zoom` on your Mac, deletes its copy from the shared Bot computer, and re-runs the job.
+4. **Last resort, after your yes for that one meeting:** the Chief signs in to zoom.us in its browser as you, downloads only that meeting's transcript file (never video or audio), moves it to `~/cos/zoom` on your Mac, deletes its copy from the shared Bot computer, and re-runs the job.
 
 A Mac job never logs into Zoom. It returns "needs transcript: <meeting, date>", and the Chief offers step 3 or 4. The morning follow-ups also list yesterday's meetings with no transcript, so a gap surfaces the next day.
 
