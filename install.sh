@@ -6,6 +6,7 @@
 #   ./install.sh --schedule    also (re)load the launchd schedule (cos-sched list shows it)
 #   ./install.sh --schedule=followups,pulse   load only those slots
 #   ./install.sh --schedule=dashboard         also load com.cos.dashboard (cos-db load every 300s)
+#   ./install.sh --schedule=zoommirror        also load com.cos.zoommirror (copy ~/Documents/Zoom transcripts to ~/cos/zoom)
 #   ./install.sh --unschedule  remove the launchd schedule, including the dashboard
 # Writes to: ~/cos, ~/builds, ~/.claude/skills/cassidy-mode, ~/.cursor/skills/cassidy-mode,
 #            ~/.claude/CLAUDE.md (only if it doesn't exist), ~/Library/LaunchAgents/com.cos.* (only with --schedule).
@@ -17,7 +18,7 @@ ok=0; bad=0; pass() { printf '  ✓ %s\n' "$1"; ok=$((ok+1)); }; fail() { printf
 LA="$HOME/Library/LaunchAgents"; SLOTS="followups pulse reconcile capture week opportunity keeper obligations"
 
 if [[ $UNSCHEDULE -eq 1 ]]; then
-  for s in $SLOTS dashboard; do launchctl bootout "gui/$(id -u)/com.cos.$s" 2>/dev/null; rm -f "$LA/com.cos.$s.plist"; done
+  for s in $SLOTS dashboard zoommirror; do launchctl bootout "gui/$(id -u)/com.cos.$s" 2>/dev/null; rm -f "$LA/com.cos.$s.plist"; done
   echo "Schedule removed."; exit 0
 fi
 
@@ -36,9 +37,12 @@ done
 for w in data-org-main notebook-main; do
   if [[ -f "$COS/$w/.git" ]] && grep -q "/Documents/" "$COS/$w/.git"; then fail "~/cos/$w is linked into ~/Documents; scheduled jobs can't read it (remove it; the next job rebuilds it)"; else pass "~/cos/$w is outside ~/Documents"; fi
 done
-[[ -d "$COS/zoom" ]] && pass "~/cos/zoom (Zoom transcripts jobs can read)" || fail "~/cos/zoom missing: set Zoom's local recording folder to ~/cos/zoom"
-# Zoom's saved transcripts ignore the recording folder setting and always go to ~/Documents/Zoom, so that path is a link.
-[[ -L "$HOME/Documents/Zoom" && "$(readlink "$HOME/Documents/Zoom")" == "$COS/zoom" ]] && pass "~/Documents/Zoom links to ~/cos/zoom" || fail "~/Documents/Zoom is not a link to ~/cos/zoom: Zoom transcripts will land where jobs can't read them"
+mkdir -p "$COS/zoom"
+# ~/Documents/Zoom is the primary (Zoom saves transcripts there). ZoomMirror copies them to ~/cos/zoom for the jobs.
+if [[ -d "$HOME/Documents/Zoom" ]]; then
+  newest="$(ls -t "$HOME/Documents/Zoom"/*.txt 2>/dev/null | head -1)"
+  if [[ -z "$newest" || -f "$COS/zoom/$(basename "$newest")" ]]; then pass "~/cos/zoom has the newest Zoom transcript"; else fail "~/cos/zoom is missing $(basename "$newest"): run  open ~/cos/bin/ZoomMirror.app  (and Allow), then ./install.sh --schedule=zoommirror"; fi
+fi
 
 echo "2. The kit, versioned"
 # ~/cos/kit is the only source (a git repo, pushed to github.com/cassidythilton/cos-kit). Edit there, commit with a real
@@ -59,6 +63,17 @@ echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
 install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
+# ZoomMirror.app: the one reader of ~/Documents/Zoom (see claude/zoom-mirror.applescript). Rebuilt only when the
+# source changes, because macOS ties the Documents grant to the app's signature.
+ZM="$COS/bin/ZoomMirror.app"
+if [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/zoom-mirror.applescript"; then
+  rm -rf "$ZM" && osacompile -o "$ZM" "$KIT/claude/zoom-mirror.applescript" \
+    && /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$ZM/Contents/Info.plist" \
+    && /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.cos.zoommirror" "$ZM/Contents/Info.plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.cos.zoommirror" "$ZM/Contents/Info.plist"
+  cp "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/" && codesign -f -s - "$ZM" 2>/dev/null
+  echo "  ! ZoomMirror.app was (re)built: run  open ~/cos/bin/ZoomMirror.app  once and click Allow for Documents"
+fi
 install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
 install -m 644 "$KIT"/claude/briefs/*.md "$COS/claude/briefs/"
 install -m 644 "$KIT"/evals/*.json "$COS/evals/"
@@ -86,7 +101,7 @@ else fail "~/.claude/CLAUDE.md exists and doesn't load cassidy-mode. Add this li
 
 echo "5. Scripts parse"
 for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/builds-template/verify"; do
-  if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
+  [[ -d "$s" ]] && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
   else bash -n "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"; fi; done
 for j in "$COS"/claude/*.json "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
 for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
@@ -333,6 +348,24 @@ PL
     plutil -lint "$P" >/dev/null && launchctl bootout "gui/$(id -u)/com.cos.$slot" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null \
       && echo "  ✓ scheduled $slot ($days $hm)" || echo "  ✗ could not load $slot"
   done
+  if [[ ",${ONLY}," == *",zoommirror,"* ]]; then
+    P="$LA/com.cos.zoommirror.plist"
+    cat > "$P" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.cos.zoommirror</string>
+<key>ProgramArguments</key><array><string>/usr/bin/open</string><string>-g</string><string>$COS/bin/ZoomMirror.app</string></array>
+<key>WatchPaths</key><array><string>$HOME/Documents/Zoom</string></array>
+<key>StartInterval</key><integer>300</integer>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>$COS/state/launchd-zoommirror.log</string>
+<key>StandardErrorPath</key><string>$COS/state/launchd-zoommirror.log</string>
+</dict></plist>
+PL
+    plutil -lint "$P" >/dev/null && launchctl bootout "gui/$(id -u)/com.cos.zoommirror" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null \
+      && echo "  ✓ scheduled zoommirror (on change in ~/Documents/Zoom, and every 300s)" || echo "  ✗ could not load zoommirror"
+  fi
   if [[ ",${ONLY}," == *",dashboard,"* ]]; then
     P="$LA/com.cos.dashboard.plist"
     cat > "$P" <<PL

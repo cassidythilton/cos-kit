@@ -87,7 +87,7 @@ KEEPER's Friday audit reads it first, then the rules fresh from both repos, then
 1. `~/meetings`.
 2. `~/cos/zoom`.
 3. Ask you.
-4. **Last resort, after your yes for that one meeting:** the Chief signs in to zoom.us in its browser as you, downloads only that meeting's transcript file (never video or audio), moves it to `~/cos/zoom` on your Mac, deletes its copy from the shared Bot computer, and re-runs the job.
+4. **Last resort, after your yes for that one meeting:** the Chief signs in to zoom.us in its browser as you, downloads only that meeting's transcript file (never video or audio), moves it to `~/Documents/Zoom` (ZoomMirror copies it to `~/cos/zoom`) on your Mac, deletes its copy from the shared Bot computer, and re-runs the job.
 
 A Mac job never logs into Zoom. It returns "needs transcript: <meeting, date>", and the Chief offers step 3 or 4. The morning follow-ups also list yesterday's meetings with no transcript, so a gap surfaces the next day.
 
