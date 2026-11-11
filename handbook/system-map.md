@@ -80,3 +80,15 @@ A Mac job never logs into Zoom. When it needs a missing transcript, it returns s
 ## 6. Who's who
 
 `~/cos/handbook/people.md` (Cassidy's file) holds names, roles and what each person owns, as factual RACI. Never performance, compensation or personnel notes.
+
+## System fixes (cos-run fix and land)
+
+| Step | Who | Where it can write |
+|---|---|---|
+| `cos-run fix <job> "<problem>"` | Claude, started by the Chief | only its own kit copy, `~/cos/fixes/<job>` (gate fix mode) |
+| `cos-sandbox-test <copy>` | Claude, inside the fix job | only a throwaway temp folder (macOS sandbox, no outbound network) |
+| commit, suite on fix and base, Codex review, checker | cos-run (a script) | the job folder |
+| approval | Cassidy, in the Chief's chat, by the diff's sha256 | none |
+| `cos-run land <job> <sha256>` | the Chief, after that yes | `~/cos/kit` (fast-forward), the installed files, GitHub; rolls back if any check fails |
+
+A fix can never change the fix lane itself: the blocks marked `>>> fix-lane` in `cos-run` and `gate.sh`, `settings.fix.json` and `cos-sandbox-test`. Those change only when Cassidy works with Claude Code directly.

@@ -251,7 +251,7 @@ When done, write $OUT/fix.md in plain, short sentences: the problem in one line;
       --settings "$COS/claude/settings.fix.json" --permission-mode dontAsk --permission-prompts none \
       --add-dir "$OUT" "$COS/bin" "$COS/claude" "$COS/state" "$COS/outbox" "$COS/handbook" "$KITD" \
       --model opus --effort high --max-budget-usd 8 --no-session-persistence --output-format json ) > "$OUT/run.json" 2>>"$OUT/run.err" || true
-  COST="$(jq -r '.total_cost_usd // .cost_usd // 0' "$OUT/run.json" 2>/dev/null || echo 0)"
+  COST="$(jq -r '.total_cost_usd // .cost_usd // 0' "$OUT/run.json" 2>/dev/null || echo 0)"; [[ "$COST" =~ ^[0-9.]+$ ]] || COST=0
   git -C "$WT" add -A
   if git -C "$WT" diff --cached --quiet; then
     git -C "$KITD" worktree remove --force "$WT"; git -C "$KITD" branch -q -D "$BR"
@@ -263,11 +263,11 @@ When done, write $OUT/fix.md in plain, short sentences: the problem in one line;
   GUARD=ok; [[ "$(fix_guard "$BASE")" == "$(fix_guard "$BR")" ]] || GUARD=changed
   CONTROL=false; grep -Eq "$CONTROL_RE" <<<"$FILES" && CONTROL=true
   # The suite, on the fix and on its base, each in the sandbox. A fix must fail nothing and drop no check.
-  "$COS/bin/cos-sandbox-test" "$WT" > "$OUT/sandbox-fix.txt" 2>&1
+  "$COS/bin/cos-sandbox-test" "$WT" > "$OUT/sandbox-fix.txt" 2>&1 || true
   BT="$COS/fixes/$JOB-base"; git -C "$KITD" worktree add -q --detach "$BT" "$BASE"
-  "$COS/bin/cos-sandbox-test" "$BT" > "$OUT/sandbox-base.txt" 2>&1; git -C "$KITD" worktree remove --force "$BT"
-  res() { sed -nE 's/^Result: ([0-9]+) passed, ([0-9]+) failed.*/\1 \2/p' "$1"; }
-  read -r FP FF <<<"$(res "$OUT/sandbox-fix.txt")"; read -r BP BF <<<"$(res "$OUT/sandbox-base.txt")"
+  "$COS/bin/cos-sandbox-test" "$BT" > "$OUT/sandbox-base.txt" 2>&1 || true; git -C "$KITD" worktree remove --force "$BT" || true
+  res() { sed -nE 's/^Result: ([0-9]+) passed, ([0-9]+) failed.*/\1 \2/p' "$1" 2>/dev/null || true; }
+  read -r FP FF <<<"$(res "$OUT/sandbox-fix.txt")" || true; read -r BP BF <<<"$(res "$OUT/sandbox-base.txt")" || true
   TESTS=fail; [[ -n "${FP:-}" && "${FF:-1}" == 0 && "${FP:-0}" -ge "${BP:-0}" ]] && TESTS=pass
   (cd "$WT" && agent -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
     "Review this change to an automation kit as a senior engineer who did not write it. Name real defects only: wrong behavior, a weakened security check, a removed or weakened test, needless scope. One line each, most severe first. Say NONE if there are none.
@@ -277,7 +277,7 @@ $BRIEF_IN
 
 DIFF:
 $(head -c 60000 "$OUT/fix.diff")") > "$OUT/second-opinion.json" 2>>"$OUT/run.err" || true
-  claude -p "You are the CHECKER for a fix to Cassidy's chief-of-staff kit. You did not write it. Read $OUT/brief.md (the problem), $OUT/fix.md (the fixer's account), $OUT/fix.diff, $OUT/sandbox-fix.txt and $OUT/sandbox-base.txt (the test suite on the fix and on its base, run in a sandbox), and $OUT/second-opinion.json (a review by another model family).
+  claude -p "You are the CHECKER for a fix to Cassidy's chief-of-staff kit. You did not write it. Read $OUT/brief.md (the problem), $OUT/fix.md (the fixer's account), $OUT/fix.diff, $OUT/sandbox-fix.txt and $OUT/sandbox-base.txt (the test suite on the fix and on its base, run in a sandbox), and $OUT/second-opinion.json (a review by another model family). The suite results, computed by script: fix ${FP:-?} passed, ${FF:-?} failed; base ${BP:-?} passed, ${BF:-?} failed. Trust these numbers over your own reading of the logs.
 Fail if: the diff does more than the problem needs; it weakens a wall (gate.sh, settings files, apply rules, standing approvals, the sandbox) and the problem didn't ask for exactly that; it removes or weakens a test; the fix suite has any failure or fewer passes than the base; fix.md claims a cause or result the evidence doesn't show; the second opinion names a defect fix.md doesn't address. Return pass only if every check passes. One line per failure." \
     --settings "$COS/claude/settings.investigate.json" --permission-mode dontAsk --permission-prompts none \
     --add-dir "$OUT" "$WT" --model opus --effort medium --max-budget-usd 1.5 --no-session-persistence \
@@ -285,7 +285,7 @@ Fail if: the diff does more than the problem needs; it weakens a wall (gate.sh, 
   VERDICT="$(jq -c '.structured_output // (.result|fromjson?) // {verdict:"fail",failures:["checker did not run"]}' "$OUT/checker.json" 2>/dev/null || echo '{"verdict":"fail","failures":["checker did not run"]}')"
   STATUS=done; READY=true
   [[ "$GUARD" == ok && "$TESTS" == pass && "$(jq -r .verdict <<<"$VERDICT")" == pass ]] || { STATUS=blocked; READY=false; }
-  SUMMARY="$(sed -n '1,12p' "$OUT/fix.md" 2>/dev/null | cut -c1-600)"; [[ -n "$SUMMARY" ]] || SUMMARY="The fixer wrote no fix.md."
+  SUMMARY="$( { sed -n '1,12p' "$OUT/fix.md" 2>/dev/null || true; } | cut -c1-600)"; [[ -n "$SUMMARY" ]] || SUMMARY="The fixer wrote no fix.md."
   fix_receipt --arg j "$JOB" --arg s "$STATUS" --arg sum "$SUMMARY" --arg sha "$SHA" --arg base "$BASE" --arg br "$BR" \
     --argjson ready "$READY" --argjson control "$CONTROL" --arg guard "$GUARD" --arg tests "${FP:-?} passed, ${FF:-?} failed (base: ${BP:-?} passed, ${BF:-?} failed)" \
     --arg files "$FILES" --argjson verdict "$VERDICT" --argjson c "${COST:-0}" --arg so "$(jq -r '.result // empty' "$OUT/second-opinion.json" 2>/dev/null | head -c 1500)" \

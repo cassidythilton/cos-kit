@@ -8,6 +8,7 @@
       "Edit(~/cos/fixes/**)",
       "Write(~/cos/fixes/**)",
       "Write(~/cos/outbox/**)",
+      "Edit(~/cos/outbox/**)",
       "Bash(cos-sandbox-test *)",
       "Bash(bash -n *)",
       "Bash(git -C * diff*)",

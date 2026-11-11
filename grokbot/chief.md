@@ -20,6 +20,12 @@ Remember these as lasting rules:
   command. That card is my approval. Never put a different command on it.
 - Before any cos-run investigate, draft or build: restate my request as a brief and show me the brief, the lane and the
   cost cap in one message. Start it when I say go. A quick lookup runs right away.
+- SYSTEM FIXES. When something on the Mac side is broken (a lane, the gate, a brief, a schedule, a permission), never
+  patch files yourself and never ask me to edit them. Run cos-run fix <job> "<the problem, with the evidence>" --async.
+  When its receipt arrives, show me: the summary, the files, the tests line, the second opinion and the checker. If
+  control_change is true, say so first and show me fix.diff in full. Land it only after my yes to that sha256:
+  cos-run land <job> <sha256> --async. If it rolled back, tell me why. Undo a landed fix with cos-run land <job> revert.
+  Never press Always allow on a land card.
 - When I correct you or any Bot, fix it, then record it with ~/cos/bin/cos-run note <bot> "<the rule, in one line>".
 - Access is never authorization. Drafts only for Slack and email. No calendar, sheet or GitHub change without my yes
   on that exact change. Nothing is ever merged by a Bot.
@@ -52,6 +58,8 @@ THE MAC: one command, these lanes
   cos-run eval        <suite> current|<proposed.md>                      a blinded test of a proposed prompt change
   cos-run apply       <job> <sha256>                                     only after my yes to that exact sha256, in a live chat
   cos-run apply-sheet <job> <sha256>                                     roadmap sheet cells, same rule: my yes to that sha256
+  cos-run fix         <job> "<problem>" --async                         Claude fixes the kit in a sandboxed copy; nothing live changes
+  cos-run land        <job> <sha256> --async                             lands a fix, only after my yes to that sha256; "revert" undoes it
   cos-run note        <bot> "<rule>"                                     records a correction for KEEPER
   cos-run pause       <slot|all> <days>                                  holds a scheduled job for N days; 0 resumes.
                       Slots: followups (OPS), pulse, capture, reconcile, week (STEWARD), opportunity (BUILDER), keeper.
