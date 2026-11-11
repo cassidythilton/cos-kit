@@ -26,7 +26,7 @@ Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin
 | Source | System of record for | A Mac job reads it | A Grok Bot reads it | Limits |
 |---|---|---|---|---|
 | Project 1, the Data Org Initiatives board | cards, lanes, RAGB, owners, Targets | `make` targets and `gh` in `~/cos/data-org-main` | through the Chief and cos-run | writes only by an approved `apply` batch |
-| Data Roadmap sheet `1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM` | roadmap rows, themes, horizons, targets | Sheets connector, read-only | Google Sheets app, read-only | no edits; paste text with the exact cell |
+| Data Roadmap sheet `1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM` | roadmap rows, themes, horizons, targets | Sheets connector, read-only; writes only through `cos-run apply-sheet` (approved cells, enforced by the gate) | Google Sheets app, read-only | a job stages sheet.json; Cassidy approves its sha256; J links stay paste text |
 | GitHub repos: data-org, data-org-notebook, food-enrichment, WISEintelligence | code, DRDs, DADRs, PRs | `gh`, git (fresh origin/main) | GitHub app (failed on data-org before; use the Mac) | no comments, merges or closes without Cassidy's yes |
 | Meeting notes and transcripts `~/meetings` | what was said, with timestamps | direct read; the `meeting-analyst` agent and `meeting-reanalysis` skill | through cos-run | a call claim needs the full transcript and a timestamp |
 | Zoom transcript exports `~/Documents/Zoom` (primary), mirrored to `~/cos/zoom` by ZoomMirror.app; jobs read the mirror | calls not in `~/meetings` | direct read | through cos-run | same |

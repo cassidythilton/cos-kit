@@ -51,7 +51,7 @@ if [[ "$cmd" =~ (security[[:space:]]+find-|printenv|(^|[;&|[:space:]])env([[:spa
 ctl_re='(/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|\.claude/(skills|settings)|LaunchAgents)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]] && [[ "$path" =~ $ctl_re ]]; then hard "editing the system's own controls ($path)"; fi
 if [[ "$tool" == "Bash" ]]; then
-  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-sched|cos-obligations)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
+  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-sched|cos-obligations|cos-link)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
   # Writes into a control path only: a redirect or tee into it, an in-place edit of it, a copy or move onto it, or git in it.
   C='[^[:space:];&|]*/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|[^[:space:];&|]*\.claude/(skills|settings)|[^[:space:];&|]*LaunchAgents'
   w1=">>?[[:space:]]*[\"']?($C)"; w2="tee[[:space:]]+(-a[[:space:]]+)?[\"']?($C)"; w3="(sed|perl)[[:space:]]+-[a-zA-Z]*i[^;&|]*($C)"
@@ -69,6 +69,21 @@ fi
 # ---- HARD: data-org context/ is a published snapshot the CDO's private repo owns. Cite it, never edit it.
 dctx_re='(Data-Org-Repos/data-org/(\.worktrees/[^/]+/)?context/|cos/repos/data-org/(\.worktrees/[^/]+/)?context/|cos/data-org-main/context/)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit)$ ]] && [[ "$path" =~ $dctx_re ]]; then hard "editing data-org context/ (read-only; file a context-request)"; fi
+
+# ---- Sheet mode (cos-run apply-sheet): only the exact cells and values Cassidy approved, by the batch's sha256.
+if [[ "$MODE" == sheet ]]; then
+  case "$tool" in
+    *Google_Sheets__get_values) exit 0 ;;
+    *Google_Sheets__update_values)
+      rng="$(printf '%s' "$input" | jq -r '.tool_input.range // ""')"; sid="$(printf '%s' "$input" | jq -r '.tool_input.spreadsheetId // ""')"
+      vals="$(printf '%s' "$input" | jq -c '.tool_input.values // null')"
+      if [[ -f "${COS_SHEET_BATCH:-}" ]] && jq -e --arg r "$rng" --arg s "$sid" --argjson v "$vals" \
+          '.spreadsheet == $s and any(.writes[]; ($r == ("\u0027" + .tab + "\u0027!" + .col + (.row|tostring)) or $r == (.tab + "!" + .col + (.row|tostring))) and $v == [[.new]])' \
+          "$COS_SHEET_BATCH" >/dev/null 2>&1; then gate_log allow "approved sheet cell"; exit 0; fi
+      hard "a sheet write that is not in the approved batch ($rng)" ;;
+    *) hard "sheet mode allows only reading and writing the approved cells" ;;
+  esac
+fi
 
 # ---- Connectors: read verbs only
 if [[ "$tool" == mcp__* ]]; then

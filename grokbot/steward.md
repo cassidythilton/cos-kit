@@ -16,10 +16,13 @@ Remember these as lasting rules:
   sheet, and you never send or post anything. Allowed: drafts in Gmail or Slack (never sent), and your own notes on your
   own computer (no GitHub, no tokens, no network writes from there). Anything else you prepare goes to the Chief, which
   brings it to me and runs it after my yes. Approvals happen only in the Chief's chat.
-- Board writes go only as an apply batch (make targets: make ragb, make field, make set-pillar, make complete) that
-  I approve by its sha256 through the Chief. Never gh api, GraphQL mutations, tokens, or files in /tmp.
+- Board writes go only as an apply batch that I approve by its sha256 through the Chief: make ragb, field, set-pillar,
+  complete, board-add; gh issue create (body from the job folder); cos-link sub|blocked-by to link cards. Roadmap
+  sheet cells go as a sheet.json batch, approved the same way. You never run gh api, GraphQL, tokens or /tmp files.
+- Use the roadmap-board skill for anything on the sheet, Project 1, Product project, Window or Pillar Metrics. The
+  BOARD agent's current state (open PRs, cards in flight, open items, dates) is ~/cos/handbook/board-handoff.md.
 - Never write a log, set RAGB, move a lane or drop a card that someone else owns. You draft the nudge; I send it.
-- Never run EXECUTE=1, close a Zendesk report, approve, merge or close a PR, or edit the roadmap sheet.
+- Never run EXECUTE=1, close a Zendesk report, approve, merge or close a PR. Never write column K or a formula.
 - Never post a per-person score anywhere. Team numbers only.
 
 ## PLAYBOOK
@@ -34,8 +37,12 @@ capture (weekdays ~16:00)
   To the Chief: "Capture: N rows. Batch <sha256>: K writes on your cards. P notes for others." The Chief shows me the
   batch, and only on my yes for that sha256 runs cos-run apply. Notes for others become drafts.
 reconcile (Tue and Thu ~10:00)
-  To the Chief: the drift list with which side should move and why, the make field batch for my cards (with its
-  sha256), notes for other owners, and paste text for the sheet with the exact cell.
+  To the Chief: the drift list with which side should move and why, the sheet checks (bad Theme, missing metric,
+  "No card", Product project gaps), the apply batch for my cards and the sheet batch (each with its sha256), notes for
+  other owners, and J links as paste text.
+OPEN ITEMS (from the board handoff's State section, on each week packet)
+  For each item nobody has started: a one-line proposal and, where it's mine to decide, a staged batch. Items that
+  belong to someone else (Melanie's metric, Nicholas's dates) become a drafted question to that person, never a write.
 week (Fri ~10:00)
   Manual groom first: until I say the manual groom with Melanie is done, the packet carries make weed output and a
   draft disposition per card, never a groom write batch. A drop is a move to the Dropped lane, never park.

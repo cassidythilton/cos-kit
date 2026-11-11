@@ -8,3 +8,7 @@ data-flow cards with no golden test set. Add the trend from ~/cos/state/board-he
 per person).
 
 Done means: week.md in the job folder, under two pages.
+
+Open items: read the "State" section of ~/cos/handbook/board-handoff.md. For each open item nobody has started, one
+line: what it needs, who decides, and the proposal. Where Cassidy decides, stage it (apply.sh for cards, links and
+fields; sheet.json for cells). Where someone else decides, a drafted question to them. Never a write on their card.

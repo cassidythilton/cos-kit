@@ -1,0 +1,24 @@
+#!/bin/bash
+# cos-link: link two wisecodeai issues. Runs only from an approved apply batch (cos-run apply); jobs can't call it.
+#   cos-link sub        wisecodeai/<repo>#<parent>  wisecodeai/<repo>#<child>     child becomes a sub-issue of parent
+#   cos-link blocked-by wisecodeai/<repo>#<card>    wisecodeai/<repo>#<blocker>   card is blocked by blocker
+# Idempotent: an existing link is reported and skipped, so a rerun of a half-applied batch is safe.
+set -euo pipefail
+KIND="${1:?usage: cos-link sub|blocked-by <a> <b>}"; A="${2:?}"; B="${3:?}"
+REF='^wisecodeai/[A-Za-z0-9._-]+#[0-9]+$'
+[[ "$KIND" == sub || "$KIND" == blocked-by ]] || { echo "cos-link: unknown kind $KIND" >&2; exit 64; }
+[[ "$A" =~ $REF && "$B" =~ $REF ]] || { echo "cos-link: refs must be wisecodeai/<repo>#<n>" >&2; exit 64; }
+[[ "$A" != "$B" ]] || { echo "cos-link: an issue can't link to itself" >&2; exit 64; }
+node() { gh api "repos/${1%%#*}/issues/${1##*#}" --jq .node_id; }
+NA="$(node "$A")"; NB="$(node "$B")"
+if [[ "$KIND" == sub ]]; then
+  have="$(gh api graphql -f query='query($id:ID!){node(id:$id){... on Issue{subIssues(first:100){nodes{id}}}}}' -f id="$NA" --jq '.data.node.subIssues.nodes[].id' | grep -cx "$NB" || true)"
+  [[ "$have" -gt 0 ]] && { echo "already linked: $B is a sub-issue of $A"; exit 0; }
+  gh api graphql -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){issue{number}}}' -f p="$NA" -f c="$NB" >/dev/null
+  echo "linked: $B is now a sub-issue of $A"
+else
+  have="$(gh api graphql -f query='query($id:ID!){node(id:$id){... on Issue{blockedBy(first:100){nodes{id}}}}}' -f id="$NA" --jq '.data.node.blockedBy.nodes[].id' | grep -cx "$NB" || true)"
+  [[ "$have" -gt 0 ]] && { echo "already linked: $A is blocked by $B"; exit 0; }
+  gh api graphql -f query='mutation($i:ID!,$b:ID!){addBlockedBy(input:{issueId:$i,blockingIssueId:$b}){issue{number}}}' -f i="$NA" -f b="$NB" >/dev/null
+  echo "linked: $A is now blocked by $B"
+fi

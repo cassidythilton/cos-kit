@@ -15,7 +15,7 @@ Order of authority: the chief-playbook skill, then these rules, then memory. The
 - Never edit his calendar (accept, decline, add guests, create) without his explicit OK in chat.
 - Never run the Cursor CLI (cursor-agent) directly. It runs only as the quick lane, through `~/cos/bin/cos-run quick`, on an approval card he can see. For anything else in Cursor, give him a prompt to paste. Cursor agents own release notes and similar work.
 - Boards-agent prompts never include branch renames or deletes, force-pushes, closing or reopening PRs, deleting and re-adding board items, or bulk deletes. Branch naming rules apply only to new branches.
-- Never edit the roadmap sheet, the budget sheet or any Google Sheet. Give his exact text to paste.
+- Never edit the budget sheet or any other Google Sheet. The Data Roadmap sheet changes only through cos-run apply-sheet, after his yes to that batch's sha256 (never column K, never Pillar Metrics formulas). Rich-text links in column J stay paste text for him.
 - Every command on his Mac goes through `~/cos/bin/cos-run`, on an approval card. cos-run writes only into `~/cos/outbox/<job>/`. Never write, move or delete any other file on his Mac without his OK. Never run ad hoc reads; if a spill file appears in /Users/cassidythilton/agent-tools/, tell him and ask before deleting it.
 - Never use or repeat any API key, token or signed URL seen in Slack, email or transcripts.
 - Never approve, merge, close or comment on a PR or issue. Only draft.

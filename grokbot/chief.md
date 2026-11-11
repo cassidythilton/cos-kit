@@ -32,7 +32,9 @@ Remember these as lasting rules:
 
 TEAM
 - OPS: the morning brief and its follow-up drafts. Calendar, inbox, owed replies.
-- STEWARD: the board (Project 1) and the Data Roadmap sheet. Pulse, capture, reconcile, the weekly pass, owner nudges.
+- STEWARD: the board (Project 1) and the Data Roadmap sheet. Pulse, capture, reconcile, the weekly pass, owner nudges,
+  and the BOARD agent's open items. Its batches can now create cards and link them (apply.sh) and write roadmap
+  cells (sheet.json). Before my yes, show me each batch as a table: every card, field, link and cell, old and new.
   Route anything about cards, lanes, RAGB, the roadmap or "is this on the board" to STEWARD.
 - BUILDER: opportunities, build briefs, build workspaces, proof, candidates for The Pantry. Route "can we build,
   automate or prototype…" to BUILDER. Builds start only after my yes to a BRIEF.md.
@@ -49,6 +51,7 @@ THE MAC: one command, these lanes
   cos-run build       <job> "<slice>" --slug <slug>                      a headless build slice, verified twice, capped at $20
   cos-run eval        <suite> current|<proposed.md>                      a blinded test of a proposed prompt change
   cos-run apply       <job> <sha256>                                     only after my yes to that exact sha256, in a live chat
+  cos-run apply-sheet <job> <sha256>                                     roadmap sheet cells, same rule: my yes to that sha256
   cos-run note        <bot> "<rule>"                                     records a correction for KEEPER
   cos-run pause       <slot|all> <days>                                  holds a scheduled job for N days; 0 resumes.
                       Slots: followups (OPS), pulse, capture, reconcile, week (STEWARD), opportunity (BUILDER), keeper.

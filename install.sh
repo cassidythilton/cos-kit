@@ -43,6 +43,9 @@ if [[ -d "$HOME/Documents/Zoom" ]]; then
   newest="$(ls -t "$HOME/Documents/Zoom"/*.txt 2>/dev/null | head -1)"
   if [[ -z "$newest" || -f "$COS/zoom/$(basename "$newest")" ]]; then pass "~/cos/zoom has the newest Zoom transcript"; else fail "~/cos/zoom is missing $(basename "$newest"): run  open ~/cos/bin/ZoomMirror.app  (and Allow), then ./install.sh --schedule=zoommirror"; fi
 fi
+# The BOARD agent's handoff (written in ~/Documents) is STEWARD's method and state; ZoomMirror copies it.
+HO="$HOME/Documents/Data-Org-Repos/data-org-agent-handoff.md"
+if [[ -f "$HO" ]]; then cmp -s "$HO" "$COS/handbook/board-handoff.md" && pass "board handoff mirrored to ~/cos/handbook" || fail "~/cos/handbook/board-handoff.md is missing or stale: run  open ~/cos/bin/ZoomMirror.app"; fi
 
 echo "2. The kit, versioned"
 # ~/cos/kit is the only source (a git repo, pushed to github.com/cassidythilton/cos-kit). Edit there, commit with a real
@@ -61,7 +64,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
 # ZoomMirror.app: the one reader of ~/Documents/Zoom (see claude/zoom-mirror.applescript). Rebuilt only when the
 # source changes, because macOS ties the Documents grant to the app's signature.
@@ -74,7 +77,7 @@ if [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirror.applescript" "$ZM/Conte
   cp "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/" && codesign -f -s - "$ZM" 2>/dev/null
   echo "  ! ZoomMirror.app was (re)built: run  open ~/cos/bin/ZoomMirror.app  once and click Allow for Documents"
 fi
-install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
+install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
 install -m 644 "$KIT"/claude/briefs/*.md "$COS/claude/briefs/"
 install -m 644 "$KIT"/evals/*.json "$COS/evals/"
 rm -rf "$COS/builds-template.new" && cp -R "$KIT/builds-template" "$COS/builds-template.new" && rm -rf "$COS/builds-template" && mv "$COS/builds-template.new" "$COS/builds-template"
@@ -127,6 +130,7 @@ chk "cat .env" pair block
 chk "EXECUTE=1 make intake-sweep" job block
 chk "DRY_RUN=1 make ragb CARD=1 TO=RED" job allow
 chk "cos-push steward pulse r.json" pair block
+chk "cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2" job block
 chk "launchctl list" job block
 chk "cos-obligations --act" job block
 chk "git -C ~/cos/kit commit -am x" pair block
@@ -141,12 +145,42 @@ got="$(g Write "" job "$COS/outbox/x/a.md")"; [[ "$got" == allow ]] && pass "job
 got="$(printf '{"tool_name":"mcp__claude_ai_Slack__slack_send_message","tool_input":{}}' | COS_GATE_MODE=job "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?)"
 [[ "$got" == 2 ]] && pass "job · block · Slack send" || fail "Slack send not blocked in job mode"
 rm -f /tmp/cos-gate.$$
+# Sheet mode: only the approved cell and value pass.
+SBT="$(mktemp)"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"D","old":"2026-11-25","new":"2026-11-30"}]}' > "$SBT"
+sg() { printf '{"tool_name":"mcp__claude_ai_Google_Sheets__update_values","tool_input":{"spreadsheetId":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","range":"%s","values":%s}}' "$1" "$2" | COS_LEDGER_OFF=1 COS_GATE_MODE=sheet COS_SHEET_BATCH="$SBT" "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?; }
+[[ "$(sg "'Data Roadmap'!D7" '[["2026-11-30"]]')" == 0 ]] && pass "sheet · allow · the approved cell and value" || fail "sheet mode blocked the approved cell"
+[[ "$(sg "'Data Roadmap'!D8" '[["2026-11-30"]]')" == 2 ]] && pass "sheet · block · another row" || fail "sheet mode allowed another row"
+[[ "$(sg "'Data Roadmap'!D7" '[["2026-12-31"]]')" == 2 ]] && pass "sheet · block · another value" || fail "sheet mode allowed another value"
+[[ "$(sg "'Data Roadmap'!D7:E7" '[["2026-11-30","x"]]')" == 2 ]] && pass "sheet · block · a wider range" || fail "sheet mode allowed a wider range"
+rm -f "$SBT"
 
 echo "7. The lanes refuse what they should"
 T="$(mktemp -d)"; mkdir -p "$T/cos/outbox/t1"
 echo "gh issue close 1 --repo wisecodeai/data-org" > "$T/cos/outbox/t1/apply.sh"; S="$(shasum -a 256 "$T/cos/outbox/t1/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t1 "$S" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t1/applied.log" ]] && pass "apply refuses a close" || fail "apply ran a close"
 HOME="$T" "$COS/bin/cos-run" apply t1 deadbeef --in "$T" >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "apply refuses a changed batch (hash mismatch)" || fail "apply ignored the hash"
+# New cards and links: stubs stand in for gh, make and cos-link, so nothing reaches GitHub.
+mkdir -p "$T/cos/bin" "$T/cos/outbox/t2" "$T/cos/outbox/t3"
+printf '#!/bin/bash\n[[ "$1 $2" == "issue create" ]] && echo https://github.com/wisecodeai/data-org/issues/999\nexit 0\n' > "$T/cos/bin/gh"
+printf '#!/bin/bash\necho "stub $*"\n' > "$T/cos/bin/make"; cp "$T/cos/bin/make" "$T/cos/bin/cos-link"; chmod +x "$T/cos/bin/"{gh,make,cos-link}
+echo "x" > "$T/cos/outbox/t2/body.md"
+cat > "$T/cos/outbox/t2/apply.sh" <<AP
+gh issue create --repo wisecodeai/data-org --title "Test card" --body-file $T/cos/outbox/t2/body.md --assignee cassidythilton --milestone "Dec 31 · Next slice and foundations" --label init/test
+make board-add URL=@1
+make field CARD=@1 FIELD=Target TO=2026-12-31
+cos-link sub wisecodeai/data-org#654 @1
+cos-link blocked-by @1 wisecodeai/food-enrichment#220
+AP
+S2="$(shasum -a 256 "$T/cos/outbox/t2/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t2 "$S2" --in "$T" >/dev/null 2>&1
+L2="$T/cos/outbox/t2/applied.log"
+grep -q 'URL=https://github.com/wisecodeai/data-org/issues/999' "$L2" 2>/dev/null && grep -q 'CARD=999 FIELD' "$L2" && grep -q 'stub sub wisecodeai/data-org#654 wisecodeai/data-org#999' "$L2" && grep -q 'stub blocked-by wisecodeai/data-org#999 wisecodeai/food-enrichment#220' "$L2" \
+  && pass "apply creates a card, then boards, sets and links it as @1" || fail "apply create/link batch (see $L2)"
+echo 'gh issue create --repo someone/else --title "x" --body-file /tmp/x.md' > "$T/cos/outbox/t3/apply.sh"; S3="$(shasum -a 256 "$T/cos/outbox/t3/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t3 "$S3" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t3/applied.log" ]] && pass "apply refuses a card outside wisecodeai or a body outside the job folder" || fail "apply created a card it shouldn't"
+mkdir -p "$T/cos/outbox/t4"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"K","old":"","new":"1 Relevance"}]}' > "$T/cos/outbox/t4/sheet.json"
+S4="$(shasum -a 256 "$T/cos/outbox/t4/sheet.json" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply-sheet t4 "$S4" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t4/sheet-applied.json" ]] && pass "apply-sheet refuses column K (a formula)" || fail "apply-sheet accepted a column K write"
 HOME="$T" "$COS/bin/cos-run" note steward "test note" >/dev/null 2>&1 && [[ "$(jq -r .bot "$T/cos/state/corrections.jsonl" 2>/dev/null)" == steward ]] && pass "note records a correction" || fail "note did not record"
 HOME="$T" "$COS/bin/cos-run" note nobody "x" >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "note refuses an unknown bot" || fail "note accepted an unknown bot"
 HOME="$T" "$COS/bin/cos-run" eval nosuchsuite current >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "eval refuses a missing suite" || fail "eval ran without a suite"
@@ -356,7 +390,7 @@ PL
 <plist version="1.0"><dict>
 <key>Label</key><string>com.cos.zoommirror</string>
 <key>ProgramArguments</key><array><string>/usr/bin/open</string><string>-g</string><string>$COS/bin/ZoomMirror.app</string></array>
-<key>WatchPaths</key><array><string>$HOME/Documents/Zoom</string></array>
+<key>WatchPaths</key><array><string>$HOME/Documents/Zoom</string><string>$HOME/Documents/Data-Org-Repos/data-org-agent-handoff.md</string></array>
 <key>StartCalendarInterval</key><array><dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict><dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict></array>
 <key>RunAtLoad</key><true/>
 <key>StandardOutPath</key><string>$COS/state/launchd-zoommirror.log</string>
