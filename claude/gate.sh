@@ -46,12 +46,27 @@ secret_re='(\.env($|\.)|credentials|\.aws/|\.ssh/|id_rsa|\.netrc|\.npmrc|\.pypir
 if [[ "$path" =~ $secret_re ]] || [[ "$cmd" =~ $secret_re ]]; then hard "secret material"; fi
 if [[ "$cmd" =~ (security[[:space:]]+find-|printenv|(^|[;&|[:space:]])env([[:space:]]|$)|aws[[:space:]]+configure[[:space:]]+(get|export)|secretsmanager[[:space:]]+get-secret-value|ssm[[:space:]]+get-parameter.*--with-decryption) ]]; then hard "credential or environment dump"; fi
 
+# >>> fix-lane confinement (a fix job can't change this block; cos-run land refuses a diff that does)
+# Fix mode (cos-run fix): Claude edits only its own copy of the kit under ~/cos/fixes/<job>, never its .git, plus
+# notes in its job folder. Everything else (installed controls, the schedule, the Keychain, pushes) stays blocked below.
+if [[ "$MODE" == fix && "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]]; then
+  rp="$(/usr/bin/python3 -I -c 'import os,sys; print(os.path.realpath(os.path.expanduser(sys.argv[1])))' "$path" 2>/dev/null)"
+  fd="${COS_FIX_DIR:-/nonexistent}"; fo="${COS_FIX_OUT:-/nonexistent}"
+  if [[ -n "$rp" && ( "$rp" == "$fd/"* || "$rp" == "$fo/"* ) && "$rp" != *"/.git/"* && "$rp" != *"/.git" ]]; then gate_log allow "fix-copy write"; exit 0; fi
+  hard "a fix job writes only in its own kit copy, $fd ($path)"
+fi
+if [[ "$MODE" == fix && "$tool" == Bash && "$cmd" =~ (^|[;&|[:space:]/])(install\.sh|sandbox-exec|git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?(commit|push|merge|reset|checkout|worktree|config))([[:space:]]|$) ]]; then
+  hard "in a fix job, cos-run commits and tests; run cos-sandbox-test <your copy> to test"
+fi
+# <<< fix-lane confinement
+
 # ---- HARD: the system's own controls. No agent edits its walls, its schedule, a skill, or the webhook path to a bot.
 #      Changes to these come from KEEPER as proposals and are applied by Cassidy.
 ctl_re='(/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|\.claude/(skills|settings)|LaunchAgents)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]] && [[ "$path" =~ $ctl_re ]]; then hard "editing the system's own controls ($path)"; fi
 if [[ "$tool" == "Bash" ]]; then
   [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-sched|cos-obligations|cos-link)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
+  [[ "$cmd" =~ (^|[;&|[:space:]/])cos-run[[:space:]]+(apply|apply-sheet|land)([[:space:]]|$) ]] && hard "running an approved batch or landing a fix: only the Chief, after Cassidy's yes"
   # Writes into a control path only: a redirect or tee into it, an in-place edit of it, a copy or move onto it, or git in it.
   C='[^[:space:];&|]*/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|[^[:space:];&|]*\.claude/(skills|settings)|[^[:space:];&|]*LaunchAgents'
   w1=">>?[[:space:]]*[\"']?($C)"; w2="tee[[:space:]]+(-a[[:space:]]+)?[\"']?($C)"; w3="(sed|perl)[[:space:]]+-[a-zA-Z]*i[^;&|]*($C)"

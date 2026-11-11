@@ -8,13 +8,20 @@
 #   ./install.sh --schedule=dashboard         also load com.cos.dashboard (cos-db load every 300s)
 #   ./install.sh --schedule=zoommirror        also load com.cos.zoommirror (copy ~/Documents/Zoom transcripts to ~/cos/zoom)
 #   ./install.sh --unschedule  remove the launchd schedule, including the dashboard
+#   HOME=<empty temp dir> ./install.sh --sandbox   install into that throwaway home and run every test there.
+#              Touches nothing of Cassidy's: no repos, no clones, no kit checks, no apps, no schedule. Used by cos-run fix.
 # Writes to: ~/cos, ~/builds, ~/.claude/skills/cassidy-mode, ~/.cursor/skills/cassidy-mode,
 #            ~/.claude/CLAUDE.md (only if it doesn't exist), ~/Library/LaunchAgents/com.cos.* (only with --schedule).
 set -uo pipefail
-KIT="$(cd "$(dirname "$0")" && pwd)"; COS="$HOME/cos"; ONLINE=0; SCHEDULE=0; UNSCHEDULE=0
+KIT="$(cd "$(dirname "$0")" && pwd)"; COS="$HOME/cos"; ONLINE=0; SCHEDULE=0; UNSCHEDULE=0; SANDBOX=0
 ONLY=""
-for a in "$@"; do case "$a" in --online) ONLINE=1;; --schedule) SCHEDULE=1;; --schedule=*) SCHEDULE=1; ONLY="${a#--schedule=}";; --unschedule) UNSCHEDULE=1;; *) echo "unknown: $a" >&2; exit 64;; esac; done
+for a in "$@"; do case "$a" in --online) ONLINE=1;; --schedule) SCHEDULE=1;; --schedule=*) SCHEDULE=1; ONLY="${a#--schedule=}";; --unschedule) UNSCHEDULE=1;; --sandbox) SANDBOX=1;; *) echo "unknown: $a" >&2; exit 64;; esac; done
 ok=0; bad=0; pass() { printf '  ✓ %s\n' "$1"; ok=$((ok+1)); }; fail() { printf '  ✗ %s\n' "$1"; bad=$((bad+1)); }
+if [[ $SANDBOX -eq 1 ]]; then
+  realhome="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+  [[ -n "$realhome" && "$HOME" != "$realhome" && "$HOME" != "$realhome/" ]] || { echo "--sandbox needs HOME set to a throwaway folder, not your real home" >&2; exit 64; }
+  [[ $SCHEDULE -eq 0 && $UNSCHEDULE -eq 0 && $ONLINE -eq 0 ]] || { echo "--sandbox can't schedule, unschedule or go online" >&2; exit 64; }
+fi
 LA="$HOME/Library/LaunchAgents"; SLOTS="followups pulse reconcile capture week opportunity keeper obligations"
 
 if [[ $UNSCHEDULE -eq 1 ]]; then
@@ -24,6 +31,7 @@ fi
 
 echo "1. Prerequisites"
 for c in claude agent gh jq git perl shasum uv openssl rsync bc curl security launchctl python3; do command -v $c >/dev/null && pass "$c" || fail "$c not on PATH"; done
+if [[ $SANDBOX -eq 0 ]]; then
 gh auth status >/dev/null 2>&1 && pass "gh signed in" || fail "gh not signed in (gh auth login)"
 [[ -d "$HOME/Documents/Data-Org-Repos/data-org/.git" ]] && pass "data-org repo" || fail "data-org repo missing at ~/Documents/Data-Org-Repos/data-org"
 [[ -f "$HOME/Documents/Data-Org-Repos/data-org-notebook/scripts/run_query.py" ]] && pass "data-org-notebook (lake-query)" || fail "data-org-notebook missing (lake-query won't work)"
@@ -47,7 +55,10 @@ fi
 HO="$HOME/Documents/Data-Org-Repos/data-org-agent-handoff.md"
 if [[ -f "$HO" ]]; then cmp -s "$HO" "$COS/handbook/board-handoff.md" && pass "board handoff mirrored to ~/cos/handbook" || fail "~/cos/handbook/board-handoff.md is missing or stale: run  open ~/cos/bin/ZoomMirror.app"; fi
 
+fi
+
 echo "2. The kit, versioned"
+if [[ $SANDBOX -eq 1 ]]; then echo "  · sandbox: kit checks skipped"; else
 # ~/cos/kit is the only source (a git repo, pushed to github.com/cassidythilton/cos-kit). Edit there, commit with a real
 # message, then run this installer from it. A copy elsewhere may only seed a kit that doesn't exist yet.
 if [[ "$KIT" != "$COS/kit" ]]; then
@@ -62,14 +73,16 @@ if git -C "$COS/kit" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
   [[ "$ahead" -eq 0 ]] && pass "~/cos/kit matches GitHub" || printf '  · %s commit(s) not pushed yet (git -C ~/cos/kit push)\n' "$ahead"
 fi
 
+fi
+
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,cos-sandbox-test,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
 # ZoomMirror.app: the one reader of ~/Documents/Zoom (see claude/zoom-mirror.applescript). Rebuilt only when the
 # source changes, because macOS ties the Documents grant to the app's signature.
 ZM="$COS/bin/ZoomMirror.app"
-if [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/zoom-mirror.applescript"; then
+if [[ $SANDBOX -eq 0 ]] && { [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/zoom-mirror.applescript"; }; then
   rm -rf "$ZM" && osacompile -o "$ZM" "$KIT/claude/zoom-mirror.applescript" \
     && /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$ZM/Contents/Info.plist" \
     && /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.cos.zoommirror" "$ZM/Contents/Info.plist" 2>/dev/null \
@@ -77,7 +90,7 @@ if [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirror.applescript" "$ZM/Conte
   cp "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/" && codesign -f -s - "$ZM" 2>/dev/null
   echo "  ! ZoomMirror.app was (re)built: run  open ~/cos/bin/ZoomMirror.app  once and click Allow for Documents"
 fi
-install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
+install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,settings.fix.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
 install -m 644 "$KIT"/claude/briefs/*.md "$COS/claude/briefs/"
 install -m 644 "$KIT"/evals/*.json "$COS/evals/"
 rm -rf "$COS/builds-template.new" && cp -R "$KIT/builds-template" "$COS/builds-template.new" && rm -rf "$COS/builds-template" && mv "$COS/builds-template.new" "$COS/builds-template"
@@ -153,6 +166,19 @@ sg() { printf '{"tool_name":"mcp__claude_ai_Google_Sheets__update_values","tool_
 [[ "$(sg "'Data Roadmap'!D7" '[["2026-12-31"]]')" == 2 ]] && pass "sheet · block · another value" || fail "sheet mode allowed another value"
 [[ "$(sg "'Data Roadmap'!D7:E7" '[["2026-11-30","x"]]')" == 2 ]] && pass "sheet · block · a wider range" || fail "sheet mode allowed a wider range"
 rm -f "$SBT"
+# Fix mode: Claude writes only in its own kit copy; the controls, the copy's .git, the installer and landing stay walled.
+FXD="$(mktemp -d)"; FXD="$(cd "$FXD" && pwd -P)"; mkdir -p "$FXD/claude" "$FXD/.git"
+fw() { printf '{"tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}' "$1" | COS_LEDGER_OFF=1 COS_GATE_MODE=fix COS_FIX_DIR="$FXD" COS_FIX_OUT=/nonexistent "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?; }
+[[ "$(fw "$FXD/claude/gate.sh")" == 0 ]] && pass "fix · allow · writing its own kit copy" || fail "fix mode blocked its own copy"
+[[ "$(fw "$COS/bin/cos-run")" == 2 ]] && pass "fix · block · writing an installed control" || fail "fix mode allowed ~/cos/bin"
+[[ "$(fw "$FXD/../$(basename "$FXD")/.git/config")" == 2 ]] && pass "fix · block · writing the copy's .git" || fail "fix mode allowed .git"
+[[ "$(fw "$FXD/../outside.txt")" == 2 ]] && pass "fix · block · a path that climbs out of the copy" || fail "fix mode allowed ../"
+fb() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1" | COS_LEDGER_OFF=1 COS_GATE_MODE="$2" COS_FIX_DIR="$FXD" "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?; }
+[[ "$(fb "$FXD/install.sh" fix)" == 2 ]] && pass "fix · block · running the copy's installer directly" || fail "fix mode ran install.sh"
+[[ "$(fb "git -C $FXD commit -am x" fix)" == 2 ]] && pass "fix · block · committing (cos-run does)" || fail "fix mode allowed a commit"
+[[ "$(fb "cos-run land j1 abc" pair)" == 2 ]] && pass "pair · block · cos-run land" || fail "an agent could land a fix"
+[[ "$(fb "cos-run apply-sheet j1 abc" job)" == 2 ]] && pass "job · block · cos-run apply-sheet" || fail "an agent could apply a sheet batch"
+rm -rf "$FXD"
 
 echo "7. The lanes refuse what they should"
 T="$(mktemp -d)"; mkdir -p "$T/cos/outbox/t1"
@@ -181,6 +207,10 @@ HOME="$T" "$COS/bin/cos-run" apply t3 "$S3" --in "$T" >/dev/null 2>&1; [[ $? -ne
 mkdir -p "$T/cos/outbox/t4"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"K","old":"","new":"1 Relevance"}]}' > "$T/cos/outbox/t4/sheet.json"
 S4="$(shasum -a 256 "$T/cos/outbox/t4/sheet.json" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply-sheet t4 "$S4" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t4/sheet-applied.json" ]] && pass "apply-sheet refuses column K (a formula)" || fail "apply-sheet accepted a column K write"
+HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"
+mkdir -p "$T/cos/outbox/fx1"; echo '{"lane":"fix","fix":{"base":"x","branch":"fix/fx1","sha256":"aaa"},"approve_with":"cos-run land fx1 aaa"}' > "$T/cos/outbox/fx1/receipt.json"
+HOME="$T" "$COS/bin/cos-run" land fx1 bbb >/dev/null 2>&1; [[ $? -eq 67 ]] && pass "land refuses a sha256 that isn't the reviewed one" || fail "land accepted the wrong sha256"
+mkdir -p "$T/cos/fixes"; "$COS/bin/cos-sandbox-test" "$COS" >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-sandbox-test refuses anything outside ~/cos/fixes" || fail "cos-sandbox-test ran outside ~/cos/fixes"
 HOME="$T" "$COS/bin/cos-run" note steward "test note" >/dev/null 2>&1 && [[ "$(jq -r .bot "$T/cos/state/corrections.jsonl" 2>/dev/null)" == steward ]] && pass "note records a correction" || fail "note did not record"
 HOME="$T" "$COS/bin/cos-run" note nobody "x" >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "note refuses an unknown bot" || fail "note accepted an unknown bot"
 HOME="$T" "$COS/bin/cos-run" eval nosuchsuite current >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "eval refuses a missing suite" || fail "eval ran without a suite"

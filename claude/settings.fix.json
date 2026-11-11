@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Edit(~/cos/fixes/**)",
+      "Write(~/cos/fixes/**)",
+      "Write(~/cos/outbox/**)",
+      "Bash(cos-sandbox-test *)",
+      "Bash(bash -n *)",
+      "Bash(git -C * diff*)",
+      "Bash(git -C * log *)",
+      "Bash(git -C * show *)",
+      "Bash(git -C * status*)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(sed -n *)",
+      "Bash(jq *)",
+      "Bash(wc *)",
+      "Bash(plutil -lint *)"
+    ],
+    "deny": [
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(**/.env*)",
+      "WebFetch",
+      "WebSearch",
+      "Task"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/cos/claude/gate.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
