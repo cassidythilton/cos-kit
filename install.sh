@@ -116,8 +116,10 @@ elif grep -q 'cassidy-mode' "$HOME/.claude/CLAUDE.md"; then pass "~/.claude/CLAU
 else fail "~/.claude/CLAUDE.md exists and doesn't load cassidy-mode. Add this line to it yourself: @~/.claude/skills/cassidy-mode/SKILL.md"; fi
 
 echo "5. Scripts parse"
+is_bak() { [[ "$(basename "$1")" == *.bak-* ]]; }   # old copies (cos-run.bak-20261110), not installed scripts
+is_bak "$COS/bin/cos-run.bak-20261110" && ! is_bak "$COS/bin/cos-run" && pass "backup copies (.bak-) are skipped" || fail "backup copies are not skipped"
 for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/builds-template/verify"; do
-  [[ -d "$s" ]] && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
+  [[ -d "$s" ]] && continue; is_bak "$s" && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
   else bash -n "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"; fi; done
 for j in "$COS"/claude/*.json "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
 for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
