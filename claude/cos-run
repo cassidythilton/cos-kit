@@ -305,7 +305,7 @@ if [[ "$LANE" == land ]]; then
   if [[ "$BRIEF_IN" == revert ]]; then
     TIP="$(jq -r '.landed.commit // empty' "$R")"; [[ -n "$TIP" && "$(jq -r '.landed.reverted // false' "$R")" != true ]] || { echo "nothing landed to revert" >&2; exit 66; }
     git -C "$KITD" revert --no-edit "$BASE..$TIP" >> "$OUT/land.log" 2>&1 || { git -C "$KITD" revert --abort 2>/dev/null; echo "revert did not apply cleanly; see $OUT/land.log" >&2; exit 1; }
-    (cd "$KITD" && ./install.sh) > "$OUT/land-revert-install.log" 2>&1
+    (cd "$KITD" && ./install.sh) > "$OUT/land-revert-install.log" 2>&1 || true
     git -C "$KITD" push -q >> "$OUT/land.log" 2>&1 || true
     jq '.landed.reverted = true | .landed.reverted_at = (now|todate)' "$R" > "$R.tmp" && mv "$R.tmp" "$R"
     echo "reverted $JOB; installed; pushed. Install log: $OUT/land-revert-install.log"; exit 0
@@ -319,15 +319,15 @@ if [[ "$LANE" == land ]]; then
   [[ "$(git -C "$KITD" rev-parse --abbrev-ref HEAD)" == main ]] || { echo "refusing: ~/cos/kit isn't on main" >&2; exit 65; }
   git -C "$KITD" merge -q --ff-only "$BR" >> "$OUT/land.log" 2>&1 || { echo "refusing: the merge didn't apply cleanly; see $OUT/land.log" >&2; exit 65; }
   TIP="$(git -C "$KITD" rev-parse HEAD)"
-  (cd "$KITD" && ./install.sh) > "$OUT/land-install.log" 2>&1
+  (cd "$KITD" && ./install.sh) > "$OUT/land-install.log" 2>&1 || true   # exits 1 on the uncommitted-files check; real_failures decides
   if [[ -n "$(real_failures "$OUT/land-install.log")" ]]; then
-    git -C "$KITD" reset -q --keep "$BASE" >> "$OUT/land.log" 2>&1; (cd "$KITD" && ./install.sh) > "$OUT/land-restore.log" 2>&1
+    git -C "$KITD" reset -q --keep "$BASE" >> "$OUT/land.log" 2>&1; (cd "$KITD" && ./install.sh) > "$OUT/land-restore.log" 2>&1 || true
     jq --arg t "$TIP" '.landed = {status: "rolled-back", commit: null, tried: $t, at: (now|todate)}' "$R" > "$R.tmp" && mv "$R.tmp" "$R"
     echo "ROLLED BACK: the live install failed a check after the merge. ~/cos/kit and the installed files are back at ${BASE:0:7}."
     real_failures "$OUT/land-install.log"; exit 1
   fi
   git -C "$KITD" push -q >> "$OUT/land.log" 2>&1 && PUSHED=true || PUSHED=false
-  git -C "$KITD" worktree remove --force "$WT" 2>/dev/null; git -C "$KITD" branch -q -d "$BR" 2>/dev/null
+  git -C "$KITD" worktree remove --force "$WT" 2>/dev/null || true; git -C "$KITD" branch -q -d "$BR" 2>/dev/null || true
   jq --arg t "$TIP" --argjson p "$PUSHED" '.landed = {status: "landed", commit: $t, pushed: $p, at: (now|todate)}' "$R" > "$R.tmp" && mv "$R.tmp" "$R"
   ledger applies job="$JOB" sha="$BRIEF_IN" writes=1 ok=1 status=landed kind=fix
   echo "LANDED $JOB at ${TIP:0:7}: merged, installed (every check passed), $([[ $PUSHED == true ]] && echo pushed || echo 'NOT pushed: git -C ~/cos/kit push'). Undo with: cos-run land $JOB revert"
