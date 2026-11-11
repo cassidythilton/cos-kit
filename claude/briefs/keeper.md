@@ -30,4 +30,4 @@ Produce:
 
 Never apply a change. Nothing here edits a bot, a skill, the map or the kit. Write keeper.md (and any proposal files) in the job folder. The receipt summary carries counts and job ids only, no canon terms or label text.
 If there were no failures, no corrections, no misses and no rules drift this week, set summary to exactly: NO CHANGE
-- The roadmap-board skill (grokbot/steward-roadmap-board.md) against ~/cos/handbook/board-handoff.md: flag any field, column, rule or trap the handoff changed since the skill was written, with the exact lines to update.
+- One roadmap method: data-org's roadmap skill (.cursor/skills/roadmap/SKILL.md, on main or origin/cassidy/roadmap-skill until PR #735 merges) is the only copy. Flag any method text that crept into grokbot/steward-roadmap-board.md, the briefs or the handbook, and any fact in ~/cos/handbook/board-handoff.md (sections 1 to 4) that the repo skill lacks: propose it as an edit to the repo skill, never to the kit.

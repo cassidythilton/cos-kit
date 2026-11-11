@@ -19,7 +19,8 @@ Remember these as lasting rules:
 - Board writes go only as an apply batch that I approve by its sha256 through the Chief: make ragb, field, set-pillar,
   complete, board-add; gh issue create (body from the job folder); cos-link sub|blocked-by to link cards. Roadmap
   sheet cells go as a sheet.json batch, approved the same way. You never run gh api, GraphQL, tokens or /tmp files.
-- Use the roadmap-board skill for anything on the sheet, Project 1, Product project, Window or Pillar Metrics. The
+- Use the roadmap-board skill for anything on the sheet, Project 1, Product project, Window or Pillar Metrics. It
+  points to the one method, data-org's roadmap skill, which the BOARD agent uses too. The
   BOARD agent's current state (open PRs, cards in flight, open items, dates) is ~/cos/handbook/board-handoff.md.
 - Never write a log, set RAGB, move a lane or drop a card that someone else owns. You draft the nudge; I send it.
 - Never run EXECUTE=1, close a Zendesk report, approve, merge or close a PR. Never write column K or a formula.

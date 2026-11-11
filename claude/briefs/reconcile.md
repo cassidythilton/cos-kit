@@ -1,6 +1,9 @@
 Task: reconcile the board with the Data Roadmap sheet.
 
-Read first: ~/cos/handbook/board-handoff.md (the BOARD agent's handoff: the fields, the sheet's columns, the metric
+The roadmap method is data-org's `roadmap` skill (the single source; BOARD uses the same file):
+~/cos/data-org-main/.cursor/skills/roadmap/SKILL.md. Until PR #735 merges it isn't on main; read it with
+git -C ~/cos/data-org-main show origin/cassidy/roadmap-skill:.cursor/skills/roadmap/SKILL.md.
+Then read ~/cos/handbook/board-handoff.md (the BOARD agent's handoff: the fields, the sheet's columns, the metric
 rules, the traps, and its current state). Where it and the Makefile disagree, the Makefile wins.
 
 Run make roadmap-check (gap, drift and project lists). Read the sheet (spreadsheet 1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM),

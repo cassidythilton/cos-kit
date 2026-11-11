@@ -9,6 +9,9 @@ per person).
 
 Done means: week.md in the job folder, under two pages.
 
+The roadmap method is data-org's `roadmap` skill (the single source; BOARD uses the same file):
+~/cos/data-org-main/.cursor/skills/roadmap/SKILL.md. Until PR #735 merges it isn't on main; read it with
+git -C ~/cos/data-org-main show origin/cassidy/roadmap-skill:.cursor/skills/roadmap/SKILL.md.
 Open items: read the "State" section of ~/cos/handbook/board-handoff.md. For each open item nobody has started, one
 line: what it needs, who decides, and the proposal. Where Cassidy decides, stage it (apply.sh for cards, links and
 fields; sheet.json for cells). Where someone else decides, a drafted question to them. Never a write on their card.
