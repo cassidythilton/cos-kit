@@ -357,14 +357,14 @@ PL
 <key>Label</key><string>com.cos.zoommirror</string>
 <key>ProgramArguments</key><array><string>/usr/bin/open</string><string>-g</string><string>$COS/bin/ZoomMirror.app</string></array>
 <key>WatchPaths</key><array><string>$HOME/Documents/Zoom</string></array>
-<key>StartInterval</key><integer>300</integer>
+<key>StartCalendarInterval</key><array><dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict><dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict></array>
 <key>RunAtLoad</key><true/>
 <key>StandardOutPath</key><string>$COS/state/launchd-zoommirror.log</string>
 <key>StandardErrorPath</key><string>$COS/state/launchd-zoommirror.log</string>
 </dict></plist>
 PL
     plutil -lint "$P" >/dev/null && launchctl bootout "gui/$(id -u)/com.cos.zoommirror" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null \
-      && echo "  ✓ scheduled zoommirror (on change in ~/Documents/Zoom, and every 300s)" || echo "  ✗ could not load zoommirror"
+      && echo "  ✓ scheduled zoommirror (on change in ~/Documents/Zoom, plus 11:30 and 13:30)" || echo "  ✗ could not load zoommirror"
   fi
   if [[ ",${ONLY}," == *",dashboard,"* ]]; then
     P="$LA/com.cos.dashboard.plist"

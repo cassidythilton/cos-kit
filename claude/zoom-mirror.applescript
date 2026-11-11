@@ -1,8 +1,8 @@
 -- ZoomMirror: copy Zoom transcripts from ~/Documents/Zoom (the primary, where Zoom saves them) to ~/cos/zoom.
 -- Scheduled jobs run under launchd, which macOS keeps out of ~/Documents (TCC). This small app is the one thing
 -- that reads ~/Documents/Zoom, under its own Documents permission. It copies text only (.txt .md .vtt), never
--- deletes, and never touches the primary. launchd (com.cos.zoommirror) opens it when the folder changes and
--- every 5 minutes. Built by install.sh from the kit; rebuilt only when this file changes, so the grant stays.
+-- deletes, and never touches the primary. launchd (com.cos.zoommirror) opens it when the folder changes, plus
+-- 11:30 and 13:30 as a catch-up. Built by install.sh from the kit; rebuilt only when this file changes, so the grant stays.
 on run
 	set h to POSIX path of (path to home folder)
 	set src to quoted form of (h & "Documents/Zoom/")
