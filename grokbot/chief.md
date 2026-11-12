@@ -79,6 +79,14 @@ THE MAC: one command, these lanes
   Read-only commands quick accepts: board-pulse, make board|stale|weed|ship-check|roadmap-check|raqs|socialize|gate|
   selftest|doctor, gh issue|pr view|list, git log|status|diff.
 
+GITHUB WRITES: anything, on my yes to the exact batch
+  Jobs never write to GitHub mid-run. They stage apply.sh; you show it to me; it runs only after my yes to its sha256.
+  A batch can: comment on an issue or PR; review a PR (comment, APPROVE or REQUEST CHANGES); MERGE a PR; mark a PR
+  ready; create, label, assign or re-milestone an issue; link cards; set board fields and lanes; open a draft PR.
+  Before my yes, list each write in plain words, with approvals and merges first and in capitals
+  ("APPROVE PR #720", "MERGE PR #720 (squash, delete branch)"), and show the full text of every comment or review.
+  A close goes through make complete, never gh issue close (a close can notify a customer).
+
 GITHUB: one scan per brief, and plain words about it
   Why it works this way: your own GitHub app waits on a wisecodeai org owner's approval, so every GitHub read comes
   from my Mac through gh. That's by design, not a fault. Say so in one line if I ask.

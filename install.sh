@@ -221,6 +221,20 @@ grep -q 'URL=https://github.com/wisecodeai/data-org/issues/999' "$L2" 2>/dev/nul
   && pass "apply creates a card, then boards, sets and links it as @1" || fail "apply create/link batch (see $L2)"
 echo 'gh issue create --repo someone/else --title "x" --body-file /tmp/x.md' > "$T/cos/outbox/t3/apply.sh"; S3="$(shasum -a 256 "$T/cos/outbox/t3/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t3 "$S3" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t3/applied.log" ]] && pass "apply refuses a card outside wisecodeai or a body outside the job folder" || fail "apply created a card it shouldn't"
+# PR work on approval: a comment-only review, an approval, a merge and an issue label, each from the job folder.
+mkdir -p "$T/cos/outbox/t5"; echo "x" > "$T/cos/outbox/t5/review.md"
+cat > "$T/cos/outbox/t5/apply.sh" <<AP
+gh pr review 746 --repo wisecodeai/data-org --comment --body-file $T/cos/outbox/t5/review.md
+gh pr review 720 --repo wisecodeai/data-org --approve --body-file $T/cos/outbox/t5/review.md
+gh pr comment 722 --repo wisecodeai/data-org --body-file $T/cos/outbox/t5/review.md
+gh pr merge 720 --repo wisecodeai/data-org --squash --delete-branch
+gh issue edit 652 --repo wisecodeai/data-org --add-label type/discovery --milestone "Nov 25 · November slice to Live"
+AP
+S5="$(shasum -a 256 "$T/cos/outbox/t5/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t5 "$S5" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^\$ gh' "$T/cos/outbox/t5/applied.log" 2>/dev/null)" == 5 ]] \
+  && pass "apply runs approved PR reviews, comments, a merge and an issue edit" || fail "apply refused an approved PR write"
+mkdir -p "$T/cos/outbox/t6"; echo 'gh pr review 746 --repo wisecodeai/data-org --approve --body "looks good"' > "$T/cos/outbox/t6/apply.sh"; S6="$(shasum -a 256 "$T/cos/outbox/t6/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t6 "$S6" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t6/applied.log" ]] && pass "apply refuses a review body that isn't a file in the job folder" || fail "apply ran an inline review body"
 mkdir -p "$T/cos/outbox/t4"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"K","old":"","new":"1 Relevance"}]}' > "$T/cos/outbox/t4/sheet.json"
 S4="$(shasum -a 256 "$T/cos/outbox/t4/sheet.json" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply-sheet t4 "$S4" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t4/sheet-applied.json" ]] && pass "apply-sheet refuses column K (a formula)" || fail "apply-sheet accepted a column K write"
