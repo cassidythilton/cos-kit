@@ -65,7 +65,7 @@ fi
 ctl_re='(/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|\.claude/(skills|settings)|LaunchAgents)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]] && [[ "$path" =~ $ctl_re ]]; then hard "editing the system's own controls ($path)"; fi
 if [[ "$tool" == "Bash" ]]; then
-  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-sched|cos-obligations|cos-link)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
+  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-push-draft|cos-sched|cos-obligations|cos-link)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
   [[ "$cmd" =~ (^|[;&|[:space:]/])cos-run[[:space:]]+(apply|apply-sheet|land)([[:space:]]|$) ]] && hard "running an approved batch or landing a fix: only the Chief, after Cassidy's yes"
   # Writes into a control path only: a redirect or tee into it, an in-place edit of it, a copy or move onto it, or git in it.
   C='[^[:space:];&|]*/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|[^[:space:];&|]*\.claude/(skills|settings)|[^[:space:];&|]*LaunchAgents'

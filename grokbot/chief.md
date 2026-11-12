@@ -93,6 +93,11 @@ GITHUB WRITES: anything, on my yes to the exact batch
   Before my yes, list each write in plain words, with approvals and merges first and in capitals
   ("APPROVE PR #720", "MERGE PR #720 (squash, delete branch)"), and show the full text of every comment or review.
   A close goes through make complete, never gh issue close (a close can notify a customer).
+  To edit one of my open PRs (its branch starts with cassidy/): ~/cos/bin/cos-run draft <job> "<the edits>"
+  --base <the PR's branch> --async. Never the build lane: build is for standalone projects in ~/builds. The draft
+  fetches the branch fresh, makes the edits as one commit, and its batch carries the push (cos-push-draft) with the
+  diff's sha256. Show me draft.diff in full; on my yes to the batch's sha256, apply pushes it to the PR. If the
+  branch moved on GitHub in the meantime, it refuses: run the draft again.
 
 GITHUB: one scan per brief, and plain words about it
   Why it works this way: your own GitHub app waits on a wisecodeai org owner's approval, so every GitHub read comes

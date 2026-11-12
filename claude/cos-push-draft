@@ -1,0 +1,21 @@
+#!/bin/bash
+# cos-push-draft <job> <sha256>: push a reviewed draft onto the data-org branch it was made from, so an open PR of
+# Cassidy's picks it up. Runs only from an approved apply batch (cos-run apply); jobs can't call it (the gate blocks it).
+# Refuses unless: the base is one of Cassidy's branches (cassidy/...), the diff from the job's base to its commit is
+# byte-for-byte the reviewed one (sha256), the branch on GitHub hasn't moved since the job started, and the push is a
+# plain fast-forward (never --force).
+set -euo pipefail
+JOB="${1:?usage: cos-push-draft <job> <sha256>}"; WANT="${2:?sha256}"
+COS="$HOME/cos"; REPO="$COS/repos/data-org"; R="$COS/outbox/$JOB/receipt.json"; WT="$REPO/.worktrees/cos-$JOB"
+[[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ && "$WANT" =~ ^[0-9a-f]{64}$ ]] || { echo "cos-push-draft: bad arguments" >&2; exit 64; }
+[[ -f "$R" && -d "$WT" ]] || { echo "cos-push-draft: no draft receipt or worktree for $JOB" >&2; exit 66; }
+BASE="$(jq -r '.draft.base // empty' "$R")"; BASE_SHA="$(jq -r '.draft.base_sha // empty' "$R")"; REVIEWED="$(jq -r '.draft.sha256 // empty' "$R")"
+BR="${BASE#origin/}"
+[[ "$BR" =~ ^cassidy/[A-Za-z0-9._/-]+$ && "$BR" != *..* ]] || { echo "cos-push-draft: refusing: $BR is not one of Cassidy's branches" >&2; exit 65; }
+[[ "$REVIEWED" == "$WANT" ]] || { echo "cos-push-draft: refusing: the approved sha256 isn't this draft's" >&2; exit 67; }
+NOW="$(git -C "$WT" diff --binary "$BASE_SHA" HEAD | shasum -a 256 | cut -d' ' -f1)"
+[[ "$NOW" == "$WANT" ]] || { echo "cos-push-draft: refusing: the draft changed after review" >&2; exit 67; }
+git -C "$REPO" fetch -q origin "+refs/heads/$BR:refs/remotes/origin/$BR"
+[[ "$(git -C "$REPO" rev-parse "origin/$BR")" == "$BASE_SHA" ]] || { echo "cos-push-draft: refusing: $BR moved on GitHub since the draft started. Run the draft again." >&2; exit 65; }
+git -C "$WT" push -q origin "HEAD:refs/heads/$BR"
+echo "pushed $JOB to $BR at $(git -C "$WT" rev-parse --short HEAD) (fast-forward from ${BASE_SHA:0:7})"

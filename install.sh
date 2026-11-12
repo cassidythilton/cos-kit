@@ -77,7 +77,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
 # cos-launch: the one program launchd starts for every job, so one Full Disk Access grant covers them all (see
 # claude/cos-launch.c). Rebuilt only when its source changes, because macOS ties the grant to the build.
@@ -378,6 +378,20 @@ HOME="$T" "$COS/bin/cos-run" investigate rv2 "x" >/dev/null 2>&1
 jq -e '.checker.verdict == "fail" and .revision.rounds == 1 and (.receipt.summary | startswith("Needs you: Keep or drop claim X?"))' "$T/cos/outbox/rv2/receipt.json" >/dev/null 2>&1 \
   && [[ "$(cat "$T/.chk")" == 2 ]] && pass "self-healing stops after one round and leads with one plain question" || fail "a twice-blocked job looped or didn't ask plainly"
 rm -f "$T/.chk" "$T/.failchecks"
+# A draft on one of Cassidy's branches stages its push; the approved batch pushes exactly the reviewed diff.
+gt -C "$T/seed" checkout -qb cassidy/pr main; echo pr >> "$T/seed/doc.md"; gt -C "$T/seed" commit -qam pr; git -C "$T/seed" push -q "$T/origin.git" cassidy/pr 2>/dev/null
+cp "$COS/bin/cos-push-draft" "$T/cos/bin/"
+HOME="$T" "$COS/bin/cos-run" draft dp1 "Edit the PR" --base cassidy/pr >/dev/null 2>&1
+DS="$(jq -r .draft.sha256 "$T/cos/outbox/dp1/receipt.json" 2>/dev/null)"; BS="$(jq -r .batch.sha256 "$T/cos/outbox/dp1/receipt.json" 2>/dev/null)"
+grep -qx "cos-push-draft dp1 $DS" "$T/cos/outbox/dp1/apply.sh" 2>/dev/null && pass "draft on a cassidy/ branch stages its push with the diff's sha256" || fail "draft didn't stage its push"
+HOME="$T" "$COS/bin/cos-run" apply dp1 "$BS" --in "$T" >/dev/null 2>&1
+[[ "$(git -C "$T/origin.git" log -1 --format=%s cassidy/pr)" == "Edit the PR" ]] && pass "the approved batch pushes the draft onto the PR branch (fast-forward)" || fail "the approved push didn't reach the branch"
+HOME="$T" "$COS/bin/cos-run" draft dp2 "Edit again" --base cassidy/pr >/dev/null 2>&1
+echo tampered >> "$T/cos/repos/data-org/.worktrees/cos-dp2/doc.md"; git -C "$T/cos/repos/data-org/.worktrees/cos-dp2" commit -qam t 2>/dev/null
+HOME="$T" "$COS/bin/cos-push-draft" dp2 "$(jq -r .draft.sha256 "$T/cos/outbox/dp2/receipt.json")" >/dev/null 2>&1; [[ $? -eq 67 ]] && pass "cos-push-draft refuses a draft changed after review" || fail "cos-push-draft pushed a changed draft"
+HOME="$T" "$COS/bin/cos-run" draft dp3 "Edit main" --base main >/dev/null 2>&1
+HOME="$T" "$COS/bin/cos-push-draft" dp3 "$(jq -r .draft.sha256 "$T/cos/outbox/dp3/receipt.json")" >/dev/null 2>&1; [[ $? -eq 65 ]] && ! grep -q cos-push-draft "$T/cos/outbox/dp3/apply.sh" 2>/dev/null \
+  && pass "a draft on main is never pushed (only Cassidy's own branches)" || fail "a draft on main could be pushed"
 # A resumed draft re-checks the base it saved, because the job folder is writable by the model.
 echo 'feat;rm -rf x' > "$T/cos/outbox/dr1/.draft-base"
 HOME="$T" "$COS/bin/cos-run" draft dr1 "x" >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses a tampered saved base on resume" || fail "draft trusted a tampered saved base"
