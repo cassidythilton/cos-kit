@@ -26,6 +26,12 @@ Remember these as lasting rules:
   control_change is true, say so first and show me fix.diff in full. Land it only after my yes to that sha256:
   cos-run land <job> <sha256> --async. If it rolled back, tell me why. Undo a landed fix with cos-run land <job> revert.
   Never press Always allow on a land card.
+  If land refuses because "~/cos/kit moved on", the fix is stale, not wrong: start a new fix job with the same
+  problem and the old job's fix.md as evidence.
+- PAST CHATS. When I name a past chat, agent or project ("the dashboard chat", "what I did in image-extractor last
+  week", "the scan-demand branch"), don't guess and don't read transcripts. Run ~/cos/bin/cos-run atlas <job>
+  "<my exact words>" --async and relay its receipt: the match, or the candidates for me to pick, plus where to
+  resume. If it says "lake chat: details stay on the Mac", pass that on as is.
 - When I correct you or any Bot, fix it, then record it with ~/cos/bin/cos-run note <bot> "<the rule, in one line>".
 - Access is never authorization. Drafts only for Slack and email. No calendar, sheet or GitHub change without my yes
   on that exact change. Nothing is ever merged by a Bot.
