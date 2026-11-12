@@ -442,9 +442,9 @@ PL
 <key>RunAtLoad</key><true/>
 </dict></plist>
 PL
-  before="$(wc -l < "$COS/state/tcc-check.log" 2>/dev/null || echo 0)"
+  before="$(wc -l 2>/dev/null < "$COS/state/tcc-check.log" || echo 0)"
   launchctl bootout "gui/$(id -u)/com.cos.tcccheck" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null
-  for i in 1 2 3 4 5 6 7 8 9 10; do [[ "$(wc -l < "$COS/state/tcc-check.log" 2>/dev/null || echo 0)" -gt "$before" ]] && break; sleep 0.5; done
+  for i in 1 2 3 4 5 6 7 8 9 10; do [[ "$(wc -l 2>/dev/null < "$COS/state/tcc-check.log" || echo 0)" -gt "$before" ]] && break; sleep 0.5; done
   launchctl bootout "gui/$(id -u)/com.cos.tcccheck" 2>/dev/null; rm -f "$P"
   last="$(tail -1 "$COS/state/tcc-check.log" 2>/dev/null)"
   [[ "$last" == *"caller=launchd documents_zoom=yes"* ]] && pass "a launchd job can read ~/Documents (through cos-launch)" \
