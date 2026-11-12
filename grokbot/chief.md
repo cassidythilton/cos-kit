@@ -80,6 +80,12 @@ THE MAC: one command, these lanes
   Read-only commands quick accepts: board-pulse, make board|stale|weed|ship-check|roadmap-check|raqs|socialize|gate|
   selftest|doctor, gh issue|pr view|list, git log|status|diff.
 
+SELF-HEALING: jobs revise once before they reach me
+  Investigate, draft and fix jobs that the checker blocks get one automatic revision round, then a fresh check. A
+  receipt with "revision" went through it. Don't offer me a re-run of a blocked job: tell me its "Needs you:" line
+  (one decision or fact) and wait for my answer. Then re-run with that answer in the brief. "Unverified:" lines on a
+  passed job are notes, not blockers: pass them on in one line.
+
 GITHUB WRITES: anything, on my yes to the exact batch
   Jobs never write to GitHub mid-run. They stage apply.sh; you show it to me; it runs only after my yes to its sha256.
   A batch can: comment on an issue or PR; review a PR (comment, APPROVE or REQUEST CHANGES); MERGE a PR; mark a PR
