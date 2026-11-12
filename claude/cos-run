@@ -588,6 +588,9 @@ claude -p "$PROMPT" ${RESUME[@]+"${RESUME[@]}"} \
   --output-format json --json-schema "$SCHEMA" \
   -n "cos:$JOB" > "$OUT/run.json" 2> "$OUT/run.err" || true
 
+# Package a run into receipt.json: fingerprint any staged batch, attach the draft diff, catch strays. Run again
+# after a revision round.
+post_run() {
 jq '{receipt: (.structured_output // (.result|fromjson? ) // {status:"failed", summary:(.result // "no result")}),
      session_id, cost_usd: .total_cost_usd, engine: "claude", lane: "'"$LANE"'", job: "'"$JOB"'"}' \
    "$OUT/run.json" > "$OUT/receipt.json" 2>/dev/null \
@@ -638,6 +641,8 @@ if [[ "$LANE" == "investigate" && "$WORKDIR" == "$MAIN" ]]; then
       "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
   fi
 fi
+}
+post_run
 
 # Build lane: the deterministic check runs here, outside the model, and a second model family reviews the diff.
 if [[ "$LANE" == "build" ]]; then
@@ -700,7 +705,8 @@ $DIFF") > "$OUT/second-opinion.json" 2>>"$OUT/run.err" || true
 fi
 
 # Checker: a fresh, read-only context that must pass the work before it reaches anyone.
-VERDICT_SCHEMA='{"type":"object","required":["verdict","failures"],"properties":{"verdict":{"enum":["pass","fail"]},"failures":{"type":"array","items":{"type":"string"}}}}'
+VERDICT_SCHEMA='{"type":"object","required":["verdict","failures"],"properties":{"verdict":{"enum":["pass","fail"]},"failures":{"type":"array","items":{"type":"string"}},"notes":{"type":"array","items":{"type":"string"}},"ask":{"type":"string"}}}'
+run_checker() {
 claude -p "You are the CHECKER. You did not do this work and you assume nothing. Read $OUT/receipt.json and every artifact it lists.
 Fail the job if: any claim lacks evidence or the evidence does not say what the claim says; any 'decision' is not recorded in a DRD/DADR, the board or a transcript;
 any owner/date/status was not fetched fresh in this run; anything shared-state was done rather than staged in needs_approval; a file was created that artifacts does not list;
@@ -713,13 +719,56 @@ For a build: fail if verify_exit is not 0; if build.baseline.reading says the ch
 if build.verifier.level is verifier-failed or verifier-blocked, or check-only for anything beyond a typing change; if any verifier criterion is 'not met';
 if proofs lacks BASELINE, BEHAVIOR or QUALITY; if HANDOFF.md was not updated; if a claim of improvement has no number and denominator; if a query read canon values;
 or if the second opinion names a defect the receipt does not address.
-Return pass only if every check passes. List each failure in one line." \
+Grade every problem you find. BLOCKING, listed in failures: a problem in anything that leaves the Mac or changes shared state (needs_approval, apply.sh, sheet.json, a comment or review staged to post, draft.diff, a build), or a claim stated as fact with no evidence behind it. NOTE, listed in notes: a weak point that the receipt already marks unverified, or that doesn't change what Cassidy should do. Every rule above that says 'fail' is BLOCKING.
+Return pass when failures is empty, even if there are notes. Return fail otherwise, one line per failure, and set ask: one plain sentence for Cassidy naming the single fact or decision that would unblock the job (\"Keep or drop the 45-minute line? Nothing in the record shows David asked for it.\")." \
   --settings "$COS/claude/settings.investigate.json" \
   --permission-mode dontAsk --permission-prompts none \
   --add-dir "$OUT" "$COS/handbook" "$HOME/meetings" ${WORKDIR:+"$WORKDIR"} \
   --model opus --effort medium --max-budget-usd 1.5 --no-session-persistence \
   --output-format json --json-schema "$VERDICT_SCHEMA" > "$OUT/checker.json" 2>>"$OUT/run.err" || true
 
+}
+# Merge checker.json into the receipt.
+merge_checker() {
 jq -s '.[0] + {checker: (.[1].structured_output // (.[1].result|fromjson?) // {verdict:"fail",failures:["checker did not run"]})}' \
    "$OUT/receipt.json" "$OUT/checker.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+}
+run_checker; merge_checker
+
+# Self-healing: one revision round. When the checker blocks an investigate or draft job, the same session resumes once
+# with the checker's list, fixes what it can (reads the missing source, labels a claim unverified, drops what can't
+# be backed), and is checked again by a fresh checker. Cassidy sees the result after that round, never the first try.
+VERDICT="$(jq -r '.checker.verdict // "fail"' "$OUT/receipt.json" 2>/dev/null)"
+SID="$(jq -r '.session_id // empty' "$OUT/receipt.json" 2>/dev/null)"
+CHECK_RAN="$(jq -r '(.checker.failures // []) != ["checker did not run"]' "$OUT/receipt.json" 2>/dev/null)"
+if [[ "$VERDICT" == fail && "$CHECK_RAN" == true && "$LANE" =~ ^(investigate|draft)$ && -n "$SID" && "${COS_NO_REVISE:-0}" != 1 ]]; then
+  cp "$OUT/receipt.json" "$OUT/receipt.round1.json"; cp "$OUT/checker.json" "$OUT/checker.round1.json"; cp "$OUT/run.json" "$OUT/run.round1.json"
+  FAILS="$(jq -r '.checker.failures[]? | "- " + .' "$OUT/receipt.json")"
+  REV_BUDGET="$(awk -v b="$BUDGET" 'BEGIN{x=b/2; if (x<1.5) x=1.5; print x}')"
+  cd "$WORKDIR"
+  claude -p "REVISION ROUND. An independent checker blocked your work. Its findings:
+$FAILS
+
+Fix each one, in this order of preference: (1) read the source now and add the evidence; (2) if you can't verify it, keep the claim but mark it unverified in the summary and in evidence; (3) if it's in something that would be posted or written (a staged comment, needs_approval, apply.sh, sheet.json, the draft), and you can't back it, remove it. Don't add new claims or new scope. Rewrite every artifact you change, and return the full receipt again." \
+    --resume "$SID" \
+    --settings "$SETTINGS" \
+    --permission-mode dontAsk --permission-prompts none \
+    --agents "$COS/claude/agents.json" \
+    --append-system-prompt "$(cat "$LANE_PROMPT")" \
+    --add-dir "$OUT" "$COS/handbook" "$HOME/meetings" ${EXTRA_DIRS[@]+"${EXTRA_DIRS[@]}"} \
+    --model opus --effort "$EFFORT" --max-budget-usd "$REV_BUDGET" \
+    --output-format json --json-schema "$SCHEMA" > "$OUT/run.json" 2>> "$OUT/run.err" || true
+  post_run
+  run_checker; merge_checker
+  C1="$(jq -r '.cost_usd // 0' "$OUT/receipt.round1.json")"
+  jq --slurpfile r1 "$OUT/receipt.round1.json" --argjson c1 "${C1:-0}" \
+    '. + {revision: {rounds: 1, first_failures: ($r1[0].checker.failures // []), first_cost_usd: $c1}}
+     | .cost_usd = ((.cost_usd // 0) + $c1)' "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+fi
+# Say it plainly: a blocked job leads with the one thing that unblocks it; a pass carries its notes as unverified.
+jq 'if (.checker.verdict // "fail") == "fail" then
+      .receipt.summary = ("Needs you: " + (.checker.ask // (.checker.failures[0] // "the checker blocked this job")) + "\n\n" + (.receipt.summary // ""))
+    elif ((.checker.notes // []) | length) > 0 then
+      .receipt.summary = ((.receipt.summary // "") + "\n\nUnverified: " + (.checker.notes | join(" ")))
+    else . end' "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
 finish

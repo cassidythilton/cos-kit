@@ -313,8 +313,23 @@ gt -C "$T/seed" add -A; gt -C "$T/seed" commit -qm a; gt -C "$T/seed" checkout -
 git -C "$T/seed" push -q "$T/origin.git" main feat 2>/dev/null; git clone -q "$T/origin.git" "$T/cos/repos/data-org" 2>/dev/null
 echo c >> "$T/seed/doc.md"; gt -C "$T/seed" commit -qam c; git -C "$T/seed" push -q "$T/origin.git" feat 2>/dev/null   # the clone's origin/feat is now stale
 FEAT_TIP="$(git -C "$T/seed" rev-parse feat)"
-printf '#!/bin/bash\n[[ "$*" == *CHECKER* ]] || { [[ "$PWD" == */.worktrees/* ]] && echo added >> doc.md; [[ "$PWD" == */data-org-main && "$*" == *STRAY* ]] && : > =2026-11-09; [[ "$PWD" == */data-org-main && "$*" == *EDITDOC* ]] && echo edited >> doc.md; }\necho %s\n' \
-  "'{\"structured_output\":{\"status\":\"done\",\"summary\":\"stub\"},\"total_cost_usd\":0}'" > "$T/cos/bin/claude"; chmod +x "$T/cos/bin/claude"
+cat > "$T/cos/bin/claude" <<'STUB'
+#!/bin/bash
+# Stub claude. The checker passes unless ~/.failchecks says how many checks to fail; a revision round says "revised".
+if [[ "$*" == *CHECKER* ]]; then
+  n=$(( $(cat "$HOME/.chk" 2>/dev/null || echo 0) + 1 )); echo $n > "$HOME/.chk"
+  if [[ $n -le $(cat "$HOME/.failchecks" 2>/dev/null || echo 0) ]]; then
+    echo '{"structured_output":{"verdict":"fail","failures":["claim X has no source"],"ask":"Keep or drop claim X?"}}'
+  else echo '{"structured_output":{"verdict":"pass","failures":[],"notes":[]}}'; fi
+  exit 0
+fi
+[[ "$PWD" == */.worktrees/* ]] && echo added >> doc.md
+[[ "$PWD" == */data-org-main && "$*" == *STRAY* ]] && : > =2026-11-09
+[[ "$PWD" == */data-org-main && "$*" == *EDITDOC* ]] && echo edited >> doc.md
+if [[ "$*" == *"REVISION ROUND"* ]]; then echo '{"structured_output":{"status":"done","summary":"revised"},"session_id":"s1","total_cost_usd":0.5}'
+else echo '{"structured_output":{"status":"done","summary":"stub"},"session_id":"s1","total_cost_usd":1}'; fi
+STUB
+chmod +x "$T/cos/bin/claude"
 HOME="$T" "$COS/bin/cos-run" draft dr1 "Add a line" --base feat >/dev/null 2>&1
 DR="$T/cos/outbox/dr1"
 jq -e --arg tip "$FEAT_TIP" '.draft.base == "origin/feat" and .draft.base_sha == $tip and .draft.fetched_sha == $tip and .draft.fetched_fresh == true and .draft.files == 1' "$DR/receipt.json" >/dev/null 2>&1 \
@@ -353,6 +368,16 @@ HOME="$T" "$COS/bin/cos-run" investigate ive "EDITDOC test" >/dev/null 2>&1
 [[ -z "$(git -C "$T/cos/data-org-main" diff --name-only HEAD)" ]] && grep -q '+edited' "$T/cos/outbox/ive/strays/tracked-edits.diff" 2>/dev/null \
   && jq -e '.stray_edits == ["doc.md"]' "$T/cos/outbox/ive/receipt.json" >/dev/null 2>&1 \
   && pass "investigate: an edit to a tracked file is saved to the job folder and undone" || fail "investigate: a tracked edit stayed in data-org-main"
+# Self-healing: the checker blocks the first try, the job revises once, and the second check passes.
+rm -f "$T/.chk"; echo 1 > "$T/.failchecks"
+HOME="$T" "$COS/bin/cos-run" investigate rv1 "x" >/dev/null 2>&1
+jq -e '.checker.verdict == "pass" and .revision.rounds == 1 and .revision.first_failures == ["claim X has no source"] and .receipt.summary == "revised" and .cost_usd == 1.5' "$T/cos/outbox/rv1/receipt.json" >/dev/null 2>&1 \
+  && [[ -f "$T/cos/outbox/rv1/receipt.round1.json" ]] && pass "self-healing: a blocked job revises once and passes the second check" || fail "self-healing round didn't run or didn't pass ($(jq -c '{v:.checker.verdict,r:.revision,s:.receipt.summary,c:.cost_usd}' "$T/cos/outbox/rv1/receipt.json" 2>/dev/null))"
+rm -f "$T/.chk"; echo 2 > "$T/.failchecks"
+HOME="$T" "$COS/bin/cos-run" investigate rv2 "x" >/dev/null 2>&1
+jq -e '.checker.verdict == "fail" and .revision.rounds == 1 and (.receipt.summary | startswith("Needs you: Keep or drop claim X?"))' "$T/cos/outbox/rv2/receipt.json" >/dev/null 2>&1 \
+  && [[ "$(cat "$T/.chk")" == 2 ]] && pass "self-healing stops after one round and leads with one plain question" || fail "a twice-blocked job looped or didn't ask plainly"
+rm -f "$T/.chk" "$T/.failchecks"
 # A resumed draft re-checks the base it saved, because the job folder is writable by the model.
 echo 'feat;rm -rf x' > "$T/cos/outbox/dr1/.draft-base"
 HOME="$T" "$COS/bin/cos-run" draft dr1 "x" >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses a tampered saved base on resume" || fail "draft trusted a tampered saved base"
