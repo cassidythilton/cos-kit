@@ -242,6 +242,36 @@ HOME="$T" "$COS/bin/cos-run" receipt nosuchjob >/dev/null 2>&1; [[ $? -eq 66 ]] 
 HOME="$T" "$COS/bin/cos-run" quick x1 "q" --async >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "--async refuses the quick lane" || fail "--async accepted the quick lane"
 "$COS/bin/cos-sched" nosuchslot --dry-run >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-sched refuses an unknown slot" || fail "cos-sched accepted an unknown slot"
 rm -rf "$T"
+# A scheduled job that dies early still leaves a failed receipt, with its error, where cos-run receipt looks.
+# Stubs stand in for cos-run, cos-push and the clock (09:00, inside pulse's hours): nothing leaves the Mac.
+# The stub's stderr carries a ghp_ token, a Bearer header, an AKIA key and a URL with a password and a query string.
+T="$(mktemp -d)"; mkdir -p "$T/cos/bin"; SD="$(date +%Y%m%d)"; SR="$T/cos/outbox/pulse-$SD/receipt.json"
+cat > "$T/cos/bin/cos-run" <<'ST'
+#!/bin/bash
+pwd > "$HOME/cwd"
+echo "fatal: unable to access github.com token=ghp_abc123XYZ" >&2
+echo "curl -H 'Authorization: Bearer eyJsecretBearer42' failed" >&2
+echo "aws key AKIAABCDEFGHIJKLMNOP rejected; see https://bob:pw9secret@example.com/x?sig=q7secret" >&2
+exit 128
+ST
+printf '#!/bin/bash\necho "$*" >> "$HOME/pushed"\n' > "$T/cos/bin/cos-push"
+printf '#!/bin/bash\n[[ "$1" == +%%H ]] && { echo 09; exit 0; }\nexec /bin/date "$@"\n' > "$T/cos/bin/date"
+chmod +x "$T/cos/bin/"{cos-run,cos-push,date}
+mkdir -p "$(dirname "$SR")"; echo '{"receipt":{"status":"done","summary":"an earlier run"}}' > "$SR"
+(cd / && HOME="$T" "$COS/bin/cos-sched" pulse >/dev/null 2>&1)
+S="$(jq -r .receipt.summary "$SR" 2>/dev/null)"
+[[ "$(jq -r .receipt.status "$SR" 2>/dev/null)" == failed && "$S" == *"exit 128"*"unable to access github.com"* ]] && grep -q "steward pulse $SR" "$T/pushed" 2>/dev/null \
+  && pass "a scheduled job that dies early gets a failed receipt with its exit code and error, and it is pushed" || fail "scheduled job left no failed receipt with its error ($SR: $S)"
+[[ "$(jq -r .receipt.summary "$(dirname "$SR")/receipt.prev.json" 2>/dev/null)" == "an earlier run" ]] && grep -q "Bearer eyJ" "$(dirname "$SR")/sched.err" 2>/dev/null \
+  && pass "cos-sched sets the earlier receipt aside and keeps the raw stderr in sched.err" || fail "cos-sched lost the earlier receipt or sched.err"
+[[ -n "$S" && "$S" != *ghp_abc* ]] && pass "no ghp_ token reaches the scheduled receipt" || fail "a ghp_ token reached the scheduled receipt: $S"
+[[ -n "$S" && "$S" != *eyJsecretBearer* ]] && pass "no Bearer token reaches the scheduled receipt" || fail "a Bearer token reached the scheduled receipt: $S"
+[[ -n "$S" && "$S" != *AKIAABCDEFGHIJKLMNOP* ]] && pass "no AKIA key reaches the scheduled receipt" || fail "an AKIA key reached the scheduled receipt: $S"
+[[ -n "$S" && "$S" != *pw9secret* && "$S" != *q7secret* ]] && pass "no URL password or query string reaches the scheduled receipt" || fail "a URL secret reached the scheduled receipt: $S"
+HOME="$T" "$COS/bin/cos-run" receipt "pulse-$SD" 2>/dev/null | jq -e '.receipt.status == "failed"' >/dev/null \
+  && pass "cos-run receipt finds the failed scheduled job" || fail "cos-run receipt can't find the failed scheduled job"
+[[ "$(cat "$T/cwd" 2>/dev/null)" == "$T" ]] && pass "cos-sched runs its job from \$HOME" || fail "cos-sched ran its job from $(cat "$T/cwd" 2>/dev/null)"
+rm -rf "$T"
 
 echo "8. lake-query refuses what it should"
 T="$(mktemp -d)"; echo "select name from wisecode_gold.canon_ingredient limit 5" > "$T/a.sql"; echo "delete from food" > "$T/b.sql"; echo "select * from food" > "$T/c.sql"

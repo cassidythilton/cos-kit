@@ -11,6 +11,9 @@
 set -uo pipefail
 # launchd starts jobs with a bare PATH. Name every tool's home, so claude, agent, gh and uv are found.
 export PATH="$HOME/cos/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# launchd's working directory may be one macOS won't let a job read (git: "Unable to read current working directory").
+cd "$HOME" || exit 1
 COS="$HOME/cos"; BRIEFS="$COS/claude/briefs"; LOG="$COS/state/sched.log"; mkdir -p "$COS/state"
 SLOT="${1:?slot or list}"; DRY=0; [[ "${2:-}" == "--dry-run" ]] && DRY=1
 D="$(date +%Y%m%d)"
@@ -60,17 +63,34 @@ if [[ $DRY -eq 1 ]]; then
 fi
 
 log "start $JOB"
+# Every run leaves a receipt in its job folder, where cos-run receipt looks. A job that dies before writing one gets a
+# failed receipt carrying its exit code and stderr (kept in sched.err). An earlier run's receipt is set aside first,
+# so a crash can't pass it off as this run's result.
+OUTD="$COS/outbox/$JOB"; R="$OUTD/receipt.json"; ERR="$OUTD/sched.err"; rc=0
+mkdir -p "$OUTD"; [[ -f "$R" ]] && mv "$R" "$OUTD/receipt.prev.json"
 if [[ "$LANE" == script ]]; then
-  JOB="obligations-$D"
-  COS_CALLER=sched cos-obligations --act >/dev/null 2>"$COS/state/obligations.err" || log "obligations failed: $(tail -c 200 "$COS/state/obligations.err" | tr '\n' ' ')"
+  COS_CALLER=sched cos-obligations --act >/dev/null 2>"$ERR" || rc=$?
 elif [[ "$LANE" == quick ]]; then
   COS_CALLER=sched cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), and how many owners need a nudge. If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
-    --with "board-pulse --record" >/dev/null 2>&1
+    --with "board-pulse --record" >/dev/null 2>"$ERR" || rc=$?
 else
-  COS_CALLER=sched cos-run "$LANE" "$JOB" "$BRIEFS/$SLOT.md" >/dev/null 2>&1
+  COS_CALLER=sched cos-run "$LANE" "$JOB" "$BRIEFS/$SLOT.md" >/dev/null 2>"$ERR" || rc=$?
 fi
-R="$COS/outbox/$JOB/receipt.json"
-[[ -f "$R" ]] || { printf '{"receipt":{"status":"failed","summary":"cos-run left no receipt; see %s"},"job":"%s"}\n' "$COS/outbox/$JOB/run.err" "$JOB" > "$COS/state/failed-$SLOT.json"; R="$COS/state/failed-$SLOT.json"; }
+# The error leaves the Mac in the receipt. It goes through the ledger's own redaction (cos-ledger, written to a scratch
+# ledger and read back), then loses what the ledger doesn't cut: other gh*_ tokens, any-case Bearer, URL credentials and
+# query strings. If the redaction can't run, the error is withheld.
+scrub() {
+  local d; d="$(mktemp -d)" || { echo "(withheld: redaction failed)"; return; }
+  COS_LEDGER_DIR="$d" "$HERE/cos-ledger" scrub msg="$1"
+  jq -r '.msg // "(withheld: redaction failed)"' "$d/scrub.jsonl" 2>/dev/null || echo "(withheld: redaction failed)"
+  rm -rf "$d"
+}
+E="$(scrub "$(tail -c 400 "$ERR" 2>/dev/null | tr '\n\r\t' '   ')" | sed -E -e 's/gh[pousr]_[A-Za-z0-9_]+/<redacted>/g' \
+  -e 's/[Bb][Ee][Aa][Rr][Ee][Rr][[:space:]]+[^[:space:]]+/Bearer <redacted>/g' \
+  -e 's#(https?://)[^[:space:]/@]*@#\1#g' -e 's#(https?://[^[:space:]?]*)\?[^[:space:]]*#\1#g')"
+(( rc == 0 )) || log "$JOB failed (exit $rc): ${E:0:200}"
+[[ -f "$R" ]] || jq -n --arg j "$JOB" --arg s "FAILED: $JOB stopped (exit $rc) before writing a receipt. Error: ${E:-nothing on stderr}. Full log: $ERR" \
+  '{receipt: {status: "failed", summary: $s}, lane: "sched", job: $j}' > "$R"
 
 # Silent when nothing changed: don't spend a bot turn on it.
 if jq -e '(.receipt.summary // "") | test("^\\s*NO CHANGE")' "$R" >/dev/null 2>&1; then log "no change; not pushed"; exit 0; fi
