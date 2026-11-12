@@ -74,6 +74,7 @@
       "Bash(make week*)",
       "Bash(git -C * log *)",
       "Bash(git -C * show *)",
+      "Bash(sqlite3 -readonly *)",
       "Bash(git -C * rev-parse *)",
       "Bash(git -C * status)",
       "Bash(make lint-writing *)",
