@@ -254,6 +254,10 @@ HOME="$T" COS_GH_WAITS=0,0,0 PATH="$T/cos/bin:$PATH" "$COS/bin/cos-gh-scan" "$T/
 jq -e '.receipt.status == "failed" and (.receipt.summary | startswith("GitHub read failed"))' "$T/cos/outbox/gs1/receipt.json" >/dev/null 2>&1 \
   && pass "gh-scan: GitHub down reads 'GitHub read failed', never empty" || fail "gh-scan didn't report the failure plainly"
 rm -f "$T/cos/bin/gh"; mv "$T/cos/bin/gh.stub" "$T/cos/bin/gh" 2>/dev/null
+# Quick lane: reads in, writes out, judged the way the shell will run them.
+for qc in 'gh pr list --repo wisecodeai/data-org --search created:>=2026-11-09' "gh api graphql -f query='mutation{x}'" 'gh api repos/wisecodeai/data-org/issues/1/comments -f body=hi' 'gh issue list --search "$(rm -rf ~)"'; do
+  HOME="$T" "$COS/bin/cos-run" quick qr1 "x" --with "$qc" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "quick refuses: $qc" || fail "quick ran: $qc"
+done
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"
 HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"

@@ -541,10 +541,29 @@ finish() {
 # ---------------------------------------------------------------- quick: Cursor Agent
 if [[ "$LANE" == "quick" ]]; then
   # The script runs the commands (script before reasoning); the model only reads and summarizes.
-  READONLY='^(board-pulse( --week)?( --record)?( --json)?|make (board|roadmap-check( CARD=[0-9]+)?|stale( DAYS=[0-9]+)?|weed( DAYS=[0-9]+)?|ship-check|raqs|socialize|gate|selftest|doctor)|gh (issue|pr) (view|list) [^;&|`$]*|git (log|status|diff) [^;&|`$]*)$'
+  # Reads only. No ; & | ` $ < > anywhere, so no chaining and no redirect (an unquoted '>=' in a search filter would
+  # make a file). gh api must be a read: no mutation, no method but GET, no fields unless -X GET.
+  A_='[^;&|`$<>]*'
+  READONLY="^(board-pulse( --week)?( --record)?( --json)?|make (board|roadmap-check( CARD=[0-9]+)?|stale( DAYS=[0-9]+)?|weed( DAYS=[0-9]+)?|ship-check|raqs|socialize|gate|selftest|doctor)|gh (issue|pr) (view|list|diff|checks) $A_|gh search (issues|prs|code|commits|repos) $A_|gh repo view $A_|gh api $A_|git (-C [^[:space:];&|\`\$<>]+ )?(log|status|diff|show|grep|ls-files|ls-remote|rev-parse) $A_|cat $A_|head $A_|sed -n $A_|ls $A_)$"
+  quick_ok() {
+    # Judge the command the way the shell will run it: single-quoted text is inert, double-quoted text is inert unless
+    # it can expand ($ or a backtick). What's left must be a listed read with no ; & | ` $ < >.
+    local dq bare
+    dq="$(printf '%s' "$1" | sed -E "s/'[^']*'//g" | grep -oE '"[^"]*"' || true)"
+    [[ "$dq" == *'$'* || "$dq" == *'`'* ]] && return 1
+    bare="$(printf '%s' "$1" | sed -E "s/'[^']*'/Q/g; s/\"[^\"]*\"/Q/g")"
+    [[ "$bare" =~ $READONLY ]] || return 1
+    if [[ "$bare" =~ ^gh\ api ]]; then
+      local l; l="$(tr '[:upper:]' '[:lower:]' <<<"$1")"
+      [[ "$l" =~ mutation ]] && return 1
+      [[ "$l" =~ (-x|--method)[[:space:]]*(post|patch|put|delete) ]] && return 1
+      if [[ ! "$l" =~ ^gh\ api\ graphql ]] && [[ "$l" =~ [[:space:]](-f|-f|--field|--raw-field|--input)[[:space:]=] ]] && [[ ! "$l" =~ (-x|--method)[[:space:]]*get ]]; then return 1; fi
+    fi
+    return 0
+  }
   : > "$OUT/context.txt"
   for c in ${WITH[@]+"${WITH[@]}"}; do
-    [[ "$c" =~ $READONLY ]] || { echo "quick lane refuses: $c" >&2; exit 65; }
+    quick_ok "$c" || { echo "quick lane refuses: $c (reads only; quote any filter with >= or <=)" >&2; exit 65; }
     # A failing command (a GitHub timeout) must not end the job: its error goes to the model and the receipt.
     { echo "\$ $c"; { (cd "$IN" && bash -c "$c") 2>&1 || echo "(this command failed, exit $?)"; } | head -c 60000 || true; echo; } >> "$OUT/context.txt"
   done

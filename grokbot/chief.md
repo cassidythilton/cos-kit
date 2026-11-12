@@ -77,8 +77,12 @@ THE MAC: one command, these lanes
   the job finishes. Tell me it started, then stop. Never re-run a job because its output didn't come back: check it with
   cos-run receipt <job>. A failed job is re-run only after I say so, with a new job id.
   Each job returns ~/cos/outbox/<job>/receipt.json. Read the receipt, never the transcript.
-  Read-only commands quick accepts: board-pulse, make board|stale|weed|ship-check|roadmap-check|raqs|socialize|gate|
-  selftest|doctor, gh issue|pr view|list, git log|status|diff.
+  The quick lane's model can't run anything: it only reads the output of the --with commands you give it. Put every
+  read it needs in --with (several are fine). It accepts: board-pulse; make board|stale|weed|ship-check|roadmap-check|
+  raqs|socialize|gate|selftest|doctor; gh issue|pr view|list|diff|checks; gh search issues|prs|code|commits; gh repo
+  view; gh api reads (GET or a GraphQL query, never a mutation); git log|show|grep|diff|ls-files [-C <dir>]; cat, head,
+  sed -n on a file. Quote any filter with >= or <= ("created:>=2026-11-09"): unquoted, it's refused. To find something
+  you can't name a command for, use investigate, which searches on its own. For "what needs me in GitHub", gh-scan.
 
 SELF-HEALING: jobs revise once before they reach me
   Investigate, draft and fix jobs that the checker blocks get one automatic revision round, then a fresh check. A
