@@ -162,3 +162,18 @@ Created at runtime: `~/cos/kit` (this kit, as a git repo), `~/cos/state/correcti
 - v3 (Nov 8): STEWARD rebuilt on the repo's own targets (`roadmap-check`, `make field`). Jobs run on a fresh copy of `origin/main`. `apply` lane. `board-pulse`.
 - v2 (Nov 8): Cursor `quick` lane. Repo skills replace the invented agents.
 - v1 (Nov 7): Chief, OPS, `investigate` and `draft` lanes, the gate, the checker.
+
+## Documents access for scheduled jobs (one step, once)
+
+Scheduled jobs start from launchd, and macOS gives a launchd job only the access of the program launchd starts.
+Every job now starts through one small program, `~/cos/bin/cos-launch`, so one grant covers them all (and nothing
+else on the Mac, unlike granting `/bin/zsh`).
+
+1. System Settings → Privacy & Security → Full Disk Access → **+**.
+2. Press ⌘⇧G, paste `~/cos/bin/cos-launch`, choose it, and turn it on.
+3. Run `cd ~/cos/kit && ./install.sh --schedule`. It rewrites the schedule to use cos-launch and runs a one-time
+   launchd check: "a launchd job can read ~/Documents" must pass.
+
+macOS only lets you add a command-line program under Full Disk Access, which covers more than Documents. That was
+Cassidy's call (2026-11-12): any agent may use Documents. cos-launch runs only programs in `~/cos/bin`. If
+`claude/cos-launch.c` ever changes, the installer rebuilds it and you grant it again.

@@ -25,7 +25,7 @@ fi
 LA="$HOME/Library/LaunchAgents"; SLOTS="followups pulse reconcile capture week opportunity keeper obligations"
 
 if [[ $UNSCHEDULE -eq 1 ]]; then
-  for s in $SLOTS dashboard zoommirror; do launchctl bootout "gui/$(id -u)/com.cos.$s" 2>/dev/null; rm -f "$LA/com.cos.$s.plist"; done
+  for s in $SLOTS dashboard zoommirror tcccheck; do launchctl bootout "gui/$(id -u)/com.cos.$s" 2>/dev/null; rm -f "$LA/com.cos.$s.plist"; done
   echo "Schedule removed."; exit 0
 fi
 
@@ -77,8 +77,17 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,cos-sandbox-test,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
+# cos-launch: the one program launchd starts for every job, so one Full Disk Access grant covers them all (see
+# claude/cos-launch.c). Rebuilt only when its source changes, because macOS ties the grant to the build.
+if [[ ! -x "$COS/bin/cos-launch" ]] || ! cmp -s "$KIT/claude/cos-launch.c" "$COS/claude/cos-launch.c"; then
+  if cc -O2 -Wall -o "$COS/bin/cos-launch.new" "$KIT/claude/cos-launch.c" 2>"$COS/state/cos-launch-build.err" \
+     && codesign -f -s - -i com.cos.launch "$COS/bin/cos-launch.new" 2>>"$COS/state/cos-launch-build.err"; then
+    mv -f "$COS/bin/cos-launch.new" "$COS/bin/cos-launch"; install -m 644 "$KIT/claude/cos-launch.c" "$COS/claude/cos-launch.c"
+    [[ $SANDBOX -eq 0 ]] && echo "  ! cos-launch was (re)built: give it Full Disk Access (INSTALL.md), then ./install.sh --schedule"
+  else fail "cos-launch did not build (see ~/cos/state/cos-launch-build.err)"; fi
+fi
 # ZoomMirror.app: the one reader of ~/Documents/Zoom (see claude/zoom-mirror.applescript). Rebuilt only when the
 # source changes, because macOS ties the Documents grant to the app's signature.
 ZM="$COS/bin/ZoomMirror.app"
@@ -119,7 +128,7 @@ echo "5. Scripts parse"
 is_bak() { [[ "$(basename "$1")" == *.bak-* ]]; }   # old copies (cos-run.bak-20261110), not installed scripts
 is_bak "$COS/bin/cos-run.bak-20261110" && ! is_bak "$COS/bin/cos-run" && pass "backup copies (.bak-) are skipped" || fail "backup copies are not skipped"
 for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/builds-template/verify"; do
-  [[ -d "$s" ]] && continue; is_bak "$s" && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
+  [[ -d "$s" || "$(basename "$s")" == cos-launch ]] && continue; is_bak "$s" && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
   else bash -n "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"; fi; done
 for j in "$COS"/claude/*.json "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
 for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
@@ -209,6 +218,11 @@ HOME="$T" "$COS/bin/cos-run" apply t3 "$S3" --in "$T" >/dev/null 2>&1; [[ $? -ne
 mkdir -p "$T/cos/outbox/t4"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"K","old":"","new":"1 Relevance"}]}' > "$T/cos/outbox/t4/sheet.json"
 S4="$(shasum -a 256 "$T/cos/outbox/t4/sheet.json" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply-sheet t4 "$S4" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t4/sheet-applied.json" ]] && pass "apply-sheet refuses column K (a formula)" || fail "apply-sheet accepted a column K write"
+printf '#!/bin/bash\nprintf "%%s|" "$@"; exit 3\n' > "$T/cos/bin/argcheck"; chmod +x "$T/cos/bin/argcheck"
+lo="$(HOME="$T" "$COS/bin/cos-launch" argcheck "a b" c 2>/dev/null)"; lrc=$?
+[[ $lrc -eq 3 && "$lo" == "a b|c|" ]] && pass "cos-launch runs a ~/cos/bin program with its arguments and exit code" || fail "cos-launch returned $lrc '$lo'"
+HOME="$T" "$COS/bin/cos-launch" /bin/ls >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-launch refuses a path (only ~/cos/bin programs)" || fail "cos-launch ran a path"
+HOME="$T" "$COS/bin/cos-launch" ../x >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-launch refuses ../" || fail "cos-launch accepted ../"
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"
 HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"
@@ -407,7 +421,7 @@ if [[ $SCHEDULE -eq 1 ]]; then
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>com.cos.$slot</string>
-<key>ProgramArguments</key><array><string>/bin/zsh</string><string>-lc</string><string>\$HOME/cos/bin/cos-sched $slot</string></array>
+<key>ProgramArguments</key><array><string>$COS/bin/cos-launch</string><string>cos-sched</string><string>$slot</string></array>
 <key>StartCalendarInterval</key><array>$entries</array>
 <key>StandardOutPath</key><string>$COS/state/launchd-$slot.log</string>
 <key>StandardErrorPath</key><string>$COS/state/launchd-$slot.log</string>
@@ -416,6 +430,25 @@ PL
     plutil -lint "$P" >/dev/null && launchctl bootout "gui/$(id -u)/com.cos.$slot" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null \
       && echo "  ✓ scheduled $slot ($days $hm)" || echo "  ✗ could not load $slot"
   done
+  # Prove a launchd job can read ~/Documents: a one-shot agent runs cos-tcc-check through cos-launch.
+  P="$LA/com.cos.tcccheck.plist"
+  cat > "$P" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.cos.tcccheck</string>
+<key>ProgramArguments</key><array><string>$COS/bin/cos-launch</string><string>cos-tcc-check</string></array>
+<key>EnvironmentVariables</key><dict><key>COS_TCC_CALLER</key><string>launchd</string></dict>
+<key>RunAtLoad</key><true/>
+</dict></plist>
+PL
+  before="$(wc -l < "$COS/state/tcc-check.log" 2>/dev/null || echo 0)"
+  launchctl bootout "gui/$(id -u)/com.cos.tcccheck" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null
+  for i in 1 2 3 4 5 6 7 8 9 10; do [[ "$(wc -l < "$COS/state/tcc-check.log" 2>/dev/null || echo 0)" -gt "$before" ]] && break; sleep 0.5; done
+  launchctl bootout "gui/$(id -u)/com.cos.tcccheck" 2>/dev/null; rm -f "$P"
+  last="$(tail -1 "$COS/state/tcc-check.log" 2>/dev/null)"
+  [[ "$last" == *"caller=launchd documents_zoom=yes"* ]] && pass "a launchd job can read ~/Documents (through cos-launch)" \
+    || fail "a launchd job still can't read ~/Documents: give ~/cos/bin/cos-launch Full Disk Access (INSTALL.md), then ./install.sh --schedule"
   if [[ ",${ONLY}," == *",zoommirror,"* ]]; then
     P="$LA/com.cos.zoommirror.plist"
     cat > "$P" <<PL
@@ -441,7 +474,7 @@ PL
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>com.cos.dashboard</string>
-<key>ProgramArguments</key><array><string>/bin/zsh</string><string>-lc</string><string>\$HOME/cos/bin/cos-db load</string></array>
+<key>ProgramArguments</key><array><string>$COS/bin/cos-launch</string><string>cos-db</string><string>load</string></array>
 <key>StartInterval</key><integer>300</integer>
 <key>StandardOutPath</key><string>$COS/state/launchd-dashboard.log</string>
 <key>StandardErrorPath</key><string>$COS/state/launchd-dashboard.log</string>

@@ -1,0 +1,9 @@
+#!/bin/bash
+# cos-tcc-check: proves a launchd job (started through cos-launch) can read ~/Documents. Reads only: a folder
+# listing of ~/Documents/Zoom and the header of Agent Atlas's database. Writes one line to ~/cos/state/tcc-check.log.
+LOG="$HOME/cos/state/tcc-check.log"
+z=no; a=no
+ls "$HOME/Documents/Zoom" >/dev/null 2>&1 && z=yes
+head -c 16 "$HOME/Documents/Cursor Projects/agent-atlas/atlas.db" >/dev/null 2>&1 && a=yes
+echo "$(date +%FT%T) caller=${COS_TCC_CALLER:-manual} documents_zoom=$z agent_atlas=$a" >> "$LOG"
+[[ $z == yes ]]

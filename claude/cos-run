@@ -214,10 +214,10 @@ fi
 [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || { echo "bad job-id" >&2; exit 64; }
 
 # atlas: an investigate job with the Agent Atlas brief and read-only access to Atlas and the transcripts it indexes.
-# Atlas lives in ~/Documents, so this works when the Chief starts it (Grok's Documents grant), not from launchd.
+# Atlas lives in ~/Documents. Scheduled runs reach it through cos-launch's Full Disk Access grant.
 ATLAS=0; ATLAS_DIR="$HOME/Documents/Cursor Projects/agent-atlas"
 if [[ "$LANE" == atlas ]]; then
-  [[ -r "$ATLAS_DIR/atlas.db" ]] || { echo "can't read $ATLAS_DIR/atlas.db (is this a scheduled run? Atlas lookups need the Chief to start them)" >&2; exit 66; }
+  [[ -r "$ATLAS_DIR/atlas.db" ]] || { echo "can't read $ATLAS_DIR/atlas.db. From a scheduled run, ~/cos/bin/cos-launch needs Full Disk Access (INSTALL.md)." >&2; exit 66; }
   ATLAS=1; LANE=investigate
   BRIEF_IN="$(cat "$COS/claude/briefs/atlas.md")
 
