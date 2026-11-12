@@ -30,7 +30,7 @@ if [[ $UNSCHEDULE -eq 1 ]]; then
 fi
 
 echo "1. Prerequisites"
-for c in claude agent gh jq git perl shasum uv openssl rsync bc curl security launchctl python3; do command -v $c >/dev/null && pass "$c" || fail "$c not on PATH"; done
+for c in claude agent gh jq git perl shasum shlock lsof uv openssl rsync bc curl security launchctl python3; do command -v $c >/dev/null && pass "$c" || fail "$c not on PATH"; done
 if [[ $SANDBOX -eq 0 ]]; then
 gh auth status >/dev/null 2>&1 && pass "gh signed in" || fail "gh not signed in (gh auth login)"
 [[ -d "$HOME/Documents/Data-Org-Repos/data-org/.git" ]] && pass "data-org repo" || fail "data-org repo missing at ~/Documents/Data-Org-Repos/data-org"
@@ -302,6 +302,60 @@ S="$(jq -r .receipt.summary "$SR" 2>/dev/null)"
 HOME="$T" "$COS/bin/cos-run" receipt "pulse-$SD" 2>/dev/null | jq -e '.receipt.status == "failed"' >/dev/null \
   && pass "cos-run receipt finds the failed scheduled job" || fail "cos-run receipt can't find the failed scheduled job"
 [[ "$(cat "$T/cwd" 2>/dev/null)" == "$T" ]] && pass "cos-sched runs its job from \$HOME" || fail "cos-sched ran its job from $(cat "$T/cwd" 2>/dev/null)"
+rm -rf "$T"
+# Draft lane and the shared $MAIN worktree. A local bare repo stands in for GitHub and a stub for claude (it adds a line
+# to doc.md in the draft worktree, and makes a stray file in data-org-main when the brief says STRAY). Nothing leaves the Mac.
+T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; mkdir -p "$T/cos/bin" "$T/cos/claude" "$T/cos/repos"
+cp "$COS/claude/receipt.schema.json" "$COS/claude/lane.md" "$T/cos/claude/"
+gt() { git -c user.name=t -c user.email=t@t "$@"; }
+git init -q --bare "$T/origin.git"; git init -q -b main "$T/seed"; echo a > "$T/seed/doc.md"
+gt -C "$T/seed" add -A; gt -C "$T/seed" commit -qm a; gt -C "$T/seed" checkout -qb feat; echo b >> "$T/seed/doc.md"; gt -C "$T/seed" commit -qam b
+git -C "$T/seed" push -q "$T/origin.git" main feat 2>/dev/null; git clone -q "$T/origin.git" "$T/cos/repos/data-org" 2>/dev/null
+echo c >> "$T/seed/doc.md"; gt -C "$T/seed" commit -qam c; git -C "$T/seed" push -q "$T/origin.git" feat 2>/dev/null   # the clone's origin/feat is now stale
+FEAT_TIP="$(git -C "$T/seed" rev-parse feat)"
+printf '#!/bin/bash\n[[ "$*" == *CHECKER* ]] || { [[ "$PWD" == */.worktrees/* ]] && echo added >> doc.md; [[ "$PWD" == */data-org-main && "$*" == *STRAY* ]] && : > =2026-11-09; [[ "$PWD" == */data-org-main && "$*" == *EDITDOC* ]] && echo edited >> doc.md; }\necho %s\n' \
+  "'{\"structured_output\":{\"status\":\"done\",\"summary\":\"stub\"},\"total_cost_usd\":0}'" > "$T/cos/bin/claude"; chmod +x "$T/cos/bin/claude"
+HOME="$T" "$COS/bin/cos-run" draft dr1 "Add a line" --base feat >/dev/null 2>&1
+DR="$T/cos/outbox/dr1"
+jq -e --arg tip "$FEAT_TIP" '.draft.base == "origin/feat" and .draft.base_sha == $tip and .draft.fetched_sha == $tip and .draft.fetched_fresh == true and .draft.files == 1' "$DR/receipt.json" >/dev/null 2>&1 \
+  && pass "draft: the worktree starts on the --base branch, fetched fresh" || fail "draft: base not fresh or wrong ($(jq -c .draft "$DR/receipt.json" 2>/dev/null))"
+[[ -s "$DR/draft.diff" && "$(jq -r .draft.sha256 "$DR/receipt.json" 2>/dev/null)" == "$(shasum -a 256 "$DR/draft.diff" | cut -d' ' -f1)" ]] && grep -qx '+added' "$DR/draft.diff" \
+  && pass "draft: the receipt carries draft.diff and its sha256" || fail "draft: no draft.diff or its sha256 is wrong"
+HOME="$T" "$COS/bin/cos-run" draft dr2 "x" --base 'feat;rm' >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses a bad --base" || fail "draft accepted a bad --base"
+HOME="$T" "$COS/bin/cos-run" draft dr3 "x" --base nosuch >/dev/null 2>&1; rc=$?
+[[ $rc -eq 75 && ! -e "$T/cos/outbox/dr3/receipt.json" ]] && pass "draft stops before the model when its base can't be fetched" || fail "draft went on without a fresh base (exit $rc)"
+# A lock held by a live job: the next job waits, then stops. It never goes on without the lock.
+sleep 60 & LIVE=$!; echo "$LIVE" > "$T/cos/state/data-org-main.lock"
+COS_LOCK_WAIT=2 HOME="$T" "$COS/bin/cos-run" investigate ivl "x" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 75 && ! -e "$T/cos/outbox/ivl/receipt.json" && "$(cat "$T/cos/state/data-org-main.lock")" == "$LIVE" ]] \
+  && pass "a job stops, and leaves the lock alone, when a live job holds data-org-main" || fail "a job went on past a live lock (exit $rc)"
+kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null; rm -f "$T/cos/state/data-org-main.lock"
+# An old git index.lock that a process still holds open is never removed; the job stops on git's error instead.
+IXL="$(git -C "$T/cos/data-org-main" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null)"
+( exec 9>>"$IXL"; exec sleep 60 ) & HOLD=$!; sleep 1; touch -t 202601010000 "$IXL"
+HOME="$T" "$COS/bin/cos-run" investigate ivh "x" >/dev/null 2>&1; rc=$?
+[[ $rc -ne 0 && -e "$IXL" ]] && pass "a held index.lock, however old, is never removed" || fail "a held index.lock was removed or ignored (exit $rc)"
+kill "$HOLD" 2>/dev/null; wait "$HOLD" 2>/dev/null
+# A lock left by a dead job and a git index.lock left by a killed git don't stop the next job; parallel jobs don't collide.
+(exit 0) & DEADPID=$!; wait $DEADPID; echo "$DEADPID" > "$T/cos/state/data-org-main.lock"
+: > "$IXL"; touch -t 202601010000 "$IXL"
+for i in 1 2 3 4; do HOME="$T" "$COS/bin/cos-run" investigate "iv$i" "x" >/dev/null 2>&1 & done; wait
+n=0; for i in 1 2 3 4; do jq -e '.receipt.status == "done"' "$T/cos/outbox/iv$i/receipt.json" >/dev/null 2>&1 && n=$((n+1)); done
+[[ $n -eq 4 && ! -e "$IXL" && ! -e "$T/cos/state/data-org-main.lock" ]] && pass "4 parallel jobs share data-org-main past a dead lock and a dead index.lock" || fail "shared worktree: $n of 4 jobs finished (index.lock $([[ -e "$IXL" ]] && echo left || echo gone))"
+# A file an investigate job leaves in data-org-main moves to its job folder; a file that was there before stays.
+echo keep > "$T/cos/data-org-main/keep.txt"
+HOME="$T" "$COS/bin/cos-run" investigate ivs "STRAY test" >/dev/null 2>&1
+[[ ! -e "$T/cos/data-org-main/=2026-11-09" && -e "$T/cos/outbox/ivs/strays/=2026-11-09" && -e "$T/cos/data-org-main/keep.txt" ]] \
+  && jq -e '.strays == ["=2026-11-09"] and (.receipt.summary | startswith("Note: the job left files"))' "$T/cos/outbox/ivs/receipt.json" >/dev/null 2>&1 \
+  && pass "investigate: a stray file in data-org-main moves to the job folder and the receipt says so" || fail "investigate: stray file not moved or not reported ($(jq -c .strays "$T/cos/outbox/ivs/receipt.json" 2>/dev/null))"
+# An edit to a tracked file in data-org-main is saved to the job folder and undone.
+HOME="$T" "$COS/bin/cos-run" investigate ive "EDITDOC test" >/dev/null 2>&1
+[[ -z "$(git -C "$T/cos/data-org-main" diff --name-only HEAD)" ]] && grep -q '+edited' "$T/cos/outbox/ive/strays/tracked-edits.diff" 2>/dev/null \
+  && jq -e '.stray_edits == ["doc.md"]' "$T/cos/outbox/ive/receipt.json" >/dev/null 2>&1 \
+  && pass "investigate: an edit to a tracked file is saved to the job folder and undone" || fail "investigate: a tracked edit stayed in data-org-main"
+# A resumed draft re-checks the base it saved, because the job folder is writable by the model.
+echo 'feat;rm -rf x' > "$T/cos/outbox/dr1/.draft-base"
+HOME="$T" "$COS/bin/cos-run" draft dr1 "x" >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses a tampered saved base on resume" || fail "draft trusted a tampered saved base"
 rm -rf "$T"
 
 echo "8. lake-query refuses what it should"

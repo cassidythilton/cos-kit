@@ -4,7 +4,9 @@
 #   cos-run quick       <job-id> "<question>" [--with "<read-only command>"]...   Cursor Agent, ask mode, cheap model
 #   cos-run investigate <job-id> "<brief>"    [--in <folder>] [--resume <id>]    Claude Code, touches nothing
 #   cos-run draft       <job-id> "<brief>"    [--in <folder>] [--resume <id>]    Claude Code, own branch, never pushed
-#   cos-run apply       <job-id> <sha256>                                         runs a reviewed write batch, once
+#                       [--base <branch>]  the data-org branch to start from (default main), fetched fresh; the receipt
+#                       carries draft.diff's sha256 against it
+#   cos-run apply      <job-id> <sha256>                                         runs a reviewed write batch, once
 #   cos-run apply-sheet <job-id> <sha256>                                         writes a reviewed sheet.json, cell by cell, once
 #   cos-run gh-scan     <job-id> [since]                                          everything in GitHub that may need Cassidy, no model
 #   cos-run atlas       <job-id> "<the name he used>"                             finds a past chat in Agent Atlas, read-only
@@ -33,10 +35,12 @@ COS="$HOME/cos"; REPO="$COS/repos/data-org"; MAIN="$COS/data-org-main"; NBREPO="
 ZOOM=""; for z in "$COS/zoom" "$HOME/Documents/Zoom"; do [[ -d "$z" && -r "$z" ]] && { ZOOM="$z"; break; }; done
 # Best-effort. A ledger failure must not change the lane's exit code.
 ledger() { "$HOME/cos/bin/cos-ledger" "$@" >/dev/null 2>&1 || true; }
-IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0
+IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0; BASE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --in) IN="${2:?folder}"; shift 2 ;;
+    --base) BASE="${2:?branch}"; shift 2
+            [[ "$BASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$ && "$BASE" != *..* ]] || { echo "bad --base branch" >&2; exit 64; } ;;
     --resume) RESUME=(--resume "${2:?session id}"); shift 2 ;;
     --with) WITH+=("${2:?command}"); shift 2 ;;
     --slug) SLUG="${2:?slug}"; shift 2 ;;
@@ -360,21 +364,41 @@ if [[ "$LANE" == land ]]; then
 fi
 # <<< fix-lane
 
+# Jobs share one clone and the $MAIN worktree, so one job at a time fetches and checks out (Nov 12: two atlas jobs
+# started in the same second and atlas-20261112-imgx died on $MAIN's index.lock). The lock file holds a pid; shlock
+# takes over a lock whose pid is gone. A live holder is waited on for 5 minutes, then the job stops: it never goes on
+# without the lock.
+MAIN_LOCK="$COS/state/data-org-main.lock"
+main_lock() { local i w="${COS_LOCK_WAIT:-300}"; mkdir -p "$COS/state"; for i in $(seq 1 "$w"); do shlock -f "$MAIN_LOCK" -p $$ && return 0; sleep 1; done
+  echo "$(date +%FT%T) $JOB: pid $(cat "$MAIN_LOCK" 2>/dev/null) held $MAIN_LOCK for ${w}s; stopped" >> "$COS/state/git-prep.err"
+  echo "data-org-main is busy: pid $(cat "$MAIN_LOCK" 2>/dev/null) has held $MAIN_LOCK for ${w}s. Nothing ran. Try again." >&2; exit 75; }
+main_unlock() { [[ "$(cat "$MAIN_LOCK" 2>/dev/null)" == "$$" ]] && rm -f "$MAIN_LOCK"; return 0; }
+# A git index.lock is removed only when it is provably dead: 2+ minutes old, no process has it open, and no git process
+# is working in that worktree. Otherwise it stays, and git's own error stops the job.
+clear_stale_index_lock() { local l d; l="$(git -C "$1" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null)" || return 0
+  [[ -f "$l" && -n "$(find "$l" -mmin +2 2>/dev/null)" ]] && command -v lsof >/dev/null || return 0
+  d="$(cd "$1" && pwd -P)"
+  lsof -t -- "$l" >/dev/null 2>&1 && return 0
+  lsof -a -c git -d cwd -Fn 2>/dev/null | grep -qE "^n$d(/|$)" && return 0
+  rm -f "$l"; echo "$(date +%FT%T) $JOB: removed a dead $l (2+ min old, no process holds it, no git in $d)" >> "$COS/state/git-prep.err"; }
+
 # Jobs never run in Cassidy's working checkout (it may sit on a feature branch with uncommitted files).
 # Default: a detached copy of origin/main, refreshed every run, so the Makefile and skills are current.
 if [[ -z "$IN" ]]; then
+  main_lock
   # GitHub drops connections from this Mac now and then (Nov 11-12: i/o timeouts, resets). Retry, then go on with the
   # last fetched main rather than kill the job: a slightly stale main beats no brief. The receipt says so.
   GIT_STALE=0; for wait_s in 0 10 30; do sleep "$wait_s"; git -C "$REPO" fetch -q origin main 2>>"$COS/state/git-prep.err" && { GIT_STALE=0; break; } || GIT_STALE=1; done
   [[ $GIT_STALE -eq 1 ]] && echo "$(date +%FT%T) $JOB: GitHub unreachable after 3 tries; using the last fetched origin/main" >> "$COS/state/git-prep.err"
   git -C "$REPO" fetch -q origin cassidy/375-board-maintenance 2>/dev/null || true   # PR #610 cold start, until it merges
   git -C "$REPO" fetch -q origin cassidy/roadmap-skill 2>/dev/null || true   # PR #735: the roadmap skill, until it merges
-  if [[ -d "$MAIN" ]]; then git -C "$MAIN" checkout -q --detach origin/main; else git -C "$REPO" worktree add -q --detach "$MAIN" origin/main; fi
+  if [[ -d "$MAIN" ]]; then clear_stale_index_lock "$MAIN"; git -C "$MAIN" checkout -q --detach origin/main; else git -C "$REPO" worktree add -q --detach "$MAIN" origin/main; fi
   # The notebook's rules (AGENTS.md, HANDOFF.md, queries/lib) are also read from origin/main, never Cassidy's checkout.
   # lake-query still runs from his checkout, because that's where the per-checkout .env lives.
   NBMAIN="$COS/notebook-main"
   if [[ -d "$NBREPO/.git" ]]; then git -C "$NBREPO" fetch -q origin main 2>/dev/null || true
     if [[ -d "$NBMAIN" ]]; then git -C "$NBMAIN" checkout -q --detach origin/main 2>/dev/null || true; else git -C "$NBREPO" worktree add -q --detach "$NBMAIN" origin/main 2>/dev/null || true; fi; fi
+  main_unlock
   IN="$MAIN"
 fi
 OUT="$COS/outbox/$JOB"; mkdir -p "$OUT" "$COS/archive"
@@ -522,7 +546,17 @@ case "$LANE" in
   investigate) SETTINGS="$COS/claude/settings.investigate.json"; BUDGET=3;  EFFORT=medium; WORKDIR="$IN" ;;
   draft)       SETTINGS="$COS/claude/settings.draft.json";       BUDGET=12; EFFORT=high
                WORKDIR="$REPO/.worktrees/cos-$JOB"
-               [[ -d "$WORKDIR" ]] || git -C "$REPO" worktree add -q -b "cassidy/cos-$JOB" "$WORKDIR" origin/main ;;   # data-org branch rule: <name>/<topic>
+               # The base is fetched here, outside the model: the draft gate denies fetch and shasum (Nov 12,
+               # prov-20261112-doc had no fresh base and no sha256). No fresh fetch, no draft: the sha256 must be
+               # against the branch as it is now. A resumed job keeps the base it started on.
+               [[ -z "$BASE" && -f "$OUT/.draft-base" ]] && BASE="$(head -c 120 "$OUT/.draft-base" | tr -d '\n')"
+               # The job folder is writable by the model, so a saved base is checked again, exactly like --base.
+               [[ -z "$BASE" || ( "$BASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$ && "$BASE" != *..* ) ]] || { echo "the saved draft base is not a valid branch name; refusing" >&2; exit 64; }
+               BASE="${BASE:-main}"; DRAFT_FRESH=0; main_lock
+               for wait_s in 0 10 30; do sleep "$wait_s"; git -C "$REPO" fetch -q origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" 2>>"$COS/state/git-prep.err" && { DRAFT_FRESH=1; break; }; done
+               [[ $DRAFT_FRESH -eq 1 ]] || { main_unlock; echo "couldn't fetch $BASE from data-org after 3 tries (no such branch, or GitHub unreachable). Nothing ran." >&2; exit 75; }
+               [[ -d "$WORKDIR" ]] || git -C "$REPO" worktree add -q -b "cassidy/cos-$JOB" "$WORKDIR" "origin/$BASE"   # data-org branch rule: <name>/<topic>
+               main_unlock; echo "$BASE" > "$OUT/.draft-base"; DRAFT_TIP="$(git -C "$REPO" rev-parse "origin/$BASE")" ;;
   build)       [[ -n "$SLUG" && -d "$BUILDS/$SLUG" ]] || { echo "build needs --slug of an existing workspace (cos-run pair first)" >&2; exit 64; }
                SETTINGS="$COS/claude/settings.build.json"; BUDGET="${COS_BUILD_BUDGET:-20}"; EFFORT=high
                WORKDIR="$BUILDS/$SLUG"; BUILD_BASE="$(git -C "$WORKDIR" rev-parse HEAD)" ;;
@@ -542,6 +576,8 @@ Brief:
 $(cat "$OUT/brief.md")"
 
 cd "$WORKDIR"
+STRAYS0=""; [[ "$LANE" == "investigate" && "$WORKDIR" == "$MAIN" ]] && STRAYS0="$(git -C "$MAIN" ls-files --others --exclude-standard 2>/dev/null || true)"
+MAIN_DIRTY0=""; [[ "$LANE" == "investigate" && "$WORKDIR" == "$MAIN" ]] && MAIN_DIRTY0="$(git -C "$MAIN" diff --name-only HEAD 2>/dev/null || true)"
 claude -p "$PROMPT" ${RESUME[@]+"${RESUME[@]}"} \
   --settings "$SETTINGS" \
   --permission-mode dontAsk --permission-prompts none \
@@ -567,6 +603,40 @@ if [[ -f "$OUT/apply.sh" ]]; then
   BATCH_SHA="$(shasum -a 256 "$OUT/apply.sh" | cut -d' ' -f1)"; BATCH_N="$(grep -cv '^[[:space:]]*\(#\|$\)' "$OUT/apply.sh" || true)"
   jq --arg s "$BATCH_SHA" --argjson n "${BATCH_N:-0}" '. + {batch: {sha256: $s, writes: $n, file: "apply.sh", approve_with: "cos-run apply \(.job) \($s)"}}' \
      "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+fi
+# Draft lane: every receipt carries the job's whole change (committed or not, new files too) as draft.diff, its sha256,
+# the base it was made against (base_sha) and the tip fetched for this run (fetched_sha). base_moved means the branch
+# moved after the job started (a resume).
+if [[ "$LANE" == "draft" ]]; then
+  git -C "$WORKDIR" add -A 2>>"$OUT/run.err" || true
+  DRAFT_FROM="$(git -C "$WORKDIR" merge-base HEAD "$DRAFT_TIP" 2>>"$OUT/run.err")" || DRAFT_FROM="$DRAFT_TIP"
+  git -C "$WORKDIR" diff --cached --binary "$DRAFT_FROM" > "$OUT/draft.diff" 2>>"$OUT/run.err" || true
+  DRAFT_SHA="$(shasum -a 256 "$OUT/draft.diff" | cut -d' ' -f1)"; DRAFT_N="$(git -C "$WORKDIR" diff --cached --name-only "$DRAFT_FROM" 2>/dev/null | wc -l | tr -d ' ')"
+  jq --arg out "$OUT" --arg b "origin/$BASE" --arg from "$DRAFT_FROM" --arg tip "$DRAFT_TIP" --arg s "$DRAFT_SHA" --argjson n "$DRAFT_N" \
+     '. + {draft: {base: $b, base_sha: $from, fetched_sha: $tip, fetched_fresh: true, base_moved: ($from != $tip), file: "draft.diff", files: $n, sha256: $s}}
+      | .receipt.artifacts = ((.receipt.artifacts // []) + [$out + "/draft.diff"])' \
+     "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+fi
+# Investigate jobs change nothing in data-org-main (Nov 12: an unquoted '>=' in det-20261112-asks left an empty
+# '=2026-11-09' in its root). The gate blocks redirects; this catches any other write. A file that appeared during the
+# job moves to the job folder's strays/, never deleted, and the receipt says so.
+if [[ "$LANE" == "investigate" && "$WORKDIR" == "$MAIN" ]]; then
+  STRAYS="$(comm -13 <(printf '%s\n' "$STRAYS0" | sort) <(git -C "$MAIN" ls-files --others --exclude-standard 2>/dev/null | sort) | grep -v '^$' || true)"
+  if [[ -n "$STRAYS" ]]; then
+    while IFS= read -r f; do mkdir -p "$(dirname "$OUT/strays/$f")"; mv "$MAIN/$f" "$OUT/strays/$f" 2>>"$OUT/run.err" || true; done <<<"$STRAYS"
+    jq --arg s "$STRAYS" '. + {strays: ($s | split("\n"))}
+      | .receipt.summary = ("Note: the job left files in data-org-main; cos-run moved them to strays/ in the job folder: " + ($s | split("\n") | join(", ")) + ". " + (.receipt.summary // ""))' \
+      "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+  fi
+  # Edits to files git already tracks: saved as a patch in strays/, then data-org-main is put back to origin/main.
+  MAIN_DIRTY="$(git -C "$MAIN" diff --name-only HEAD 2>/dev/null || true)"
+  if [[ -n "$MAIN_DIRTY" && "$MAIN_DIRTY" != "$MAIN_DIRTY0" ]]; then
+    mkdir -p "$OUT/strays"; git -C "$MAIN" diff HEAD > "$OUT/strays/tracked-edits.diff" 2>>"$OUT/run.err" || true
+    git -C "$MAIN" checkout -q -- . 2>>"$OUT/run.err" || true
+    jq --arg s "$MAIN_DIRTY" '. + {stray_edits: ($s | split("\n"))}
+      | .receipt.summary = ("Note: the job edited files in data-org-main; cos-run saved the edits to strays/tracked-edits.diff and restored them: " + ($s | split("\n") | join(", ")) + ". " + (.receipt.summary // ""))' \
+      "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+  fi
 fi
 
 # Build lane: the deterministic check runs here, outside the model, and a second model family reviews the diff.

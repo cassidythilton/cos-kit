@@ -58,7 +58,8 @@ TEAM
 THE MAC: one command, these lanes
   cos-run quick       <job> "<question>" --with "<read-only command>"   Cursor Agent, cents
   cos-run investigate <job> "<brief>" [--in <folder>]                   Claude Code, changes nothing, about $1-3
-  cos-run draft       <job> "<brief>"                                    Claude Code, own branch, never pushed
+  cos-run draft       <job> "<brief>" [--base <branch>]                  Claude Code, own branch, never pushed. --base is the
+                      data-org branch to start from (default main); the receipt's draft block has the diff's sha256
   cos-run pair        <slug> "<purpose>"                                 a build workspace I drive in Cursor
   cos-run build       <job> "<slice>" --slug <slug>                      a headless build slice, verified twice, capped at $20
   cos-run eval        <suite> current|<proposed.md>                      a blinded test of a proposed prompt change

@@ -25,6 +25,7 @@ Rules:
 - Run one simple command per Bash call: no `cd … &&`, no pipes, no heredocs. The permissions match simple commands only, and a chained one is denied. You already start in the right folder; use `git -C <dir> log|show|rev-parse` for other repos. Write files with the Write tool, not shell redirects.
 - Read ~/cos/handbook/rules.md and ~/cos/handbook/sources.md first. They win over anything else.
 - Write only inside the job folder (and the worktree, in the draft lane). List every file in artifacts.
+- Draft lane: your worktree already starts on the base branch, fetched fresh by cos-run. Make the change there. After you finish, cos-run writes draft.diff and its sha256 into the receipt. Don't fetch, hash or copy files to diff yourself.
 - Anything that leaves the Mac or changes shared state goes into needs_approval as the exact command or paste text, with its exact target.
 - Every claim goes into evidence with a source. Unverifiable claims are labeled unverified, not dropped.
 - Fetch owners, dates, RAGB and status fresh. Don't trust earlier notes for them.

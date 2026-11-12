@@ -15,8 +15,14 @@ RECORD=0; JSON=0; WEEK=0
 for a in "$@"; do case "$a" in --record) RECORD=1 ;; --json) JSON=1 ;; --week) WEEK=1 ;; *) echo "unknown: $a" >&2; exit 64 ;; esac; done
 
 # A detached, read-only copy of origin/main. Never Cassidy's working checkout.
+# The same lock as cos-run, so a job's refresh and this one never collide on $MAIN's index.lock. No lock in 5 minutes,
+# no readout: it never goes on without the lock.
+LOCK="$COS/state/data-org-main.lock"; mkdir -p "$COS/state"; GOT=0
+for i in $(seq 1 300); do shlock -f "$LOCK" -p $$ && { GOT=1; break; }; sleep 1; done
+[[ $GOT -eq 1 ]] || { echo "data-org-main is busy: pid $(cat "$LOCK" 2>/dev/null) has held $LOCK for 5 minutes. Try again." >&2; exit 75; }
 git -C "$REPO" fetch -q origin main
 if [[ -d "$MAIN" ]]; then git -C "$MAIN" checkout -q --detach origin/main; else git -C "$REPO" worktree add -q --detach "$MAIN" origin/main; fi
+[[ "$(cat "$LOCK" 2>/dev/null)" == "$$" ]] && rm -f "$LOCK"
 cd "$MAIN"; SHA="$(git rev-parse --short HEAD)"
 
 # The ops meeting reads stale "since the last business day": on Monday that is Friday.
