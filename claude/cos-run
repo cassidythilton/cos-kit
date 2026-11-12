@@ -86,7 +86,8 @@ if [[ $ASYNC -eq 1 ]]; then
   if [[ -f "$D/.running" ]] && kill -0 "$(cat "$D/.running")" 2>/dev/null; then
     jq -n --arg j "$AJ" '{job: $j, status: "already running", check_with: "cos-run receipt \($j)"}'; exit 0
   fi
-  [[ -f "$D/receipt.json" ]] && mv "$D/receipt.json" "$D/receipt.prev.json"
+  # A fix or land job keeps its receipt: land reads it, and fix refuses to reuse a job id anyway.
+  [[ -f "$D/receipt.json" && ! "$LANE" =~ ^(fix|land)$ ]] && mv "$D/receipt.json" "$D/receipt.prev.json"
   REST=(); for a in "${ALL_ARGS[@]}"; do [[ "$a" == "--async" ]] || REST+=("$a"); done
   # A new session, so the job survives the caller's terminal closing.
   COS_ASYNC_CHILD=1 COS_ASYNC_DIR="$D" nohup perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$0" "${REST[@]}" > "$D/async.log" 2>&1 < /dev/null &
@@ -335,6 +336,7 @@ if [[ "$LANE" == land ]]; then
   if [[ -n "$(real_failures "$OUT/land-install.log")" ]]; then
     git -C "$KITD" reset -q --keep "$BASE" >> "$OUT/land.log" 2>&1; (cd "$KITD" && ./install.sh) > "$OUT/land-restore.log" 2>&1 || true
     jq --arg t "$TIP" '.landed = {status: "rolled-back", commit: null, tried: $t, at: (now|todate)}' "$R" > "$R.tmp" && mv "$R.tmp" "$R"
+    async_done "$R"
     echo "ROLLED BACK: the live install failed a check after the merge. ~/cos/kit and the installed files are back at ${BASE:0:7}."
     real_failures "$OUT/land-install.log"; exit 1
   fi
@@ -342,6 +344,7 @@ if [[ "$LANE" == land ]]; then
   git -C "$KITD" worktree remove --force "$WT" 2>/dev/null || true; git -C "$KITD" branch -q -d "$BR" 2>/dev/null || true
   jq --arg t "$TIP" --argjson p "$PUSHED" '.landed = {status: "landed", commit: $t, pushed: $p, at: (now|todate)}' "$R" > "$R.tmp" && mv "$R.tmp" "$R"
   ledger applies job="$JOB" sha="$BRIEF_IN" writes=1 ok=1 status=landed kind=fix
+  async_done "$R"
   echo "LANDED $JOB at ${TIP:0:7}: merged, installed (every check passed), $([[ $PUSHED == true ]] && echo pushed || echo 'NOT pushed: git -C ~/cos/kit push'). Undo with: cos-run land $JOB revert"
   exit 0
 fi
@@ -350,7 +353,10 @@ fi
 # Jobs never run in Cassidy's working checkout (it may sit on a feature branch with uncommitted files).
 # Default: a detached copy of origin/main, refreshed every run, so the Makefile and skills are current.
 if [[ -z "$IN" ]]; then
-  git -C "$REPO" fetch -q origin main
+  # GitHub drops connections from this Mac now and then (Nov 11-12: i/o timeouts, resets). Retry, then go on with the
+  # last fetched main rather than kill the job: a slightly stale main beats no brief. The receipt says so.
+  GIT_STALE=0; for wait_s in 0 10 30; do sleep "$wait_s"; git -C "$REPO" fetch -q origin main 2>>"$COS/state/git-prep.err" && { GIT_STALE=0; break; } || GIT_STALE=1; done
+  [[ $GIT_STALE -eq 1 ]] && echo "$(date +%FT%T) $JOB: GitHub unreachable after 3 tries; using the last fetched origin/main" >> "$COS/state/git-prep.err"
   git -C "$REPO" fetch -q origin cassidy/375-board-maintenance 2>/dev/null || true   # PR #610 cold start, until it merges
   git -C "$REPO" fetch -q origin cassidy/roadmap-skill 2>/dev/null || true   # PR #735: the roadmap skill, until it merges
   if [[ -d "$MAIN" ]]; then git -C "$MAIN" checkout -q --detach origin/main; else git -C "$REPO" worktree add -q --detach "$MAIN" origin/main; fi
@@ -460,7 +466,12 @@ if [[ "$LANE" == "apply" ]]; then
 fi
 
 if [[ -f "$BRIEF_IN" ]]; then cp "$BRIEF_IN" "$OUT/brief.md"; else printf '%s\n' "$BRIEF_IN" > "$OUT/brief.md"; fi
-finish() { echo "$OUT/receipt.json"; cat "$OUT/receipt.json"; async_done "$OUT/receipt.json"; }
+finish() {
+  if [[ ${GIT_STALE:-0} -eq 1 ]]; then  # say plainly when the data-org copy is older than this run
+    jq '.receipt.summary = ("Note: GitHub was unreachable from the Mac, so this used data-org main as last fetched. " + (.receipt.summary // ""))' \
+      "$OUT/receipt.json" > "$OUT/receipt.tmp" 2>/dev/null && mv "$OUT/receipt.tmp" "$OUT/receipt.json" || true
+  fi
+  echo "$OUT/receipt.json"; cat "$OUT/receipt.json"; async_done "$OUT/receipt.json"; }
 
 # ---------------------------------------------------------------- quick: Cursor Agent
 if [[ "$LANE" == "quick" ]]; then
