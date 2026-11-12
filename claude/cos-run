@@ -6,6 +6,7 @@
 #   cos-run draft       <job-id> "<brief>"    [--in <folder>] [--resume <id>]    Claude Code, own branch, never pushed
 #   cos-run apply       <job-id> <sha256>                                         runs a reviewed write batch, once
 #   cos-run apply-sheet <job-id> <sha256>                                         writes a reviewed sheet.json, cell by cell, once
+#   cos-run gh-scan     <job-id> [since]                                          everything in GitHub that may need Cassidy, no model
 #   cos-run atlas       <job-id> "<the name he used>"                             finds a past chat in Agent Atlas, read-only
 #   cos-run fix         <job-id> "<problem>"                                      Claude fixes the kit in its own copy, tested in a sandbox
 #   cos-run land        <job-id> <sha256>|revert                                  lands (or undoes) a reviewed fix: merge, install, push
@@ -22,8 +23,8 @@
 set -euo pipefail
 
 ALL_ARGS=("$@")
-LANE="${1:?lane: quick|investigate|atlas|draft|build|pair|apply|apply-sheet|fix|land|eval|note|pause|receipt}"; JOB="${2:?job-id}"; BRIEF_IN="${3:-}"
-[[ -n "$BRIEF_IN" || "$LANE" == "receipt" ]] || { echo "missing third argument (the brief, or the lane's value)" >&2; exit 64; }
+LANE="${1:?lane: quick|investigate|atlas|gh-scan|draft|build|pair|apply|apply-sheet|fix|land|eval|note|pause|receipt}"; JOB="${2:?job-id}"; BRIEF_IN="${3:-}"
+[[ -n "$BRIEF_IN" || "$LANE" =~ ^(receipt|gh-scan)$ ]] || { echo "missing third argument (the brief, or the lane's value)" >&2; exit 64; }
 shift $(( $# < 3 ? $# : 3 ))
 export PATH="$HOME/cos/bin:$PATH"
 # Jobs use their own clones under ~/cos/repos. launchd jobs cannot read ~/Documents (macOS privacy, TCC),
@@ -79,7 +80,7 @@ fi
 # the job runs detached, and its receipt is pushed to the Chief's webhook when it's done (if that key exists).
 # Check any time with: cos-run receipt <job>
 if [[ $ASYNC -eq 1 ]]; then
-  [[ "$LANE" =~ ^(investigate|atlas|draft|build|eval|fix|land)$ ]] || { echo "--async is for investigate, atlas, draft, build, eval, fix and land" >&2; exit 64; }
+  [[ "$LANE" =~ ^(investigate|atlas|gh-scan|draft|build|eval|fix|land)$ ]] || { echo "--async is for investigate, atlas, draft, build, eval, fix and land" >&2; exit 64; }
   [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || { echo "bad job-id" >&2; exit 64; }
   AJ="$JOB"; [[ "$LANE" == eval ]] && AJ="eval-$JOB"
   D="$COS/outbox/$AJ"; mkdir -p "$D"
@@ -213,6 +214,15 @@ if [[ "$LANE" == "pair" ]]; then
 fi
 
 [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || { echo "bad job-id" >&2; exit 64; }
+
+# gh-scan: one read-only GitHub pass (claude/cos-gh-scan), a script with no model in it. The Chief runs it for every brief.
+if [[ "$LANE" == gh-scan ]]; then
+  OUT="$COS/outbox/$JOB"; mkdir -p "$OUT"
+  "$COS/bin/cos-gh-scan" "$OUT" ${BRIEF_IN:+"$BRIEF_IN"} > "$OUT/run.out" 2> "$OUT/run.err" || true
+  [[ -f "$OUT/receipt.json" ]] || jq -n --arg j "$JOB" --arg e "$(tail -c 300 "$OUT/run.err" 2>/dev/null)" \
+    '{job: $j, lane: "gh-scan", receipt: {status: "failed", summary: ("GitHub read failed: the scan crashed. " + $e)}}' > "$OUT/receipt.json"
+  cat "$OUT/receipt.json"; async_done "$OUT/receipt.json"; exit 0
+fi
 
 # atlas: an investigate job with the Agent Atlas brief and read-only access to Atlas and the transcripts it indexes.
 # Atlas lives in ~/Documents. Scheduled runs reach it through cos-launch's Full Disk Access grant.
@@ -480,7 +490,8 @@ if [[ "$LANE" == "quick" ]]; then
   : > "$OUT/context.txt"
   for c in ${WITH[@]+"${WITH[@]}"}; do
     [[ "$c" =~ $READONLY ]] || { echo "quick lane refuses: $c" >&2; exit 65; }
-    { echo "\$ $c"; (cd "$IN" && bash -c "$c") 2>&1 | head -c 60000; echo; } >> "$OUT/context.txt"
+    # A failing command (a GitHub timeout) must not end the job: its error goes to the model and the receipt.
+    { echo "\$ $c"; { (cd "$IN" && bash -c "$c") 2>&1 || echo "(this command failed, exit $?)"; } | head -c 60000 || true; echo; } >> "$OUT/context.txt"
   done
   PROMPT="$(cat "$OUT/brief.md")
 
@@ -489,9 +500,16 @@ $(cat "$OUT/context.txt")
 
 Answer in five lines or less. Cite card numbers, file paths or command lines for every claim. If the answer needs more than this, say exactly: ESCALATE: <why>."
   (cd "$IN" && agent -p --mode ask --trust --model composer-2.5 --output-format json "$PROMPT") > "$OUT/run.json" 2> "$OUT/run.err" || true
-  jq '{receipt: {status: (if (.result // "") | test("ESCALATE:") then "blocked" else "done" end), summary: .result},
-       session_id, engine: "cursor-agent", lane: "quick", job: "'"$JOB"'"}' "$OUT/run.json" > "$OUT/receipt.json" 2>/dev/null \
-    || echo '{"receipt":{"status":"failed","summary":"cursor agent produced no JSON; see run.err"},"lane":"quick","job":"'"$JOB"'"}' > "$OUT/receipt.json"
+  # Never a blank receipt. If the model died (Nov 12: "Killed: 9" seconds in) the receipt says so, and the command
+  # output it was given is attached, so the data still arrives.
+  if jq -e '(.result // "") | length > 0' "$OUT/run.json" >/dev/null 2>&1; then
+    jq '{receipt: {status: (if (.result // "") | test("ESCALATE:") then "blocked" else "done" end), summary: .result},
+         session_id, engine: "cursor-agent", lane: "quick", job: "'"$JOB"'"}' "$OUT/run.json" > "$OUT/receipt.json"
+  else
+    jq -n --arg j "$JOB" --arg e "$(tail -c 200 "$OUT/run.err" 2>/dev/null | tr '\n' ' ')" --rawfile ctx "$OUT/context.txt" \
+      '{lane: "quick", job: $j, receipt: {status: "failed",
+        summary: ("FAILED: the quick-lane model stopped before answering (" + $e + "). The command output it was given follows; it is the real data, not an empty result.\n\n" + ($ctx | .[0:12000]))}}' > "$OUT/receipt.json"
+  fi
   finish; exit 0
 fi
 

@@ -77,7 +77,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
 # cos-launch: the one program launchd starts for every job, so one Full Disk Access grant covers them all (see
 # claude/cos-launch.c). Rebuilt only when its source changes, because macOS ties the grant to the build.
@@ -223,6 +223,17 @@ lo="$(HOME="$T" "$COS/bin/cos-launch" argcheck "a b" c 2>/dev/null)"; lrc=$?
 [[ $lrc -eq 3 && "$lo" == "a b|c|" ]] && pass "cos-launch runs a ~/cos/bin program with its arguments and exit code" || fail "cos-launch returned $lrc '$lo'"
 HOME="$T" "$COS/bin/cos-launch" /bin/ls >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-launch refuses a path (only ~/cos/bin programs)" || fail "cos-launch ran a path"
 HOME="$T" "$COS/bin/cos-launch" ../x >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-launch refuses ../" || fail "cos-launch accepted ../"
+# The quick lane never returns a blank receipt; gh-scan says "failed", never "empty".
+mkdir -p "$T/cos/bin"; printf '#!/bin/bash\necho "Killed: 9" >&2; exit 137\n' > "$T/cos/bin/agent"; chmod +x "$T/cos/bin/agent"
+HOME="$T" "$COS/bin/cos-run" quick qk1 "List my issues" --with "git log -1 --oneline" --in "$T" >/dev/null 2>&1
+jq -e '.receipt.status == "failed" and (.receipt.summary | test("not an empty result"))' "$T/cos/outbox/qk1/receipt.json" >/dev/null 2>&1 \
+  && pass "quick lane: a killed model gives a failed receipt with the data, never a blank one" || fail "quick lane left a blank or unclear receipt"
+rm -f "$T/cos/bin/agent"; mv "$T/cos/bin/gh" "$T/cos/bin/gh.stub" 2>/dev/null
+printf '#!/bin/bash\necho "Post \\"https://api.github.com/graphql\\": dial tcp 1.2.3.4:443: i/o timeout" >&2; exit 1\n' > "$T/cos/bin/gh"; chmod +x "$T/cos/bin/gh"
+HOME="$T" COS_GH_WAITS=0,0,0 PATH="$T/cos/bin:$PATH" "$COS/bin/cos-gh-scan" "$T/cos/outbox/gs1" >/dev/null 2>&1
+jq -e '.receipt.status == "failed" and (.receipt.summary | startswith("GitHub read failed"))' "$T/cos/outbox/gs1/receipt.json" >/dev/null 2>&1 \
+  && pass "gh-scan: GitHub down reads 'GitHub read failed', never empty" || fail "gh-scan didn't report the failure plainly"
+rm -f "$T/cos/bin/gh"; mv "$T/cos/bin/gh.stub" "$T/cos/bin/gh" 2>/dev/null
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"
 HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"

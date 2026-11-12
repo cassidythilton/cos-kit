@@ -1,0 +1,212 @@
+#!/usr/bin/env -S python3 -I
+"""cos-gh-scan: one read-only pass over everything in GitHub that may need Cassidy. No model in the middle.
+
+  cos-run gh-scan <job> [since]      (the Chief, for every morning and evening brief)
+  cos-gh-scan <job-folder> [since]   (what cos-run calls)
+
+Two GraphQL searches across org:wisecodeai cover it all: open issues and PRs that involve him (author, assignee,
+mention, commenter) and open PRs that request his review. For each item it reads recent comments, reviews, review
+requests and unresolved review threads, then sorts into "needs you" and "for your information".
+
+"since" defaults to the last successful scan (~/cos/state/gh-scan-last.json), else 24 hours ago. Writes scan.json,
+digest.md and receipt.json in the job folder. Read-only: queries only, never a mutation.
+
+Why gh: Grok's own GitHub app waits on a wisecodeai org owner's approval, so every GitHub read comes from this Mac.
+"""
+import datetime, json, os, re, subprocess, sys, time
+
+HOME = os.path.expanduser('~')
+STATE = os.path.join(HOME, 'cos', 'state')
+LAST = os.path.join(STATE, 'gh-scan-last.json')
+ORG = 'wisecodeai'
+from zoneinfo import ZoneInfo
+MT = ZoneInfo('America/Denver')
+NOW = datetime.datetime.now(datetime.timezone.utc)
+NET_ERR = re.compile(r'(i/o timeout|timed out|connection reset|connection refused|dial tcp|EOF|TLS handshake|'
+                     r'no such host|HTTP 50[234]|temporarily unavailable|network is unreachable)', re.I)
+
+QUERY = '''query($q: String!, $after: String) {
+  search(query: $q, type: ISSUE, first: 40, after: $after) {
+    issueCount pageInfo { hasNextPage endCursor }
+    nodes {
+      __typename
+      ... on Issue { number title url updatedAt repository { nameWithOwner } author { login }
+        assignees(first: 5) { nodes { login } }
+        comments(last: 15) { nodes { author { login } createdAt url bodyText } } }
+      ... on PullRequest { number title url updatedAt isDraft reviewDecision repository { nameWithOwner } author { login }
+        reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
+        reviews(last: 15) { nodes { author { login } state submittedAt url bodyText } }
+        comments(last: 15) { nodes { author { login } createdAt url bodyText } }
+        reviewThreads(first: 50) { nodes { isResolved path comments(last: 1) { nodes { author { login } createdAt url bodyText } } } } }
+    }
+  }
+}'''
+
+
+def gh(*args):
+    last = ''
+    for wait in [int(x) for x in os.environ.get('COS_GH_WAITS', '0,10,30').split(',')]:
+        time.sleep(wait)
+        try:
+            r = subprocess.run(['gh', *args], capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            last = 'timed out after 120 s'
+            continue
+        if r.returncode == 0:
+            return r.stdout
+        last = r.stderr.strip()[:300]
+        if not NET_ERR.search(last):
+            break
+    raise RuntimeError(last or 'gh failed')
+
+
+def search(q):
+    out, after = [], None
+    while True:
+        args = ['api', 'graphql', '-f', f'query={QUERY}', '-f', f'q={q}']
+        if after:
+            args += ['-f', f'after={after}']
+        d = json.loads(gh(*args))['data']['search']
+        out += [n for n in d['nodes'] if n]
+        if not d['pageInfo']['hasNextPage'] or len(out) >= 400:
+            return out, d['issueCount']
+        after = d['pageInfo']['endCursor']
+
+
+def ts(s):
+    return datetime.datetime.fromisoformat(s.replace('Z', '+00:00')) if s else None
+
+
+def mt(d):
+    return d.astimezone(MT).strftime('%b %-d %H:%M')
+
+
+def who(n):
+    return ((n or {}).get('author') or {}).get('login') or 'ghost'
+
+
+def is_bot(login):
+    return login.endswith('[bot]') or login in ('github-actions', 'dependabot', 'copilot')
+
+
+def snip(text, n=160):
+    t = re.sub(r'\s+', ' ', text or '').strip()
+    return t if len(t) <= n else t[:n - 1] + '…'
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit('usage: cos-gh-scan <job-folder> [since ISO time]')
+    out_dir = sys.argv[1]
+    os.makedirs(out_dir, exist_ok=True)
+    job = os.path.basename(out_dir.rstrip('/'))
+    since = None
+    if len(sys.argv) > 2:
+        since = ts(sys.argv[2])
+    elif os.path.exists(LAST):
+        try:
+            since = ts(json.load(open(LAST))['at'])
+        except Exception:
+            since = None
+    since = since or NOW - datetime.timedelta(hours=24)
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=datetime.timezone.utc)
+
+    errors, me = [], None
+    try:
+        me = json.loads(gh('api', 'user'))['login']
+    except Exception as e:
+        errors.append(f'who am I: {e}')
+    involves, rr, n_involves = [], [], 0
+    if me:
+        for name, q in (('involves', f'is:open involves:{me} org:{ORG}'),
+                        ('review requested', f'is:open is:pr review-requested:{me} org:{ORG}')):
+            try:
+                items, total = search(q)
+                if name == 'involves':
+                    involves, n_involves = items, total
+                else:
+                    rr = items
+            except Exception as e:
+                errors.append(f'{name}: {e}')
+
+    items = {n['url']: n for n in involves + rr}
+    need, fyi = [], []
+
+    def ref(n):
+        repo = n['repository']['nameWithOwner'].split('/')[-1]
+        return f"{repo}#{n['number']}"
+
+    for n in items.values():
+        is_pr = n['__typename'] == 'PullRequest'
+        mine = who(n) == me
+        r = ref(n)
+        if is_pr and any(((x.get('requestedReviewer') or {}).get('login') == me) for x in n['reviewRequests']['nodes']):
+            need.append(('review requested', r, n['title'], f"by {who(n)}, updated {mt(ts(n['updatedAt']))}", n['url']))
+        if is_pr and mine and n.get('reviewDecision') == 'CHANGES_REQUESTED':
+            need.append(('changes requested on your PR', r, n['title'], '', n['url']))
+        if is_pr and mine:
+            for t in n['reviewThreads']['nodes']:
+                c = (t['comments']['nodes'] or [None])[-1]
+                if not t['isResolved'] and c and who(c) != me:
+                    need.append(('unresolved thread on your PR', r, n['title'],
+                                 f"{who(c)} on {t['path']}, {mt(ts(c['createdAt']))}: {snip(c['bodyText'])}", c['url']))
+        new = []
+        for c in n['comments']['nodes']:
+            if who(c) != me and not is_bot(who(c)) and ts(c['createdAt']) and ts(c['createdAt']) > since:
+                new.append((ts(c['createdAt']), who(c), 'commented', c['url'], c['bodyText']))
+        if is_pr:
+            for v in n['reviews']['nodes']:
+                if who(v) != me and not is_bot(who(v)) and ts(v.get('submittedAt')) and ts(v['submittedAt']) > since:
+                    new.append((ts(v['submittedAt']), who(v), f"reviewed ({v['state'].lower().replace('_', ' ')})", v['url'], v['bodyText']))
+        for when, by, what, url, body in sorted(new, key=lambda x: x[0]):
+            mention = me and f'@{me}'.lower() in (body or '').lower()
+            kind = 'mentioned you' if mention else ('new on your item' if (mine or me in [a['login'] for a in n.get('assignees', {}).get('nodes', [])]) else 'new activity')
+            row = (kind, r, n['title'], f"{by} {what}, {mt(when)}: {snip(body)}", url)
+            (need if kind in ('mentioned you', 'new on your item') else fyi).append(row)
+        if is_pr and mine:
+            state = 'draft' if n['isDraft'] else {'APPROVED': 'approved: yours to merge', 'CHANGES_REQUESTED': 'changes requested',
+                                                  'REVIEW_REQUIRED': 'waiting for review'}.get(n.get('reviewDecision') or '', 'open')
+            fyi.append(('your open PR', r, n['title'], state, n['url']))
+
+    assigned = [n for n in items.values() if n['__typename'] == 'Issue' and me in [a['login'] for a in n['assignees']['nodes']]]
+    assigned_new = [n for n in assigned if ts(n['updatedAt']) > since]
+
+    ok = not errors
+    head = (f"GitHub: scanned {mt(NOW)} MT, since {mt(since)}. {len(need)} need you, {len(rr)} review request(s), "
+            f"{len(assigned)} issues assigned ({len(assigned_new)} updated), {n_involves} open items involve you.")
+    if not ok:
+        prev = ''
+        if os.path.exists(LAST):
+            try:
+                prev = f" Last good scan: {mt(ts(json.load(open(LAST))['at']))} MT."
+            except Exception:
+                pass
+        head = f"GitHub read failed: {'; '.join(errors)[:300]}.{prev} " + (head if involves or rr else '')
+
+    lines = [head, '', f'## GitHub scan, {mt(NOW)} MT', '']
+    lines += ['## Needs you', ''] + ([f'- **{k}**: {r} {t}. {d} ({u})' for k, r, t, d, u in need] or ['- Nothing.']) + ['']
+    lines += ['## Assigned issues updated since the last scan', ''] + \
+             ([f"- {ref(n)} {n['title']} (updated {mt(ts(n['updatedAt']))})" for n in sorted(assigned_new, key=lambda n: n['updatedAt'], reverse=True)] or ['- None.']) + ['']
+    lines += ['## For your information', ''] + ([f'- {k}: {r} {t}. {d}' for k, r, t, d, u in fyi] or ['- Nothing.']) + ['']
+    digest = '\n'.join(lines)
+    if not ok and not (involves or rr):
+        # No lists at all: an empty heading would read as "nothing needs you", which is exactly what we don't know.
+        digest = head + '\nNothing below this line was read, so nothing can be said about what needs you.'
+    open(os.path.join(out_dir, 'digest.md'), 'w').write(digest)
+    json.dump({'at': NOW.isoformat(), 'since': since.isoformat(), 'me': me, 'errors': errors, 'counts': {
+        'need': len(need), 'review_requested': len(rr), 'assigned': len(assigned), 'assigned_updated': len(assigned_new),
+        'involves': n_involves}, 'need': need, 'fyi': fyi}, open(os.path.join(out_dir, 'scan.json'), 'w'), indent=1)
+    status = 'done' if ok else ('partial' if involves or rr else 'failed')
+    json.dump({'job': job, 'lane': 'gh-scan', 'receipt': {'status': status, 'summary': digest,
+               'artifacts': [os.path.join(out_dir, 'digest.md'), os.path.join(out_dir, 'scan.json')]}},
+              open(os.path.join(out_dir, 'receipt.json'), 'w'), indent=1)
+    if ok:
+        os.makedirs(STATE, exist_ok=True)
+        json.dump({'at': NOW.isoformat()}, open(LAST, 'w'))
+    print(digest)
+    return 0 if ok else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

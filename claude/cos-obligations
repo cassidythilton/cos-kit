@@ -42,11 +42,28 @@ STANDING_REVIEW = re.compile(
 REF = lambda n: re.compile(r'(?im)\b(tile|refs?|closes|fixes|resolves)\s*:?\s*#' + str(n) + r'\b')
 
 
+# GitHub drops connections from this Mac now and then (Nov 11: 4 of 5 runs timed out). Network errors get two more
+# tries; a real error (a bad query, a missing repo) fails at once.
+NET_ERR = re.compile(r'(i/o timeout|timed out|connection reset|connection refused|dial tcp|EOF|TLS handshake|'
+                     r'no such host|HTTP 50[234]|temporarily unavailable|network is unreachable)', re.I)
+
+
 def gh(*args, parse=True):
-    r = subprocess.run(['gh', *args], capture_output=True, text=True, timeout=120)
-    if r.returncode != 0:
-        raise RuntimeError(f"gh {' '.join(args[:3])}: {r.stderr.strip()[:300]}")
-    return json.loads(r.stdout) if parse else r.stdout
+    import time
+    last = ''
+    for wait in (0, 10, 30):
+        time.sleep(wait)
+        try:
+            r = subprocess.run(['gh', *args], capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            last = 'timed out after 120 s'
+            continue
+        if r.returncode == 0:
+            return json.loads(r.stdout) if parse else r.stdout
+        last = r.stderr.strip()[:300]
+        if not NET_ERR.search(last):
+            break
+    raise RuntimeError(f"gh {' '.join(args[:3])}: {last}")
 
 
 def log(event, **kv):

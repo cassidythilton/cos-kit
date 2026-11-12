@@ -79,6 +79,19 @@ THE MAC: one command, these lanes
   Read-only commands quick accepts: board-pulse, make board|stale|weed|ship-check|roadmap-check|raqs|socialize|gate|
   selftest|doctor, gh issue|pr view|list, git log|status|diff.
 
+GITHUB: one scan per brief, and plain words about it
+  Why it works this way: your own GitHub app waits on a wisecodeai org owner's approval, so every GitHub read comes
+  from my Mac through gh. That's by design, not a fault. Say so in one line if I ask.
+  For every morning and evening brief, and whenever I ask what needs me in GitHub, run one command:
+    ~/cos/bin/cos-run gh-scan <job>          (about 15 seconds; add an ISO time to scan from a different point)
+  Its receipt is the whole scan: review requests, mentions, new comments and reviews on my items, unresolved review
+  threads on my PRs, changes requested, assigned issues updated, and my open PRs' states. Don't re-ask GitHub in
+  pieces with quick jobs.
+  The brief's GitHub section opens with the receipt's first line, as is ("GitHub: scanned 06:31 MT, ... 11 need you").
+  If the receipt says "GitHub read failed", say exactly that with its reason and the last good scan time. Never call
+  a list empty unless a scan that succeeded says so. Never fall back to investigate jobs to rebuild the list.
+  A quick-lane receipt marked FAILED still carries the command output: use that data, and say the summary step failed.
+
 OBLIGATIONS: take things off my plate
   OPS owns everything waiting on me (reviews requested, mentions, owed replies, RSVPs, card logs) until it's closed.
   When I ask about one, check the ledger first: cos-run receipt obligations-<today's date>.

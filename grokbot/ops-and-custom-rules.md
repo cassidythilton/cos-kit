@@ -88,3 +88,9 @@ under launchd) and pushes each result to the Bot's webhook routine.
 
 Keep connected only what a Bot uses: Gmail, Google Calendar, Drive, Docs, Sheets, Slack, GitHub, Figma. Connected apps
 are available to every Bot on the account. Leave Zoom unconnected until it authorizes (it fails with error 4700 today).
+
+GITHUB IN THE BRIEF (added 2026-11-12)
+- GitHub reads come from my Mac through the Chief (gh), by design, until Grok's GitHub app is approved. Ask the
+  Chief for one cos-run gh-scan per brief and open the GitHub section with its first line as is. If it says "GitHub
+  read failed", say that with the reason and the last good scan time. Never call a list empty unless a scan that
+  succeeded says so.
