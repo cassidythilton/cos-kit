@@ -142,6 +142,27 @@ fi
 [[ "$lc" =~ gh[[:space:]]+issue[[:space:]]+(close|comment|edit|create|delete|transfer|reopen) ]] && outward "GitHub issue write"
 [[ "$lc" =~ gh[[:space:]]+(project[[:space:]]+item-(edit|add|delete|archive)|repo[[:space:]]+(create|delete|edit)|release[[:space:]]+create) ]] && outward "GitHub write"
 [[ "$lc" =~ gh[[:space:]]+api.*(-x|--method)[[:space:]]*(post|patch|put|delete) ]]   && outward "GitHub API write"
+# gh api is allowed for reads. It writes when it carries a GraphQL mutation, or sends fields (-f/-F/--field/--input)
+# to a REST endpoint without -X GET (gh then POSTs). GraphQL reads (-f query=...) stay allowed.
+if [[ "$lc" =~ (^|[;&|[:space:]])gh[[:space:]]+api([[:space:]]|$) ]]; then
+  [[ "$lc" =~ mutation ]] && outward "GitHub API write (a GraphQL mutation)"
+  if [[ ! "$lc" =~ gh[[:space:]]+api[[:space:]]+graphql ]] && [[ "$lc" =~ [[:space:]](-f|-F|--field|--raw-field|--input)[[:space:]=] ]] \
+     && [[ ! "$lc" =~ (-x|--method)[[:space:]]*get ]]; then outward "GitHub API write (fields without -X GET make gh POST)"; fi
+fi
+# A redirect writes a file. Jobs write only in their job folder or /tmp. This also catches an unquoted ">=" in a search
+# filter, which the shell turns into a stray file (2026-11-12: '=2026-11-09' in data-org-main).
+unq="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")"
+while [[ "$unq" =~ (^|[^0-9&>])[0-9]?\>\>?[[:space:]]*([^[:space:];&|]+)(.*)$ ]]; do
+  tgt="${BASH_REMATCH[2]}"; unq="${BASH_REMATCH[3]}"
+  case "$tgt" in
+    /dev/null|\&[0-9]) ;;
+    /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*|"$HOME"/cos/outbox/*|\~/cos/outbox/*|\$HOME/cos/outbox/*) ;;
+    "$HOME"/builds/*|\~/builds/*|\$HOME/builds/*) ;;
+    /*|\~*|\$*) outward "a redirect that writes '$tgt' outside the job folder" ;;
+    *) [[ "${COS_LANE:-}" == build || "$PWD" == "$HOME"/builds/* || -n "${COS_FIX_DIR:-}" && "$PWD" == "$COS_FIX_DIR"* ]] && continue
+       outward "a redirect that writes '$tgt' outside the job folder (quote search filters like \">=2026-11-09\")" ;;
+  esac
+done
 [[ "$cmd" =~ EXECUTE=1 ]]                                                             && outward "EXECUTE=1 board operation"
 [[ "$lc" =~ make[[:space:]]+(promote|set-pillar|complete|ragb|field|roadmap-fill|intake|board-add|ship-link|labels)([[:space:]]|$) ]] && outward "board-write make target"
 [[ "$lc" =~ make[[:space:]]+classifier.*to= ]]                                        && outward "classifier switch"

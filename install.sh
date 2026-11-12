@@ -155,6 +155,12 @@ chk "EXECUTE=1 make intake-sweep" job block
 chk "DRY_RUN=1 make ragb CARD=1 TO=RED" job allow
 chk "cos-push steward pulse r.json" pair block
 chk "cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2" job block
+chk "gh api repos/wisecodeai/data-org/issues/721/comments --jq .[]" job allow
+chk "gh api graphql -f query=query{viewer{login}}" job allow
+chk "gh api graphql -f query=mutation{addStar(input:{starrableId:1}){clientMutationId}}" job block
+chk "gh api repos/wisecodeai/data-org/issues/1/comments -f body=hi" job block
+chk "gh pr list --search created:>=2026-11-09" job block
+chk "git -C ~/cos/data-org-main grep -n Window origin/main" job allow
 chk "launchctl list" job block
 chk "cos-obligations --act" job block
 chk "git -C ~/cos/kit commit -am x" pair block
