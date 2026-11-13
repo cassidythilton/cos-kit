@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -394,64 +395,212 @@ def clip(text: str, limit: int = 220) -> str:
     return words[: limit - 1] + "…"
 
 
+def runner_name(engine: str | None) -> str:
+    if engine == "claude":
+        return "Claude"
+    if engine == "cursor-agent":
+        return "Cursor"
+    return "Grok"
+
+
+def first_sentence(text: str, limit: int = 120) -> str:
+    clean = re.sub(r"[*`_]", "", text or "")
+    clean = re.sub(r"^#+\s*", "", clean)
+    clean = " ".join(clean.split())
+    clean = re.sub(r"^(done|escalate|needs cassidy)\s*:\s*", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"^I\s+", "", clean)
+    if not clean:
+        return ""
+    cut = re.search(r"(?<=[a-z0-9])[.!?](?:\s|$)", clean, flags=re.IGNORECASE)
+    sentence = clean[:cut.end()].strip() if cut and cut.end() <= 180 else clean
+    if sentence:
+        sentence = sentence[0].upper() + sentence[1:]
+    if len(sentence) > limit:
+        return sentence[: limit - 1].rstrip() + "…"
+    return sentence
+
+
+def describe_command(command: str) -> str:
+    raw = (command or "").strip()
+    low = raw.lower()
+    if not raw:
+        return "Ran a command"
+    if low.startswith("mcp:"):
+        name = raw.split("__")[-1].replace("_", " ").strip()
+        return f"Called {name}" if name else "Called a connected app"
+    tokens = raw.split()
+    head = tokens[0]
+    if head == "gh":
+        if "issue comment" in low:
+            return "Commented on a GitHub issue"
+        if "issue view" in low:
+            return "Read a GitHub issue"
+        if "issue list" in low:
+            return "Listed GitHub issues"
+        if "pr diff" in low:
+            return "Read a pull request diff"
+        if "pr view" in low:
+            return "Read a pull request"
+        if "pr list" in low or "search prs" in low:
+            return "Listed pull requests"
+        if "project item-list" in low:
+            return "Listed project cards"
+        if low.startswith("gh api"):
+            return "Called the GitHub API"
+        return "Used GitHub"
+    if head == "make":
+        target = next((tok for tok in tokens[1:] if not tok.startswith(("-", "/", "=")) and "=" not in tok), "")
+        return {
+            "lint-writing": "Checked the writing",
+            "stale": "Looked for stale cards",
+            "board": "Read the board",
+            "roadmap-check": "Checked the roadmap",
+            "field": "Read a card field",
+        }.get(target, f"Ran {target}" if target else "Ran a project command")
+    if head in {"ls", "find"}:
+        return "Listed files"
+    if head in {"grep", "rg"} or (head == "git" and "grep" in tokens):
+        return "Searched the files"
+    if head == "git":
+        if "status" in tokens:
+            return "Checked git status"
+        if "log" in tokens:
+            return "Read the git history"
+        if "show" in tokens:
+            return "Read a git commit"
+        if "diff" in tokens:
+            return "Read a git diff"
+        if "fetch" in tokens:
+            return "Fetched from git"
+        return "Ran a git command"
+    if head in {"cat", "sed", "head", "tail", "stat"}:
+        return "Read a file"
+    return "Ran a command"
+
+
+def describe_block(decision: str, rule: str) -> str:
+    text = rule or ""
+    if "Slack" in text:
+        what = "a Slack send"
+    elif "issue" in text.lower():
+        what = "a GitHub issue write"
+    elif "GitHub" in text or "gh " in text:
+        what = "a GitHub write"
+    elif text:
+        what = text.split("(")[0].strip().rstrip(".").lower() or "an action"
+    else:
+        what = "an action"
+    return f"Asked before {what}" if decision == "ask" else f"Blocked {what}"
+
+
+SLOT_NAME = {
+    "followups": "follow-ups",
+    "pulse": "the pulse",
+    "capture": "the capture",
+    "reconcile": "the reconcile",
+    "week": "the week",
+    "opportunity": "the opportunity pass",
+    "keeper": "keeper",
+    "obligations": "obligations",
+}
+
+
+def slot_name(slot: str) -> str:
+    return SLOT_NAME.get(slot or "", (slot or "the slot").replace("-", " "))
+
+
+def describe_schedule(slot: str, msg: str) -> str:
+    name = slot_name(slot)
+    text = (msg or "").lower()
+    if text.startswith("pushed to"):
+        who = text.replace("pushed to", "", 1).strip()
+        return f"Sent {name} to {who.upper()}" if who else f"Sent {name}"
+    if text.startswith("start"):
+        return f"Started {name}"
+    if "no change" in text:
+        return f"{name.capitalize()} had nothing new"
+    if "fail" in text:
+        return f"{name.capitalize()} failed"
+    if text.startswith("skipped") or "missed" in text:
+        return f"Missed {name}"
+    if "paused" in text:
+        return f"Paused {name}"
+    return f"{name.capitalize()}"
+
+
+def describe_push(bot: str, slot: str) -> str:
+    who = (bot or "a bot").upper()
+    if slot == "result":
+        return f"Sent the result to {who}"
+    if slot:
+        return f"Sent {slot_name(slot)} to {who}"
+    return f"Sent a handoff to {who}"
+
+
 def action_log(conn, window) -> list[dict]:
     """Every recorded Mac action in the window, newest first."""
     start, end = window["start"], window["end"]
     found: list[dict] = []
     for row in rows(conn, """
-        SELECT job, lane, bot, status, summary, secs, COALESCE(started, ended) AS ts
+        SELECT job, lane, bot, status, summary, secs, engine, COALESCE(started, ended) AS ts
         FROM jobs
         WHERE COALESCE(started, ended) >= ? AND COALESCE(started, ended) < ?
     """, (start, end)):
-        parts = [row["lane"] or "", row["status"] or ""]
-        if row["secs"] is not None:
-            parts.append(f"{row['secs']}s")
-        if row["summary"]:
-            parts.append(clip(row["summary"], 140))
-        tail = " · ".join(part for part in parts if part)
         found.append({
             "id": f"run:{row['job']}", "ts": row["ts"], "bot": row["bot"] or "",
             "kind": "run", "job": row["job"], "seq": -1,
-            "text": f"{row['job']} · {tail}" if tail else row["job"],
+            "runner": runner_name(row["engine"]),
+            "text": first_sentence(row["summary"] or "") or "No write-up yet.",
+            "detail": " · ".join(part for part in [row["job"], row["lane"] or "", row["status"] or "", f"{row['secs']}s" if row["secs"] is not None else ""] if part),
         })
     for row in rows(conn, """
-        SELECT c.job, c.seq, c.command, j.bot, COALESCE(j.started, j.ended) AS ts
+        SELECT c.job, c.seq, c.command, j.bot, j.engine, COALESCE(j.started, j.ended) AS ts
         FROM commands c JOIN jobs j ON j.job = c.job
         WHERE COALESCE(j.started, j.ended) >= ? AND COALESCE(j.started, j.ended) < ?
     """, (start, end)):
         found.append({
             "id": f"cmd:{row['job']}:{row['seq']}", "ts": row["ts"], "bot": row["bot"] or "",
             "kind": "command", "job": row["job"], "seq": row["seq"] or 0,
-            "text": clip(row["command"] or ""),
+            "runner": runner_name(row["engine"]),
+            "text": describe_command(row["command"] or ""),
+            "detail": clip(row["command"] or ""),
         })
-    for row in rows(conn, "SELECT * FROM gate_events WHERE ts >= ? AND ts < ?", (start, end)):
-        bot = ""
-        if row["job"]:
-            owner = one(conn, "SELECT bot FROM jobs WHERE job = ?", (row["job"],))
-            bot = (owner or {}).get("bot") or ""
+    for row in rows(conn, """
+        SELECT g.*, j.bot AS owner, j.engine
+        FROM gate_events g LEFT JOIN jobs j ON j.job = g.job
+        WHERE g.ts >= ? AND g.ts < ?
+    """, (start, end)):
         found.append({
-            "id": f"gate:{row['id']}", "ts": row["ts"], "bot": bot,
+            "id": f"gate:{row['id']}", "ts": row["ts"], "bot": row["owner"] or "",
             "kind": "ask" if row["decision"] == "ask" else "block",
             "job": row["job"] or "", "seq": 0,
-            "text": clip(row["cmd"] or row["rule"] or row["path"] or row["decision"] or ""),
+            "runner": runner_name(row["engine"]) if row["job"] else "Grok",
+            "text": describe_block(row["decision"] or "", row["rule"] or ""),
+            "detail": clip(row["cmd"] or row["rule"] or ""),
         })
     for row in rows(conn, "SELECT * FROM pushes WHERE ts >= ? AND ts < ?", (start, end)):
         found.append({
             "id": f"push:{row['id']}", "ts": row["ts"], "bot": (row["bot"] or "").upper(),
             "kind": "push", "job": row["job"] or "", "seq": 0,
-            "text": " · ".join(part for part in [row["slot"], row["job"], f"code {row['code']}" if row["code"] else ""] if part),
+            "runner": "Grok",
+            "text": describe_push(row["bot"] or "", row["slot"] or ""),
+            "detail": " · ".join(part for part in [row["slot"], row["job"], f"code {row['code']}" if row["code"] else ""] if part),
         })
     for row in rows(conn, "SELECT * FROM schedule WHERE ts >= ? AND ts < ?", (start, end)):
         found.append({
             "id": f"sched:{row['id']}", "ts": row["ts"], "bot": "",
             "kind": "schedule", "job": "", "seq": 0,
-            "text": f"{row['slot']} · {clip(row['msg'] or '', 180)}",
+            "runner": "Grok",
+            "text": describe_schedule(row["slot"] or "", row["msg"] or ""),
+            "detail": " · ".join(part for part in [row["slot"], clip(row["msg"] or "", 180)] if part),
         })
     for row in rows(conn, "SELECT * FROM corrections WHERE ts >= ? AND ts < ?", (start, end)):
         found.append({
             "id": f"note:{row['id']}", "ts": row["ts"], "bot": (row["bot"] or "").upper(),
             "kind": "correction", "job": "", "seq": 0,
-            "text": clip(row["note"] or ""),
+            "runner": "Grok",
+            "text": first_sentence(row["note"] or "") or "Recorded a correction.",
+            "detail": clip(row["note"] or ""),
         })
     found.sort(key=lambda item: (item["ts"] or "", 1 if item["kind"] != "command" else 0, -(item.get("seq") or 0)), reverse=True)
     for item in found:

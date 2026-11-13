@@ -30,7 +30,9 @@ interface LogRow {
   bot: string;
   kind: string;
   job: string;
+  runner: string;
   text: string;
+  detail?: string;
 }
 
 interface JobRow {
@@ -93,14 +95,14 @@ const KINDS = ["", "run", "command", "block", "ask", "push", "schedule", "correc
   value: id || "all", label: id || "Every kind",
 }));
 const RAIL = [
-  ["summary", "Summary"],
-  ["log", "Log"],
-  ["spend", "Spend"],
-  ["jobs", "Jobs"],
-  ["walls", "The walls"],
-  ["approvals", "Approvals"],
-  ["schedule", "Schedule"],
-  ["learning", "Learning"],
+  ["summary", "Summary", "S"],
+  ["log", "Log", "L"],
+  ["spend", "Spend", "$"],
+  ["jobs", "Jobs", "J"],
+  ["walls", "The walls", "W"],
+  ["approvals", "Approvals", "A"],
+  ["schedule", "Schedule", "T"],
+  ["learning", "Learning", "N"],
 ];
 
 async function get<T>(path: string): Promise<Envelope<T>> {
@@ -118,6 +120,12 @@ function duration(secs: number | null): string {
   if (secs == null) return "—";
   if (secs < 60) return `${secs}s`;
   return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+function used(engine: string | null | undefined): string {
+  if (engine === "claude") return "Claude";
+  if (engine === "cursor-agent") return "Cursor";
+  return "Grok";
 }
 
 function clock(stamp: string | null): string {
@@ -161,6 +169,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [openJob, setOpenJob] = useState<string | null>(null);
   const [section, setSection] = useState("summary");
+  const [pinned, setPinned] = useState(() => window.localStorage.getItem("cos-rail-pin") === "1");
+  const [railOpen, setRailOpen] = useState(false);
+  const railWide = pinned || railOpen;
 
   useEffect(() => {
     let cancel = false;
@@ -206,14 +217,36 @@ export default function App() {
   }, []);
 
   return (
-    <div className="shell">
-      <aside className="side">
-        <div className="brand"><b>Flight recorder</b><small>This Mac · read only</small></div>
+    <div className={`shell${pinned ? " is-pinned" : ""}`}>
+      <aside
+        className={`side${railWide ? " is-wide" : ""}${pinned ? " is-pinned" : ""}`}
+        onMouseEnter={() => setRailOpen(true)}
+        onMouseLeave={() => setRailOpen(false)}
+        onFocus={() => setRailOpen(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setRailOpen(false);
+        }}
+      >
+        <div className="brand"><b><span className="mark">FR</span><span className="word">Flight recorder</span></b><small>This Mac · read only</small></div>
         <ul className="nav">
-          {RAIL.map(([id, label]) => (
-            <li key={id}><a className={section === id ? "on" : ""} href={`#${id}`}>{label}</a></li>
+          {RAIL.map(([id, label, mark]) => (
+            <li key={id}><a className={section === id ? "on" : ""} href={`#${id}`}><span className="mark">{mark}</span><span className="word">{label}</span></a></li>
           ))}
         </ul>
+        <button
+          type="button"
+          className="pin"
+          aria-pressed={pinned}
+          aria-label={pinned ? "Unpin the navigation" : "Pin the navigation open"}
+          onClick={() => setPinned((value) => {
+            const next = !value;
+            window.localStorage.setItem("cos-rail-pin", next ? "1" : "0");
+            return next;
+          })}
+        >
+          <span className="mark">{pinned ? "●" : "›"}</span>
+          <span className="word">{pinned ? "Pinned" : "Pin open"}</span>
+        </button>
         <div className="meta">Local ledger and cos.db. Nothing leaves this Mac.</div>
       </aside>
       <main className="main">
@@ -406,14 +439,14 @@ function ActionLog({ log, bot, kind, query, onBot, onKind, onQuery, onOpen }: {
     if (bot !== "all" && row.bot !== bot) return false;
     if (kind !== "all" && row.kind !== kind) return false;
     if (!needle) return true;
-    return `${row.bot} ${row.kind} ${row.job} ${row.text}`.toLowerCase().includes(needle);
+    return `${row.bot} ${row.runner} ${row.kind} ${row.job} ${row.text} ${row.detail || ""}`.toLowerCase().includes(needle);
   });
   return (
     <section id="log" className="card" aria-labelledby="log-title">
       <div className="card-head">
         <div>
           <h2 id="log-title" className="card-title">Log</h2>
-          <p className="card-sub">Every recorded action on this Mac, newest first. A row with a job opens that run.</p>
+          <p className="card-sub">Newest first. What is the short line. Action, on the right, is the raw record. A row with a job opens that run.</p>
         </div>
       </div>
       <div className="filters">
@@ -423,17 +456,25 @@ function ActionLog({ log, bot, kind, query, onBot, onKind, onQuery, onOpen }: {
       </div>
       {list.length === 0 ? <p className="empty"><strong>No actions in this window.</strong> A run, a command, a block, a push, a schedule line, or a correction shows up here.</p> : (
         <div className="table-wrap log-wrap">
-          <table className="data-table">
+          <table className="data-table log-table">
+            <colgroup>
+              <col className="c-time" />
+              <col className="c-bot" />
+              <col className="c-used" />
+              <col className="c-what" />
+              <col className="c-action" />
+            </colgroup>
             <thead>
-              <tr><th>Time</th><th>Bot</th><th>Kind</th><th>Action</th></tr>
+              <tr><th>Time</th><th>Bot</th><th>Used</th><th>What</th><th>Action</th></tr>
             </thead>
             <tbody>
               {list.map((row) => (
                 <tr key={row.id} className={row.job ? "is-clickable" : ""} onClick={() => { if (row.job) onOpen(row.job); }}>
                   <td>{clock(row.ts)}</td>
                   <td>{row.bot ? <BotPill bot={row.bot} /> : "—"}</td>
-                  <td className="kind">{row.kind}</td>
-                  <td className="action">{row.text || "—"}</td>
+                  <td className="used">{row.runner || "—"}</td>
+                  <td className="what" title={row.text || undefined}><span>{row.text || "—"}</span></td>
+                  <td className="action" title={row.detail || undefined}>{row.detail || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -471,7 +512,7 @@ function Jobs({ jobs, bot, lane, status, query, onBot, onLane, onStatus, onQuery
           <table className="data-table">
             <thead>
               <tr>
-                <th>Time</th><th>Job</th><th>Bot</th><th>Lane</th><th>Status</th><th>Checker</th><th>Verifier</th><th className="num">Cost</th><th className="num">Duration</th>
+                <th>Time</th><th>Job</th><th>Bot</th><th>Used</th><th>Lane</th><th>Status</th><th>Checker</th><th>Verifier</th><th className="num">Cost</th><th className="num">Duration</th>
               </tr>
             </thead>
             <tbody>
@@ -480,6 +521,7 @@ function Jobs({ jobs, bot, lane, status, query, onBot, onLane, onStatus, onQuery
                   <td>{clock(row.started)}</td>
                   <td><button type="button" className="link-button" onClick={() => onOpen(row.job)}>{row.job}</button></td>
                   <td><BotPill bot={row.bot} /></td>
+                  <td className="used">{used(row.engine)}</td>
                   <td>{row.lane || "—"}</td>
                   <td><StatusPill status={row.status} /></td>
                   <td>{row.checker || "—"}</td>

@@ -12,6 +12,10 @@ The light palette (charcoal, ground, surface) is rejected for this page. It read
 
 The dark console turns the data-through mark white after 24 hours. Green means the ledger is inside that day. The earlier 15-minute amber chip belonged to the light system and is not used.
 
+## Rail
+
+The rail is collapsed. It shows a type mark for each section, not a number. It opens while the pointer or keyboard focus is on it, and it stays open only when pinned. The pin is remembered on this Mac.
+
 ## Logo
 
 No WISEcode logo. This is Cassidy's private Mac tool. The command center reference does not put a product mark on the page.

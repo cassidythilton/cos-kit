@@ -75,6 +75,8 @@
       "Bash(git -C * log *)",
       "Bash(git -C * show *)",
       "Bash(sqlite3 -readonly *)",
+      "Bash(cos-atlas *)",
+      "Bash(~/cos/bin/cos-atlas *)",
       "Bash(git -C * rev-parse *)",
       "Bash(git -C * status)",
       "Bash(make lint-writing *)",

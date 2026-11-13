@@ -1,0 +1,8 @@
+#!/bin/bash
+# cos-atlas: the Agent Atlas CLI (read-only), for atlas jobs. Cassidy's tool, in his Agent Atlas folder:
+#   cos-atlas find|show|search|messages|recent ...
+# Opens atlas.db and summ.db read-only. Lines marked [lake chat] keep their content on this Mac (the brief says how).
+A="$HOME/Documents/Cursor Projects/agent-atlas/atlas_cli.py"
+[[ -r "$A" ]] || { echo "cos-atlas: can't read $A (Agent Atlas not installed, or no Full Disk Access from a scheduled run)" >&2; exit 66; }
+[[ "${1:-}" =~ ^(find|show|search|messages|recent)$ ]] || { echo "usage: cos-atlas find|show|search|messages|recent ..." >&2; exit 64; }
+exec /usr/bin/python3 -I "$A" "$@"

@@ -77,7 +77,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
 # cos-launch: the one program launchd starts for every job, so one Full Disk Access grant covers them all (see
 # claude/cos-launch.c). Rebuilt only when its source changes, because macOS ties the grant to the build.
@@ -146,6 +146,13 @@ chk "git push origin build/x" job block
 chk "git push origin build/x" pair ask
 chk "git push origin main" pair block
 chk "terraform apply" pair block
+chk "~/cos/bin/cos-atlas find agent atlas dashboard" job allow
+chk "gh search prs cursor agent --owner wisecodeai" job allow
+chk "agent -p hi" job block
+chk "cd /tmp && agent -p hi" job block
+chk "env agent -p hi" job block
+chk 'echo $(cursor-agent -p hi)' job block
+chk "/usr/local/bin/cursor-agent -p hi" job block
 chk "aws s3 sync . s3://b" pair block
 chk 'psql "host=prod" -c "delete from food"' pair block
 chk "select name from wisecode_gold.canon_term" pair block
@@ -259,6 +266,9 @@ for qc in 'gh pr list --repo wisecodeai/data-org --search created:>=2026-11-09' 
   HOME="$T" "$COS/bin/cos-run" quick qr1 "x" --with "$qc" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "quick refuses: $qc" || fail "quick ran: $qc"
 done
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
+HOME="$T" "$COS/bin/cos-atlas" find x >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "cos-atlas refuses when Agent Atlas isn't there" || fail "cos-atlas ran without Agent Atlas"
+"$COS/bin/cos-atlas" sql 'x' >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-atlas takes only find|show|search|messages|recent" || fail "cos-atlas took another command"
+grep -q '"Bash(cos-atlas \*)"' "$COS/claude/settings.investigate.json" && grep -q 'cos-atlas find' "$COS/claude/briefs/atlas.md" && pass "atlas jobs use cos-atlas" || fail "atlas jobs can't run cos-atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"
 HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"
 mkdir -p "$T/cos/outbox/fx1"; echo '{"lane":"fix","fix":{"base":"x","branch":"fix/fx1","sha256":"aaa"},"approve_with":"cos-run land fx1 aaa"}' > "$T/cos/outbox/fx1/receipt.json"
