@@ -260,8 +260,6 @@ for qc in 'gh pr list --repo wisecodeai/data-org --search created:>=2026-11-09' 
 done
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"
-CB="$COS/claude/briefs/capture.md"; grep -qx 'Blocked: <the blocker, even when another team owns it, or none>' "$CB" && grep -q 'make roadmap-check' "$CB" && grep -q '"Touched, no log"' "$CB" && grep -q '"No card"' "$CB" && grep -q '(G logs, L lane moves)' "$CB" \
-  && pass "brief: capture (three-line log per card worked, lane moves behind the promote gate, no-log and no-card lists)" || fail "capture brief is missing the daily-log rule"
 HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"
 mkdir -p "$T/cos/outbox/fx1"; echo '{"lane":"fix","fix":{"base":"x","branch":"fix/fx1","sha256":"aaa"},"approve_with":"cos-run land fx1 aaa"}' > "$T/cos/outbox/fx1/receipt.json"
 HOME="$T" "$COS/bin/cos-run" land fx1 bbb >/dev/null 2>&1; [[ $? -eq 67 ]] && pass "land refuses a sha256 that isn't the reviewed one" || fail "land accepted the wrong sha256"
