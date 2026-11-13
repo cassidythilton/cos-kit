@@ -21,9 +21,10 @@ Rules
    Say where each part came from: "per the Atlas overview" for the overview, "per message #N" for anything you checked,
    "inferred" for anything matched by branch or date. Owners, open items and status are as of the chat's last date,
    not today: say so, and don't check them against GitHub unless Cassidy asked about now.
-4. A chat marked [lake chat] (canon_risk set) touched the lake or canon. Report its id, title, dates and counts only,
-   with no summary, and say "lake chat: details stay on the Mac" (canon charter decision 14). The receipt goes to a
-   Grok bot, which is a non-Claude model.
+4. A chat marked [lake chat] (canon_risk set) touched the lake or canon. Report only its id, title, repo, branch,
+   dates, counts and the card numbers it touched. That full list is allowed, and nothing more: no summary. Say
+   "lake chat: details stay on the Mac" (canon charter decision 14). The receipt goes to a Grok bot, which is a
+   non-Claude model.
 5. To send him back to a chat, give its where line from show: the app (Cursor or Claude Code), the folder, the chat
    title, and the resume command for Claude Code.
 
