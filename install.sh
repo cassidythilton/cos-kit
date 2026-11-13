@@ -78,6 +78,7 @@ fi
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
 install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
 # cos-launch: the one program launchd starts for every job, so one Full Disk Access grant covers them all (see
 # claude/cos-launch.c). Rebuilt only when its source changes, because macOS ties the grant to the build.
