@@ -171,7 +171,8 @@ done
 [[ "$lc" =~ (^|[;&|[:space:]])(chown)[[:space:]] ]]                                   && outward "ownership change"
 [[ "$lc" =~ (^|[;&|[:space:]])chmod[[:space:]] ]] && [[ ! "$lc" =~ chmod[[:space:]]+[ug]?\+x[[:space:]]+[^/~] ]] && outward "permission change"
 [[ "$lc" =~ (^|[;&|[:space:]])mv[[:space:]] ]] && [[ "$lc" =~ (^|[[:space:]])(/|~) ]]  && outward "move outside the workspace (use git mv inside it)"
-if [[ "$MODE" != "pair" ]] && [[ "$lc" =~ (^|[;&|(\`/]|(env|exec|xargs|nohup|command|time|sudo)[[:space:]])[[:space:]]*(cursor-agent|agent|cursor)([[:space:]]|$) ]]; then
+agent_re='(^|[;&|(`/]|(env|exec|xargs|nohup|command|time|sudo)[[:space:]])[[:space:]]*(cursor-agent|agent|cursor)([[:space:]]|$)'
+if [[ "$MODE" != "pair" ]] && [[ "$lc" =~ $agent_re ]]; then
   # Only "agent" as the command itself (after ; & | ( ` a path, or env/exec/xargs...), not as a word in an argument.
   outward "starting another agent from inside a job (cos-run routes engines)"
 fi
