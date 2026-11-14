@@ -594,6 +594,7 @@ def replan_for_undo(r):
 def today():
     now = dt.datetime.now().astimezone()
     lines, refused = [], 0
+    undone = {x.get("ref") for x in rows() if x.get("decision") == "undone"}
     for x in rows():
         try:
             t = dt.datetime.fromisoformat(x["ts"].replace("Z", "+00:00")).astimezone()
@@ -606,7 +607,7 @@ def today():
         if x.get("decision") not in ("done", "undone"):
             continue
         verb = "Undid" if x["decision"] == "undone" else "Did"
-        tail = f" Undo: cos-run gh <job> undo {x['ref']}" if x["decision"] == "done" and x.get("undo_argv") else ""
+        tail = f" Undo: cos-run gh <job> undo {x['ref']}" if x["decision"] == "done" and x.get("undo_argv") and x.get("ref") not in undone else ""
         why = f" Why: {x['evidence']}." if x.get("evidence") else ""
         lines.append(f"- {t:%H:%M} {verb}: {x['action']} on {x['card']} ({x.get('old') or 'blank'} -> {x.get('new') or 'blank'}). {x.get('verdict', '')}.{why}{tail}")
     head = f"Done without asking today ({len(lines)})" + (f"; {refused} refused and left for Cassidy" if refused else "")
@@ -654,7 +655,8 @@ def plain(path):
             m = re.match(rx, l)
             if m:
                 g = [s.strip('"') for s in m.groups()]
-                items.append({"tier": tier, "says": fmt.format(*g).replace(" --", " ").rstrip(":")}); top = max(top, tier); break
+                says = re.sub(r"@(\d+)", lambda m: "the new card" if m.group(1) == "1" else f"new card {m.group(1)}", fmt.format(*g).replace(" --", " ").rstrip(":"))
+                items.append({"tier": tier, "says": says}); top = max(top, tier); break
         else:
             items.append({"tier": 2, "says": "Unrecognized line; show Cassidy the line itself: " + l}); top = 2
     out({"batch": path, "writes": len(items), "highest_tier": top, "items": items,
