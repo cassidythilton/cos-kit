@@ -2,7 +2,7 @@
 
 The one place that says where every source lives, how each part of the system reaches it, and which rules govern it. KEEPER reads it every run, and so does any job that needs to find something. When a source moves, a rule changes, or a channel is added, KEEPER proposes the edit here first. Facts that change daily (owners, dates, RAGB, status) are never written here. They are fetched.
 
-Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin/main 9430359).
+Last checked: 2026-11-14 (sources table); data-org rules last checked 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin/main 9430359).
 
 ## 1. Rules, in order of authority
 
@@ -37,6 +37,8 @@ Last checked: 2026-11-09 (data-org origin/main 16876d5, data-org-notebook origin
 | Gmail and Google Calendar | mail, schedule | not used | Gmail and Calendar apps | drafts only; no calendar change without a yes |
 | Google Drive and Docs | charters, decks, memos | Drive connector, read-only | Drive app | no edits to others' files |
 | Cassidy's Claude and Cursor transcripts | how he works | only a path he names, or the monthly cassidy-mode re-mine of his own projects | no | never glob across other people's or unrelated projects |
+| Agent Atlas `~/Documents/Cursor Projects/agent-atlas` (Cassidy's project) | every past Claude Code, Cursor and bot chat: titles, repos, branches, overviews, messages | `cos-atlas` (his `atlas_cli.py`, read-only) in the atlas lane; `sqlite3 -readonly` as a fallback | through `cos-run atlas` | `[lake chat]` rows: ids, titles, counts and card numbers only; refreshes only while the app runs |
+| GitHub, for "what needs him" | review requests, mentions, threads on his PRs, assigned issues | `cos-gh-scan` (two GraphQL searches, no model) | through `cos-run gh-scan` | read-only; a failed read says so, never an empty list |
 | `~/cos/outbox/*/receipt.json` | what every job did, cost, checker and verifier results | direct read | webhook bodies | receipts summarize; read artifacts for detail |
 | `~/cos/state/` | corrections, schedule log, board-health trend | direct read | no | team numbers only, never per person in public |
 | `~/cos/state/ledger/*.jsonl` | append-only record of jobs, gate blocks and asks, pushes, applies, the schedule, corrections, pauses | direct read | no | commands and paths only; secrets redacted; never file contents or canon values |

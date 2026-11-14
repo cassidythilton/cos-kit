@@ -7,7 +7,8 @@
 ![bots](https://img.shields.io/badge/bots-Grok_Bot_·_5-15181e?style=flat-square)
 ![engines](https://img.shields.io/badge/engines-Claude_Code_·_Cursor_Agent-D97757?style=flat-square&logo=anthropic&logoColor=white)
 ![mac](https://img.shields.io/badge/Mac-launchd_·_bash_·_gh-3d4452?style=flat-square&logo=apple&logoColor=white)
-![checks](https://img.shields.io/badge/install_checks-107%2F107-56E39F?style=flat-square)
+![checks](https://img.shields.io/badge/install_checks-196%2F196-56E39F?style=flat-square)
+![updated](https://img.shields.io/badge/updated-2026--11--14-56E39F?style=flat-square)
 ![license](https://img.shields.io/badge/license-private-5B6C5D?style=flat-square)
 
 <p align="center">
@@ -18,6 +19,8 @@
   <br>
   <em>How the parts connect. Cassidy asks the Chief. The Chief hands work to the four specialists, and runs <code>cos-run</code> on the Mac only after his tap. The Mac's clock runs the scheduled jobs and pushes each receipt to the bot that owns it.</em>
 </p>
+
+> **New agent?** Start with [HANDOFF.md](HANDOFF.md), the cold-start note: the rules, where everything lives, how to change it safely, and what's open.
 
 ---
 
@@ -123,18 +126,27 @@ The unchecked-box rule exists because the first version would have closed #423: 
 
 | Lane | Does | Engine | Cost |
 | --- | --- | --- | --- |
-| ![quick](https://img.shields.io/badge/quick-3d4452?style=flat-square) | Answers from one read-only command | Cursor Agent | cents |
+| ![quick](https://img.shields.io/badge/quick-3d4452?style=flat-square) | Answers from the read-only commands passed with `--with` (gh, gh search, gh api reads, git, make targets). Its model can't run anything itself. | Cursor Agent | cents |
 | ![investigate](https://img.shields.io/badge/investigate-3d4452?style=flat-square) | Digs in and changes nothing | Claude Code | about $0.30 to $3 |
-| ![draft](https://img.shields.io/badge/draft-3d4452?style=flat-square) | Prepares a doc or repo change on a `cassidy/cos-<job>` branch, never pushed | Claude Code | up to $12 |
+| ![atlas](https://img.shields.io/badge/atlas-3d4452?style=flat-square) | Finds a past chat in Agent Atlas by name, or lists recent work for a sweep, through `cos-atlas`. Lake chats give ids and card numbers only. | Claude Code | about $0.30 to $1 |
+| ![gh-scan](https://img.shields.io/badge/gh--scan-3d4452?style=flat-square) | Everything in GitHub that may need Cassidy, in two GraphQL searches. Says "GitHub read failed" plainly, never an empty list. | none | free |
+| ![draft](https://img.shields.io/badge/draft-3d4452?style=flat-square) | Prepares a doc or repo change on its own branch from `--base` (fetched fresh), never pushed by the job. The receipt carries the diff's sha256; an approved `cos-push-draft` can push it to one of his `cassidy/*` PR branches. | Claude Code | up to $12 |
 | ![build](https://img.shields.io/badge/build-e79738?style=flat-square) | One build slice, then before-and-after checks, an independent verifier and a second model's review | Claude Code · Codex | up to $20, plus about $6 |
 | ![pair](https://img.shields.io/badge/pair-e79738?style=flat-square) | Scaffolds a build workspace Cassidy drives in Cursor | none | free |
 | ![apply](https://img.shields.io/badge/apply-eab308?style=flat-square) | Runs a write batch he approved by its sha256, once | none | free |
+| ![apply-sheet](https://img.shields.io/badge/apply--sheet-eab308?style=flat-square) | Writes exactly the cells of a sheet.json he approved by its sha256. The gate allows no other cell. | Claude Code (sonnet) | cents |
+| ![fix](https://img.shields.io/badge/fix-c0392b?style=flat-square) | Fixes this kit in its own worktree, tested in a macOS sandbox, reviewed by Codex and a checker | Claude Code · Codex | about $3 to $4 |
+| ![land](https://img.shields.io/badge/land-c0392b?style=flat-square) | Lands an approved fix: fast-forward, install, roll back if a check fails, push. `revert` undoes it. | none | free |
 | ![eval](https://img.shields.io/badge/eval-757675?style=flat-square) | Tests a prompt change blind on the [core suite](evals/core.json) | Claude Code, judged by Codex | about $4 |
 | ![note](https://img.shields.io/badge/note-757675?style=flat-square) | Records a correction for KEEPER | none | free |
 | ![pause](https://img.shields.io/badge/pause-5B6C5D?style=flat-square) | Holds a scheduled slot for N days, `0` resumes | none | free |
 | ![receipt](https://img.shields.io/badge/receipt-5B6C5D?style=flat-square) | A job's result, or "running" or "failed" | none | free |
 
-**Long jobs run with `--async`.** Grok's terminal call gives up before a 3-minute job ends, and the Chief used to re-ask until Cassidy had approved the same job ten times. Now `investigate`, `draft`, `build` and `eval` return in under a second, run detached, and push their receipt to the Chief's results webhook when they finish. The Chief never re-runs a job because a reply didn't come back; it checks with `cos-run receipt`.
+**Long jobs run with `--async`.** Grok's terminal call gives up before a 3-minute job ends, and the Chief used to re-ask until Cassidy had approved the same job ten times. Now `investigate`, `atlas`, `draft`, `build`, `eval`, `fix` and `land` return in under a second, run detached, and push their receipt to the Chief's results webhook when they finish. The Chief never re-runs a job because a reply didn't come back; it checks with `cos-run receipt`.
+
+**Jobs fix their own misses once.** A Claude checker grades each receipt as blocking or notes. If something blocks, the job gets one revision round with the checker's findings. A receipt still blocked leads with "Needs you:" and one plain question; notes show as "Unverified:".
+
+**Scheduled jobs reach ~/Documents** through `cos-launch`, a small compiled launcher with Full Disk Access that starts every launchd job. It runs only programs in `~/cos/bin`.
 
 Source: [claude/cos-run](claude/cos-run).
 
@@ -212,7 +224,7 @@ Board writes never run inside a job. A job stages them, the receipt fingerprints
                                                                                         Chief re-reads each card
 ```
 
-Allowed lines: the repo's own write targets (`make ragb`, `field`, `set-pillar`, `complete`, `promote`, `board-add`, `ship-link`, `context-request`), `gh issue comment --body-file`, and for builds a push of a `<name>/<branch>` build branch and `gh pr create --draft`. `EXECUTE=1`, closes, merges and deletes are refused.
+Allowed lines: the repo's own write targets (`make ragb`, `field`, `set-pillar`, `complete`, `promote`, `board-add`, `ship-link`, `context-request`), `gh issue create`, `gh issue edit` (labels, assignees, milestone), `gh issue comment --body-file`, `cos-link sub|blocked-by`, `gh pr comment`, `gh pr review`, `gh pr merge`, `gh pr ready`, `cos-push-draft` to one of his `cassidy/*` branches (fast-forward only, refused if the branch moved), and for builds a push of a `<name>/<branch>` build branch and `gh pr create --draft`. `EXECUTE=1`, raw closes and deletes are refused. Sheet edits go through `apply-sheet` the same way. Kit fixes go through `land` the same way.
 
 ---
 
@@ -271,7 +283,7 @@ The full map of sources, rules and what may cross which wire is [handbook/system
 cd ~/cos/kit && ./install.sh --online
 ```
 
-`install.sh` checks prerequisites, copies the kit into `~/cos`, installs `cassidy-mode` for Claude and Cursor, and proves the walls with 107 checks. `--schedule` loads the launchd jobs, and `--schedule=<slot,…>` loads only those (`--schedule=obligations,dashboard` adds the obligations ledger and the five-minute dashboard refresh). Full steps, including the Grok setup and webhook keys, are in [INSTALL.md](INSTALL.md). The design and its reasons are in [PLAN.md](PLAN.md). A one-page overview is [docs/system-overview.html](docs/system-overview.html).
+`install.sh` checks prerequisites, copies the kit into `~/cos`, installs `cassidy-mode` for Claude and Cursor, and proves the walls with 196 checks. `--schedule` loads the launchd jobs, and `--schedule=<slot,…>` loads only those (`--schedule=obligations,dashboard` adds the obligations ledger and the five-minute dashboard refresh). Full steps, including the Grok setup and webhook keys, are in [INSTALL.md](INSTALL.md). The design and its reasons are in [PLAN.md](PLAN.md). A one-page overview is [docs/system-overview.html](docs/system-overview.html).
 
 This folder is the only source. A change is an edit here, a commit with its reason, a push, then `./install.sh`. To undo one, revert the commit and reinstall.
 
@@ -282,7 +294,10 @@ This folder is the only source. A change is an edit here, a commit with its reas
 ```
 cos-kit/
 ├── claude/                  the Mac side
-│   ├── cos-run              front desk: quick · investigate · draft · build · pair · apply · eval · note · pause
+│   ├── cos-run              front desk: quick · investigate · atlas · gh-scan · draft · build · pair · apply · apply-sheet · fix · land · eval · note · pause
+│   ├── cos-launch.c         the launcher every launchd job starts through (Full Disk Access, ~/cos/bin only)
+│   ├── cos-gh-scan          the GitHub scan · cos-atlas, the Agent Atlas CLI · cos-link, cos-push-draft for approved batches
+│   ├── cos-sandbox-test     runs a fix's installer in a macOS sandbox · zoom-mirror.applescript builds ZoomMirror.app
 │   ├── cos-sched            the clock (launchd) · cos-push hands receipts to Grok webhooks
 │   ├── cos-obligations      what's waiting on Cassidy, owned to closure, with his standing approvals
 │   ├── cos-ledger           append-only ledger · cos-db loads it into cos.db · cos-dash opens the page
@@ -297,6 +312,7 @@ cos-kit/
 ├── evals/                   the core eval suite
 ├── claude-skills/           cassidy-mode, how Claude works with Cassidy
 ├── apps/flight-recorder/    the local page: what ran, what it cost, what got blocked
+├── HANDOFF.md               the cold-start note for a new agent
 ├── docs/                    the overview page, images, and docs/src/ to regenerate them
 ├── install.sh               installer and self-test
 ├── INSTALL.md               step by step
