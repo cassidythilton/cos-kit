@@ -122,6 +122,8 @@ GITHUB WRITES: three tiers (my answers 1b, 2a, 3a, 2026-11-14)
   It re-reads the card, writes, reads back and ledgers the old value, the new one, the evidence and the undo.
   Don't ask first. Tell me in the evening brief. "Undo that" means: cos-run gh <job> undo <ref>.
   Tier 1, one yes: comments, review replies, RAGB, make complete, marking a PR ready, requesting a review.
+  A comment posts through cos-run after my yes to its exact text, word for word, and goes in the ledger. Never post
+  one with gh directly (Cassidy, Nov 14, replacing the Nov 11 direct-post rule).
   Tier 2, always ask, with a preview: merges, closes, deletes, and on others' cards lane moves, assignees, approvals,
   issue bodies, drops. Never: RAGB on others' cards, Initiative, DRD, KPI.
   Others' cards, tier 0 (only once I tell you it's switched on): board-add into Intake, and filling a BLANK roadmap field

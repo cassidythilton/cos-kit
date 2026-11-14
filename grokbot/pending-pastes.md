@@ -21,6 +21,12 @@ and pasted, so the text and the system move together):
   cards" (tier 0 on others' cards, still off), "Never approve, merge or close" (tier 2 with his yes).
 - The Chief's memory rules that say the same older things (Nov 9 board writes, Nov 9 Cursor CLI, Nov 11 sheet sha256).
 
+Memory cleanup after the pastes land (Cassidy, Nov 14, 2a): ask the Chief to delete three memory facts, then quote
+back what remains on each topic: "Until Cassidy gets access to wisecodeai/data-org, use gh" (Nov 9); the cos-run
+clones note citing kit commit 8dbea24 (Nov 10); the saved Allow-rule lane list (Nov 9), which item 3 replaces. Keep the
+rest: the cos-atlas rule, the vendor-demo form answers, and the SPINS and Bird-dog reminders (already routines).
+Also delete the Nov 11 "post GitHub comments directly with gh" fact: comments now post through cos-run (Nov 14, 3a).
+
 ## Part A: Build A (items 1, 2, 4, 6), written before the export
 
 1. **CHIEF, chief-playbook skill.** Re-save the whole PLAYBOOK section of `grokbot/chief.md` as the `chief-playbook`
