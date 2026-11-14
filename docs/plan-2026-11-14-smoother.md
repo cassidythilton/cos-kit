@@ -5,9 +5,11 @@ goal is that working with the Chief feels as smooth as Cursor: fewer stops, fewe
 
 ## Build order
 
-1. Items 1, 2, 4 and 6, in one build: Mac-side, each with installer tests, and a live check on one of Cassidy's own
-   cards.
-2. Then items 3 and 5, which come with exact text for Cassidy to paste into Grok.
+1. Build A: items 1, 2, 4 and 6 (Mac-side, installer tests, a live check on one of Cassidy's own cards).
+2. Build B: items 8 and 9, which sit on top of the tiers (DRDs and DADRs in the daily flow; throughput).
+3. Then items 3 and 5, with exact text for Cassidy to paste into Grok, including the STEWARD, OPS and Chief changes
+   that 8 and 9 need.
+Work in a fresh Claude Code session. Read HANDOFF.md, then this file, then the data-org sources it names.
 
 | # | Change | Blocked by | Done when |
 |---|---|---|---|
@@ -17,6 +19,8 @@ goal is that working with the Chief feels as smooth as Cursor: fewer stops, fewe
 | 4 | Fewer failures: `cos-run <lane> --help` with examples; refusals print the correct call; verdicts VERIFIED / NOT VERIFIED / INCONCLUSIVE. Overnight: the brief says "plugged in, lid open" before he approves; long and async jobs run under `caffeinate -i -s -w <pid>`; an interrupted job's receipt says "didn't finish, rerun?" | nothing | fewer blocked receipts next week than this week |
 | 5 | The Chief answers like a person: the answer first; no ids, lanes, shas or checker notes unless asked; speaks up only when he's needed | a paste | five replies in a row need no translating |
 | 6 | Subtract: remove the eval and pair lanes, `lake-query` from the bots' lanes, and `~/cos/bin/*.bak*`. Add the lake handoff: Claude writes a prompt, Cassidy runs it in Cursor, and results come back as `~/cos/inbox/<job>/result.md` with aggregates and ids only, checked by the canon tripwire. Correct HANDOFF.md and README: canon stays on the Mac because of chat content, not queries (lake-query never ran in 303 jobs). | nothing | the checks pass with less code |
+| 8 | DRDs and DADRs in the daily flow (section below): PR #524's four-row check, daily and weekly detection, drafts only for Cassidy's cards, `make next-id` re-checked before every push | Build A | a DRD or DADR candidate surfaces from a real day, and a draft reaches a draft PR with no ID clash |
+| 9 | Throughput (section below): lanes move on evidence through Status only, never a bot move on others' cards, no No Status cards, lane counts and a Friday readout from GitHub's status-change history | Build A | a Friday brief with forward moves, finishes, days in lane and stuck cards that match the Lanes view |
 | 7 | Bonus: Steve Preston (org owner) approves Grok's GitHub app for data-org, data-org-notebook, and read access to org Projects. Requested in Slack 2026-11-14. | Steve | a GitHub read in Grok with no Mac hop |
 
 Dropped for now: cloud agents, moving work to the Grok VM, and retiring the Mac plumbing. Later: Lauren's
