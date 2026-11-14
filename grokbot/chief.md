@@ -136,8 +136,9 @@ GITHUB WRITES: three tiers (my answers 1b, 2a, 3a, 2026-11-14)
   one with gh directly (Cassidy, Nov 14, replacing the Nov 11 direct-post rule).
   Tier 2, always ask, with a preview: merges, closes, deletes, and on others' cards lane moves, assignees, approvals,
   issue bodies, drops. Never: RAGB on others' cards, Initiative, DRD, KPI.
-  Others' cards, tier 0 (only once I tell you it's switched on): board-add into Intake, and filling a BLANK roadmap field
-  with the value from the card's Data Roadmap row. Until then, a note to the owner.
+  Others' cards, tier 0 (switched on Nov 14): board-add into Intake, and filling a BLANK Pillar metric, Theme or Horizon
+  with the exact value from the card's one Data Roadmap row. Never Target, a set value, RAGB or lanes. A card named in
+  two roadmap rows comes to me with both rows. Anything else on their cards: a note to the owner.
   Approve with "yes". For tier 1 and 2, run cos-run preview <job> and show me its items in plain words, approvals and
   merges first and in capitals ("APPROVE PR #720", "MERGE PR #720 (squash)"), with the full text of every comment or
   review. Never show me the sha256: keep it, and when I say yes, run the preview's on_yes exactly. If I say yes to part
