@@ -28,9 +28,8 @@ Last checked: 2026-11-14 (sources table); data-org rules last checked 2026-11-09
 | Project 1, the Data Org Initiatives board | cards, lanes, RAGB, owners, Targets | `make` targets and `gh` in `~/cos/data-org-main` | through the Chief and cos-run | writes only by an approved `apply` batch |
 | Data Roadmap sheet `1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM` | roadmap rows, themes, horizons, targets | Sheets connector, read-only; writes only through `cos-run apply-sheet` (approved cells, enforced by the gate) | Google Sheets app, read-only | a job stages sheet.json; Cassidy approves its sha256; J links stay paste text |
 | GitHub repos: data-org, data-org-notebook, food-enrichment, WISEintelligence | code, DRDs, DADRs, PRs | `gh`, git (fresh origin/main) | GitHub app (failed on data-org before; use the Mac) | no comments, merges or closes without Cassidy's yes |
-| Meeting notes and transcripts `~/meetings` | what was said, with timestamps | direct read; the `meeting-analyst` agent and `meeting-reanalysis` skill | through cos-run | a call claim needs the full transcript and a timestamp |
-| Zoom transcript exports `~/Documents/Zoom` (primary), mirrored to `~/cos/zoom` by ZoomMirror.app; jobs read the mirror | calls not in `~/meetings` | direct read | through cos-run | same |
-| Zoom web (Cassidy's account) | a call missing from both folders | no | last resort, see section 4 | one named meeting, transcript only, ask first |
+| Zoom transcript exports `~/Documents/Zoom` (primary), mirrored to `~/cos/zoom` by ZoomMirror.app; jobs read the mirror | calls: what was said, with timestamps | direct read; the `meeting-analyst` agent and `meeting-reanalysis` skill | through cos-run | a call claim needs the full transcript and a timestamp |
+| Zoom web (Cassidy's account) | a call on his calendar missing from `~/cos/zoom` | no | the Chief, see section 4 | transcript file only; standing for calendar calls, ask first for any other |
 | Slack | asks, blockers, commitments, decisions in thread | Slack connector, read and search only | Slack app (posts as Cassidy: drafts only) | channel list in section 3 |
 | Zendesk intake | customer-reported issues | `make intake-holders`, `make intake-sweep` (dry run); `#customer-new-issues` | through cos-run | a close notifies the customer: never by an agent |
 | Warehouse (app Postgres) and The Pantry (DuckLake) | the data | `cos-run lake` only, after Cassidy's yes: a Cursor agent runs `lake-query` (VPN, `<env>-laker` SSO) | never | canon: aggregates and IDs only; read-only always |
@@ -61,12 +60,21 @@ Channels that appear in his work but not in his membership list (for example the
 
 ## 4. Getting a call transcript: the escalation ladder
 
-1. `~/meetings/<date>-<slug>.md`: the note and its transcript.
-2. `~/cos/zoom/<meeting name>.txt`.
-3. Ask Cassidy whether a transcript exists, and where.
-4. **Last resort: Zoom web.** Only when steps 1 to 3 fail, only for one named meeting, and only after Cassidy says yes to that meeting. The Chief opens zoom.us in the Bots' browser, signed in as Cassidy (a Vault or 1Password login, or he takes over for single sign-on). It goes to Recordings, finds that meeting's cloud recording, and downloads the transcript file only (`.vtt` or `.txt`), never the video or audio. It moves the file to `~/cos/zoom/` on the Mac (an approval card), then deletes its copy from the Bots' computer, which every Bot shares. It never changes Zoom settings, shares a recording link, or opens a meeting it wasn't asked for. Then the job that needed it re-runs from step 2.
+Cassidy no longer uses `~/meetings` (2026-11-13). Never check it or flag it as stale.
 
-A Mac job never logs into Zoom. When it needs a missing transcript, it returns status `blocked` with "needs transcript: <meeting, date>", and the Chief offers step 3 or 4.
+1. `~/cos/zoom/<meeting name>.txt`, copied from `~/Documents/Zoom` by ZoomMirror. Match by meeting time as well as
+   title: Zoom may keep or replace odd characters in a title. A transcript counts only if its clock times fall in the
+   meeting slot.
+2. **Zoom web, for a call on his calendar** (standing rule, 2026-11-12; no per-meeting yes). The Chief opens his Zoom
+   account in the Bots' browser, where he is signed in, goes to Recordings, finds that meeting's cloud recording, and
+   downloads the transcript file only (`.vtt` or `.txt`), never the video or audio. It copies the file to
+   `~/Documents/Zoom` on the Mac (ZoomMirror puts it in `~/cos/zoom`), then deletes its copy from the Bots' computer,
+   which every Bot shares. It never changes Zoom settings, shares a recording link, or opens a meeting it wasn't asked
+   for. Then the job that needed it re-runs from step 1. If Zoom has no transcript, the job says "no transcript found".
+3. A meeting not on his calendar: ask Cassidy whether a transcript exists, and where, before step 2.
+
+A Mac job never logs into Zoom. When it needs a missing transcript, it returns status `blocked` with "needs
+transcript: <meeting, date, start time>", and the Chief takes step 2 (or 3).
 
 ## 5. What crosses which wire
 

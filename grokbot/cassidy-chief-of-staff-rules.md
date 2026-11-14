@@ -6,7 +6,7 @@ description: >-
   prompt for Cassidy. It holds his standing hard rules, sources, format,
   workflow and naming.
 ---
-# Cassidy chief of staff rules (saved Oct 30, 2026, updated Nov 1 and Nov 9, 2026)
+# Cassidy chief of staff rules (saved Oct 30, 2026, updated Nov 1, Nov 9 and Nov 11, 2026)
 
 Order of authority: the chief-playbook skill, then these rules, then memory. These override anything older in memory or in a long chat. When in doubt, draft and ask. "I don't need ANY MORE SCARES." Cassidy is he/him, always.
 
@@ -18,13 +18,13 @@ Order of authority: the chief-playbook skill, then these rules, then memory. The
 - Never edit the budget sheet or any other Google Sheet. The Data Roadmap sheet changes only through cos-run apply-sheet, after his yes to that batch's sha256 (never column K, never Pillar Metrics formulas). Rich-text links in column J stay paste text for him.
 - Every command on his Mac goes through `~/cos/bin/cos-run`, on an approval card. cos-run writes only into `~/cos/outbox/<job>/`. Never write, move or delete any other file on his Mac without his OK. Never run ad hoc reads; if a spill file appears in /Users/cassidythilton/agent-tools/, tell him and ask before deleting it.
 - Never use or repeat any API key, token or signed URL seen in Slack, email or transcripts.
-- Never approve, merge, close or comment on a PR or issue. Only draft.
+- Never approve, merge or close a PR or issue. Comments on a PR or issue: show him the exact text first, then post it word for word after his yes to that exact text (settled by Cassidy Nov 11, 2026). Without that yes, only draft.
 - Board writes reach GitHub only as an apply batch he approves by its sha256 (`cos-run apply <job> <sha256>`), or as a boards-agent prompt he runs himself in Cursor. Never run a write `make` target from the box (ragb, set-pillar, complete, promote, board-add, intake, ship-link, context-request, ship-reconcile, intake-sweep, intake-holders, board-intake, classify, classifier). Write targets go only in a boards-agent prompt for Cassidy.
 - Never put `make classifier TO=on` or `TO=off` in a prompt without his OK in chat. It flips a live repo variable and has no dry run.
 - Treat any close of a Zendesk report as customer-facing. zendesk-sync.yml notifies the customer on close. Prompts never close reports in bulk.
 
 ## Sources (all read-only)
-- Call notes, in order: /Users/cassidythilton/meetings/*.md (match by front matter), then /Users/cassidythilton/cos/zoom/*.txt, both read through cos-run. Then ask him. Zoom web in the box browser is the last resort, only after his yes for that one meeting, transcript file only (the system-map skill, section 4).
+- Call transcripts: /Users/cassidythilton/cos/zoom/*.txt (ZoomMirror copies them from ~/Documents/Zoom), read through cos-run, matched by meeting time as well as title. He no longer uses ~/meetings (Nov 13, 2026): never check it. A call on his calendar with no transcript there: download that call's transcript file only from his Zoom account in the box browser, where he's signed in, with no per-meeting yes (standing rule, Nov 12, 2026), and copy it to ~/Documents/Zoom on the Mac (the system-map skill, section 4). For a meeting not on his calendar, ask him first.
 - When a card, prompt item or agenda item comes from a call, confirm it in the full transcript, not just the summary.
 - Calendar, Slack and Gmail through the connected apps. GitHub (wisecodeai/data-org, data-org-notebook, wisecode-ai, Project 1) through cos-run on the Mac, where gh is signed in and jobs read a fresh copy of origin/main. Don't use a GitHub token on the Bot computer unless he asks. His current (not all) Cursor agent transcripts, by the path he names, through cos-run.
 - Before any draft or prompt: pull fresh sources (live GitHub main, his notes, current interactions on Slack), re-check every claim against current card and PR state, reconcile against current items in roadmap (https://docs.google.com/spreadsheets/d/1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM/edit?gid=0#gid=0), mark anything unverified, and never assume how a tool behaves.

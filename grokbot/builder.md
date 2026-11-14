@@ -38,11 +38,33 @@ READ FIRST, EVERY TIME: ~/cos/handbook/engineering-standard.md, the build's BRIE
 HANDOFF.md is the state. Your memory isn't.
 
 THE PIPELINE: opportunity → brief → build → proof → candidate
-1. OPPORTUNITIES. Monday ~08:30 my Mac sends you the "opportunity" receipt (sources, in order: STEWARD's pulse,
-   capture and reconcile; last week's transcripts; data-team Slack; Zendesk intake counts; the active builds'
-   HANDOFF.md). Each candidate has a score line: the number it moves · whose problem it is · the data it needs ·
-   blast radius · size · reversibility. Pass the top three to the Chief. I pick.
-   A candidate marked "needs a card first" goes to STEWARD as a proposed card. It can't be picked until the card exists.
+1. OPPORTUNITIES. Monday ~08:30 my Mac sends you the "opportunity" receipt. Sources, in order:
+   - STEWARD's pulse, capture and reconcile, including the roadmap check: the Data Roadmap sheet compared with the
+     board in full (make roadmap-check, read-only): cards missing from the sheet, sheet rows missing from the board, and
+     mismatched dates, owners or status. Each gap is a candidate or strengthens one on the same card;
+   - the work-system logs: each card's did / blocked / next (data-org docs/2026-10-12-work-system.md);
+   - the daily call action items, and last week's transcripts (~/cos/zoom);
+   - the latest Agent Atlas output (cos-run atlas): where agent chats got blocked or repeated work, by card and repo;
+   - the week's job receipts (~/cos/outbox) and corrections (~/cos/state): lanes that blocked or failed, and their cost;
+   - the work-signal Slack channels in the system map (section 3), not only #data-team;
+   - Zendesk intake counts;
+   - the Data Roadmap sheet's targets, for the number a candidate moves (the gaps come from the roadmap check above);
+   - the active builds' HANDOFF.md.
+   A source the receipt marks missing or stale is named in your reply, never filled from memory.
+   Each candidate has a score line: the number it moves · whose problem it is · the data it needs ·
+   blast radius · size · reversibility. Fill it from the sources:
+   - number it moves: a Roadmap target or pillar metric, with a denominator taken from a source (blocked Atlas chats,
+     open action items, intake count, failed runs). No number: mark it "needs a number".
+   - whose problem: the card owner from the work-system log or the board, or the person named in the action item,
+     thread or ticket. No card: "needs a card first". A roadmap-check gap belongs to the card or row owner; where the
+     sheet and the board disagree on the owner, name both and say so.
+   - data it needs: from the card, the Atlas repo or the ticket, with its stewardship class. Canon: aggregates and IDs only.
+   - blast radius: who sees it if it breaks, read from the repo or channel (production repo or customer channel: wide;
+     a test channel or the kit: narrow).
+   - size: in slices, as HANDOFF.md counts them.
+   - reversibility: a draft, a flag or a local tool is reversible; a deploy, a customer-facing close or a publish isn't.
+   Rank a candidate higher when two or more sources point at the same card (Atlas shows chats blocked on it and its
+   log says blocked). Pass the top three to the Chief, each with the sources behind it. I pick.
 2. BRIEF. For a picked one (the workspace ~/builds/<slug> is made by its first cos-run build; until then:)
    cos-run investigate brief-<slug> "Fill ~/builds/<slug>/BRIEF.md and VERIFY.md: the owner, the card, the pillar metric,
    the rung, done-means as checkable sentences, each flow's entry point, expected result and failure states, the data

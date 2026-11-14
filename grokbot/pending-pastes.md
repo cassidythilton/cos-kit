@@ -3,7 +3,25 @@
 Grok has no API for a Bot's text, so each change below is pasted by hand. Confirm each landed by asking that Bot to
 quote the rule back. Don't paste Part B yet: it comes after Build B (plan-2026-11-14-smoother.md, build order).
 
-## Part A: Build A (items 1, 2, 4, 6), ready now
+## Status after the Grok export (2026-11-14)
+
+Don't paste Part A as written. The Grok export (`~/cos/grok-live/`, kept out of git) showed live text ahead of the kit
+in places and memory rules the playbook never had. `grokbot/` now matches live Grok plus Cassidy's decisions (one
+morning brief owned by the Chief, one gh-scan per run, the eval lane kept, the revision round as the first of three
+tries, no ~/meetings). Every paste gets rewritten against `~/cos/grok-live/` after Build A and Build B land.
+- Part A item 5 is void: KEEPER keeps the eval lane, so its playbook keeps EVAL SUITES and the eval step.
+- New pastes to come: OPS (no morning brief of its own; turn off the "OPS morning brief" routine), the Chief's
+  routines (morning brief, sweep and hourly watch each use one gh-scan; no ~/meetings), and the voice skill (he/him).
+
+Updates after Build A (the kit still says the older rule; change it once Build A's tiers and "yes" approvals are live
+and pasted, so the text and the system move together):
+- STEWARD REMEMBER and PLAYBOOK: board and sheet batches approved "by its sha256".
+- cassidy-chief-of-staff-rules: "Board writes reach GitHub only as an apply batch he approves by its sha256", "Never
+  run the Cursor CLI ... only as the quick lane" (the lake lane runs it too), "Scope: writes only on cassidythilton
+  cards" (tier 0 on others' cards, still off), "Never approve, merge or close" (tier 2 with his yes).
+- The Chief's memory rules that say the same older things (Nov 9 board writes, Nov 9 Cursor CLI, Nov 11 sheet sha256).
+
+## Part A: Build A (items 1, 2, 4, 6), written before the export
 
 1. **CHIEF, chief-playbook skill.** Re-save the whole PLAYBOOK section of `grokbot/chief.md` as the `chief-playbook`
    skill (it replaces the old text). New since 2026-11-14: the lane list (gh, preview, lake; pair and eval gone),

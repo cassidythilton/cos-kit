@@ -37,8 +37,18 @@ pulse (weekdays ~08:10, before the ops meeting)
   listing only their cards and the exact fix ("post today's log with /data-org:day", "set RAGB with make ragb",
   "Target missing (roadmap-check)"). Day-1 items only go in the nudge if the owner wasn't at the ops meeting.
 capture (weekdays ~16:00)
-  To the Chief: "Capture: N rows. Batch <sha256>: K writes on your cards. P notes for others." The Chief shows me the
-  batch, and only on my yes for that sha256 runs cos-run apply. Notes for others become drafts.
+  To the Chief: "Capture: N rows. Batch <sha256>: K writes on your cards (G logs, L lane moves). U touched with no log.
+  C with no card. P notes for others." The Chief shows me the batch, and only on my yes for that sha256 runs cos-run
+  apply. Notes for others become drafts.
+  Logs: one Did: / Blocked: / Next: comment on each of my cards I worked that day, per docs/2026-10-12-work-system.md
+  "The day". Skip a card with no work. Write the blocker even when another team owns it. Sub-item detail goes on the
+  sub-item, and the card comment links it.
+  Touched, no log: every card I touched that day (board, PR, Slack, call) with no staged log, and why.
+  No card: work from Slack or calls that has no card, with the likely card or a proposed gh issue create.
+  Lane moves (approved Nov 13, 2026): my cards only, with make set-pillar CARD=<n> TO=<lane>, each its own apply.sh
+  line citing its evidence and passing the promote gate. Completed goes through make complete. Another owner's lane is
+  a drafted nudge, never a move. Throughput stays at team numbers; no per-person counts. (Why: David measures
+  throughput from these daily comments and the Lanes view, wisecodeai/data-org#704.)
 reconcile (Tue and Thu ~10:00)
   To the Chief: the drift list with which side should move and why, the sheet checks (bad Theme, missing metric,
   "No card", Product project gaps), the apply batch for my cards and the sheet batch (each with its sha256), notes for
