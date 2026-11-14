@@ -27,6 +27,8 @@ FIELDS = ("Pillar metric", "Theme", "Horizon", "Target")
 SHEET_COL = {"Pillar metric": "I", "Theme": "C", "Horizon": "E"}  # Target is never copied from the row (roadmap skill)
 LANES = ("Intake", "Discovery", "Defining", "Shipping", "Delivery Prep")  # tier 0 moves; finishes and drops are not
 JOB_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,60}$")
+# cos-run execs this before it puts ~/cos/bin on PATH, so cos-link, cos-push-draft and cos-flow are found here.
+os.environ["PATH"] = f"{COS}/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
 REF_RE = re.compile(r"^(?:(?:wisecodeai/)?([A-Za-z0-9._-]+))?#([0-9]+)$")
 
 HELP = """cos-run gh: tier-0 GitHub writes, done without asking, each in the ledger with its undo.
@@ -45,7 +47,14 @@ Actions on Cassidy's own cards and PRs (he is an assignee, or the author of an u
   lane      <card> <Intake|Discovery|Defining|Shipping|Delivery Prep> --evidence "<GitHub link>"
   create    <repo> --title "<title>" --body-file <job folder>/<file>.md [--label <l>]... [--milestone "<m>"] --evidence "<when he dictated it>"
   draft-pr  <repo> <cassidy/branch> --title "<title>" --body-file <job folder>/<file>.md
+                                            a DRD or DADR: the ID in the title ("DRD-00NN (Draft): ..."), re-checked
+                                            against every open PR first; a DRD's body says Closes, a DADR's Refs
   push      <draft-job>                     a reviewed draft onto its cassidy/* base (cos-push-draft)
+  push      <draft-job> --branch cassidy/<issue>-<topic>
+                                            a reviewed DRD or DADR draft (cos-run draft --doc) onto a new branch of
+                                            his, after make next-id and a check of every open PR say the ID is free
+  handoff   <job folder>/<file>             a Cowork handoff block (its handoff skill): runs the tier-0 lines through
+                                            the actions above and refuses the rest, naming each line's tier
 
 Actions on anyone's card on Project 1 (off until Cassidy switches it on; see standing-approvals.json):
   board-add <card>                          Intake only
@@ -53,6 +62,8 @@ Actions on anyone's card on Project 1 (off until Cassidy switches it on; see sta
                                             only a BLANK field, only the row's value (or the parent's Pillar metric)
 
 Reading and undoing:
+  whose <card>      who owns a card, read live (no write)
+  doc-guard <diff>  what a draft diff adds to drd/ and dadr/, and whether it must be blocked (no write)
   undo  <ref>       runs a ledger row's undo, after checking nobody changed the value since
   today             today's tier-0 rows in plain words, for the evening brief ("Done without asking")
   plain <apply.sh>  a staged batch in plain words with each line's tier, for an approval in words
@@ -65,6 +76,8 @@ Examples:
   cos-run gh t0-712-lane lane data-org#712 Defining --evidence https://github.com/wisecodeai/data-org/pull/681
   cos-run gh t0-undo-1 undo t0-20261114-104233-3f9a
   cos-run gh brief today
+  cos-run gh t0-push-drd push drd-712 --branch cassidy/712-label-facts
+  cos-run gh t0-ho-1 handoff ~/cos/outbox/t0-ho-1/handoff.sh
 
 Refused here, with the tier that applies instead:
   tier 1 (one yes): comments, review replies, RAGB, make complete, marking a PR ready, requesting a review, replacing a
@@ -378,6 +391,7 @@ def plan(job, action, args, opts):
         if not title or not body:
             raise Refuse(f"draft-pr needs --title and --body-file. {usage}", code=64)
         body_ok(job, body)
+        doc_pr_ok(repo, branch, title, body)
         heads = run(["git", "ls-remote", "--heads", f"https://github.com/{ORG}/{repo}.git", branch], check=False).stdout.strip()
         if not heads:
             raise Refuse(f"{branch} isn't on GitHub. Push it first (cos-run gh <job> push <draft-job>).", code=65)
@@ -399,6 +413,8 @@ def plan(job, action, args, opts):
             raise Refuse(f"no draft receipt for {dj}.", code=66)
         base = ((rec.get("draft") or {}).get("base") or "").replace("origin/", "", 1)
         sha = (rec.get("draft") or {}).get("sha256") or ""
+        if opts.get("branch"):
+            return plan_doc_push(job, dj, rec, base, sha, opts["branch"])
         if not base.startswith("cassidy/"):
             raise Refuse(f"{dj}'s base is {base or 'unknown'}, not one of Cassidy's branches; a push there is never tier 0.", tier=2)
         if (rec.get("checker") or {}).get("verdict") != "pass":
@@ -408,6 +424,110 @@ def plan(job, action, args, opts):
                     sentence=f"Pushed draft {dj} onto {base} (fast-forward, the reviewed diff)")
 
     refuse_tier(action)
+
+
+DOC_FILE = re.compile(r"^(drd|dadr)/((DRD|DADR)-(\d{4}))-[^/]*\.md$")
+
+
+def doc_guard(path):
+    """What a draft diff does to drd/ and dadr/: new ids, files touched, and a reason to block (a status flipped to
+    Approved or accepted; a new DRD and a new DADR in one diff). Read-only."""
+    try:
+        text = open(os.path.expanduser(path), errors="replace").read()
+    except FileNotFoundError:
+        raise Refuse(f"no diff at {path}", code=66)
+    cur, new_file, prev_minus = "", False, ""
+    new_ids, touched, flips = [], set(), []
+    for line in text.splitlines():
+        if line.startswith("--- "):
+            prev_minus = line[4:]
+        elif line.startswith("+++ "):
+            cur = line[6:] if line.startswith("+++ b/") else ""
+            new_file = prev_minus == "/dev/null"
+            m = DOC_FILE.match(cur)
+            if m:
+                touched.add(cur)
+                if new_file:
+                    new_ids.append(m.group(2))
+        elif line.startswith("+") and DOC_FILE.match(cur) and re.match(r"^\+status:\s*[\"']?(Approved|accepted)\b", line, re.I):
+            flips.append(cur)
+    kinds = {i.split("-")[0] for i in new_ids}
+    block = ""
+    if flips:
+        block = f"the draft sets status to Approved or accepted in {', '.join(sorted(set(flips)))}; no job does that (the CDO ratifies)."
+    elif len(kinds) > 1:
+        block = f"the draft adds a DRD and a DADR ({', '.join(new_ids)}); they go in separate PRs (work system)."
+    elif len(new_ids) > 1:
+        block = f"the draft adds {len(new_ids)} new docs ({', '.join(new_ids)}); one document per draft PR."
+    return {"new_ids": new_ids, "touched": sorted(touched), "flips": sorted(set(flips)), "block": block}
+
+
+def flow_next_id(doc_id, head=None):
+    kind, num = doc_id.split("-")
+    argv = [f"{COS}/bin/cos-flow", "next-id", kind, num, "--json"] + (["--head", head] if head else [])
+    p = run(argv, check=False)
+    try:
+        return json.loads(p.stdout)
+    except Exception:
+        raise Refuse(f"couldn't check whether {doc_id} is free (cos-flow next-id: {(p.stderr or p.stdout).strip()[-200:]}). Nothing pushed.", code=1)
+
+
+def plan_doc_push(job, dj, rec, base, sha, branch):
+    usage = f"cos-run gh {job} push {dj} --branch cassidy/712-label-facts"
+    doc = (rec.get("draft") or {}).get("doc") or {}
+    if not doc:
+        raise Refuse(f"{dj} isn't a DRD or DADR draft (cos-run draft --doc). --branch is only for those. {usage}", code=64)
+    if base != "main":
+        raise Refuse(f"{dj} was drafted from {base}, not main; a new doc branch starts from main.", tier=2)
+    if not re.match(r"^cassidy/\d+-[a-z0-9][a-z0-9._-]{0,60}$", branch):
+        raise Refuse(f"the branch is cassidy/<issue>-<topic> (data-org's rule). {usage}", code=64)
+    if (rec.get("checker") or {}).get("verdict") != "pass":
+        raise Refuse(f"{dj} didn't pass its checker, so it isn't pushed without Cassidy's yes (tier 1).", tier=1)
+    if (rec.get("draft") or {}).get("blocked") or (rec.get("receipt") or {}).get("status") == "blocked":
+        raise Refuse(f"{dj} is blocked: {(rec.get('draft') or {}).get('blocked') or 'see its receipt'}", code=65)
+    c = card(doc.get("card", ""))
+    if not mine(c):
+        raise Refuse(f"{c['ref']} is {owner_words(c)}'s card. Drafts are for Cassidy's cards only.", tier="never")
+    g = doc_guard(f"{COS}/outbox/{dj}/draft.diff")
+    if g["block"]:
+        raise Refuse(g["block"], code=65)
+    if not g["new_ids"]:
+        raise Refuse(f"{dj}'s diff adds no new DRD or DADR file; nothing to claim an ID for.", code=65)
+    nid = flow_next_id(g["new_ids"][0])
+    if not nid.get("free"):
+        raise Refuse(f"{nid.get('says')} Nothing pushed.", code=65)
+    heads = run(["git", "ls-remote", "--heads", f"https://github.com/{ORG}/data-org.git", branch], check=False).stdout.strip()
+    if heads:
+        raise Refuse(f"{branch} already exists on GitHub. A new doc goes on a new branch; pick another topic.", code=65)
+    return dict(card={"ref": f"data-org:{branch}", "repo": "data-org", "n": 0, "title": branch}, what="push", old="no branch",
+                new=sha, noop=False, write=[["cos-push-draft", dj, sha, branch]], undo=None, create=True, check=None, undo_check=None,
+                evidence=f"{g['new_ids'][0]} free: {nid.get('says')}",
+                sentence=f"Pushed draft {dj} ({g['new_ids'][0]}, for {c['ref']}) to a new branch {branch}")
+
+
+def doc_pr_ok(repo, branch, title, body):
+    """A draft PR for a DRD or DADR: the ID in the title, the right linkage words, and the ID still free."""
+    m = re.match(r"^(DRD|DADR)-(\d{4})\b", title)
+    files = []
+    if repo == "data-org":
+        p = run(["gh", "api", f"repos/{ORG}/data-org/compare/main...{branch}", "--jq", ".files[].filename"], check=False)
+        files = [f for f in p.stdout.split() if DOC_FILE.match(f)]
+    if not m:
+        if files:
+            raise Refuse(f"{branch} adds or changes {', '.join(files)}: put the ID in the title, '<ID> (Draft): <title>', so people see the claim.", code=64)
+        return
+    if not re.match(r"^(DRD|DADR)-\d{4} \((Draft|proposed)\): \S", title):
+        raise Refuse("a doc PR's title is '<ID> (Draft): <title>' (plan item 8).", code=64)
+    txt = open(os.path.realpath(os.path.expanduser(body))).read()
+    if "Tile: #" not in txt:
+        raise Refuse("the PR body names the card as 'Tile: #<n>' (work system).", code=64)
+    if m.group(1) == "DRD" and not re.search(r"\bCloses #\d+", txt) and not re.search(r"no DRD sub-item", txt, re.I):
+        raise Refuse("a DRD PR's body says 'Closes #<its DRD sub-item>' (or that there is none).", code=64)
+    if m.group(1) == "DADR" and (re.search(r"\bCloses #\d+", txt) or not re.search(r"\bRefs #\d+", txt)):
+        raise Refuse("a DADR PR's body says 'Refs #<card>', never Closes: the DADR card closes when the deciders choose.", code=64)
+    nid = flow_next_id(f"{m.group(1)}-{m.group(2)}", head=branch)
+    if not nid.get("free"):
+        raise Refuse(f"{nid.get('says')} No PR opened.", code=65)
 
 
 def body_ok(job, body):
@@ -517,6 +637,198 @@ def do(job, action, args, opts):
     rec = {"job": job, "lane": "gh", "receipt": {"status": "done" if ok else "partial", "verdict": verdict, "summary": summary}, "tier0": row}
     receipt(job, rec)
     return 0 if ok else 1
+
+
+# ------------------------------------------------------------------ a Cowork handoff block (plan item 8)
+def handoff_entries(text):
+    """Split a pasted block into commands: comments and blanks go, backslash lines join, a heredoc stays with its command."""
+    lines, out, i = text.splitlines(), [], 0
+    while i < len(lines):
+        ln = lines[i].rstrip()
+        while ln.endswith("\\") and i + 1 < len(lines):
+            i += 1; ln = ln[:-1] + " " + lines[i].strip()
+        body = None
+        m = re.search(r"<<-?\s*['\"]?(\w+)['\"]?", ln)
+        if m:
+            term, buf = m.group(1), []
+            i += 1
+            while i < len(lines) and lines[i].strip() != term:
+                buf.append(lines[i]); i += 1
+            body = "\n".join(buf)
+            i += 1
+            if i < len(lines) and lines[i].strip() in (")\"", ")'", ")"):
+                i += 1  # the close of "$(cat <<'EOF' ... EOF )"
+        else:
+            i += 1
+        st = ln.strip()
+        if st and not st.startswith("#"):
+            out.append((st, body))
+    return out
+
+
+def kv(argv):
+    return {a.split("=", 1)[0]: a.split("=", 1)[1] for a in argv if "=" in a and re.match(r"^[A-Z_]+=", a)}
+
+
+def handoff_plan(line, body, job, opts):
+    """One handoff line -> ("run", action, args, extra opts) | ("refuse", tier, why) | ("skip", why)."""
+    if line.startswith("DRY_RUN=1 "):
+        return ("skip", "a preview; cos-run gh previews each write itself")
+    if re.search(r"status:\s*(Approved|accepted)|TO=Approved", line, re.I):
+        return ("refuse", "never", "flipping a status to Approved or accepted: no job does that; the CDO ratifies")
+    head = line.split("<<")[0]
+    if body is None and re.search(r"(;|&&|\|\||\||`|\$\(|>)", line):
+        return ("refuse", 2, "more than one command, or a shell expansion: show Cassidy the line itself")
+    import shlex
+    try:
+        argv = shlex.split(head.replace('"$(cat', "").replace("$(cat", ""))
+    except ValueError:
+        return ("refuse", 2, "a line that doesn't parse: show Cassidy the line itself")
+    if not argv:
+        return ("skip", "empty")
+    if argv[0] == "git":
+        return ("refuse", 0, "git works on the files in the checkout where Cowork wrote them, which jobs on this Mac can't see. "
+                             "Run it there, or ask the Chief for a draft job (cos-run draft --doc) and push that")
+    if argv[0] == "make":
+        t = argv[1] if len(argv) > 1 else ""
+        a = kv(argv[2:]); repo = a.get("IN", "data-org")
+        if t in ("next-id", "doctor", "board", "gate", "stale", "socialize", "raqs", "roadmap-check", "ship-check", "lint-writing"):
+            return ("skip", f"make {t} is read-only; cos-run gh re-checks IDs and cards before each write")
+        if t == "set-pillar" and a.get("CARD") and a.get("TO"):
+            return ("run", "lane", [f"{repo}#{a['CARD']}", a["TO"]], {})
+        if t == "field" and a.get("CARD") and a.get("FIELD") and a.get("TO"):
+            return ("run", "field", [f"{repo}#{a['CARD']}", a["FIELD"], a["TO"]], {})
+        if t == "board-add" and a.get("URL"):
+            m = re.match(r"^https://github\.com/wisecodeai/([A-Za-z0-9._-]+)/(issues|pull)/(\d+)$", a["URL"])
+            if not m:
+                return ("refuse", 2, "board-add of something outside wisecodeai")
+            return ("run", "board-add", [f"{m.group(1)}#{m.group(3)}"] + ([a["PILLAR"]] if a.get("PILLAR") else []), {})
+        tiers = {"complete": (1, "make complete"), "ragb": (1, "RAGB"), "ship-link": (1, "make ship-link (files and boards an effort)"),
+                 "context-request": (1, "a context request to the CDO"), "promote": (2, "make promote (it closes the issue)"),
+                 "intake": (0, "make intake isn't in the tier-0 list; a card he dictated is filed with cos-run gh create, from a body file"),
+                 "scaffold": (0, "make scaffold writes a doc file in a checkout; ask the Chief for a draft job (cos-run draft --doc)")}
+        if t in tiers:
+            return ("refuse",) + tiers[t]
+        return ("refuse", 2, f"make {t} isn't a target cos-run knows")
+    if argv[0] == "gh" and len(argv) > 2:
+        sub = f"{argv[1]} {argv[2]}"
+        def repo_of():
+            if "--repo" in argv and argv.index("--repo") + 1 < len(argv):
+                r = argv[argv.index("--repo") + 1]
+                return r.split("/", 1)[1] if r.startswith("wisecodeai/") else None
+            return "data-org"
+        if sub == "issue edit" and len(argv) > 3 and argv[3].isdigit():
+            r = repo_of()
+            if not r:
+                return ("refuse", 2, "an edit outside wisecodeai")
+            acts, k = [], 4
+            while k < len(argv):
+                f = argv[k]
+                if f == "--repo":
+                    k += 2; continue
+                if f in ("--add-label", "--remove-label", "--add-assignee", "--remove-assignee", "--milestone", "--remove-milestone"):
+                    if f == "--remove-milestone":
+                        acts.append(("milestone", [f"{r}#{argv[3]}", "none"])); k += 1; continue
+                    if k + 1 >= len(argv):
+                        return ("refuse", 2, f"{f} with no value")
+                    v = argv[k + 1]
+                    if f == "--milestone":
+                        acts.append(("milestone", [f"{r}#{argv[3]}", v]))
+                    else:
+                        verb, what = f[2:].split("-", 1)
+                        for one in v.split(","):
+                            acts.append((what, [f"{r}#{argv[3]}", verb, one]))
+                    k += 2; continue
+                if f in ("--body", "--body-file", "--title"):
+                    return ("refuse", 2, "an issue body or title edit")
+                return ("refuse", 2, f"gh issue edit {f} isn't a tier-0 edit")
+            return ("multi", acts)
+        if sub == "pr create":
+            if "--draft" not in argv:
+                return ("refuse", 1, "opening a ready PR can request reviews, which notifies people. As --draft from a cassidy/ branch it's tier 0")
+            hd = argv[argv.index("--head") + 1] if "--head" in argv and argv.index("--head") + 1 < len(argv) else ""
+            ti = argv[argv.index("--title") + 1] if "--title" in argv and argv.index("--title") + 1 < len(argv) else ""
+            if not hd or not ti:
+                return ("refuse", 0, "a draft PR needs --head <cassidy/branch> and --title; the line names neither the branch nor both")
+            r = repo_of() or ""
+            if not r:
+                return ("refuse", 2, "a PR outside wisecodeai")
+            bf = argv[argv.index("--body-file") + 1] if "--body-file" in argv and argv.index("--body-file") + 1 < len(argv) else ""
+            if body is not None:
+                d = f"{COS}/outbox/{job}"; os.makedirs(d, exist_ok=True)
+                bf = f"{d}/pr-body-{secrets.token_hex(3)}.md"
+                open(bf, "w").write(body + "\n")
+            if not bf:
+                return ("refuse", 0, "a draft PR needs its body as a file in the job folder (--body-file) or a heredoc")
+            return ("run", "draft-pr", [r, hd], {"title": ti, "body-file": bf})
+        tiers = {"issue comment": (1, "a comment"), "pr comment": (1, "a PR comment"), "pr ready": (1, "marking a PR ready"),
+                 "pr merge": (2, "a merge"), "issue close": (2, "a close"), "pr close": (2, "a close"), "issue create": (0, "a new card: cos-run gh create, with --evidence for when he dictated it"),
+                 "issue delete": (2, "a delete"), "issue reopen": (2, "a reopen")}
+        if sub == "pr review":
+            return ("refuse", 2 if "--approve" in argv or "--request-changes" in argv else 1, "a PR review")
+        if sub == "pr edit":
+            return ("refuse", 1 if "--add-reviewer" in argv else 2, "requesting a review" if "--add-reviewer" in argv else "a PR edit")
+        if sub in tiers:
+            return ("refuse",) + tiers[sub]
+    return ("refuse", 2, "not a command cos-run knows; show Cassidy the line itself")
+
+
+def handoff(job, src, opts):
+    """A Cowork handoff block, pasted to the Chief: run the tier-0 lines, refuse the rest with their tier."""
+    if src == "-":
+        text = sys.stdin.read()
+    else:
+        real = os.path.realpath(os.path.expanduser(src or ""))
+        if not real.startswith(os.path.realpath(f"{COS}/outbox") + "/") or not os.path.isfile(real):
+            raise Refuse("handoff reads the block from a file in ~/cos/outbox/<job>/ or from stdin (-).", code=64)
+        text = open(real).read()
+    d = f"{COS}/outbox/{job}"
+    os.makedirs(d, exist_ok=True)
+    if os.path.exists(f"{d}/receipt.json"):
+        raise Refuse(f"job {job} already ran. Use a new job id.", code=64)
+    open(f"{d}/handoff.sh", "w").write(text)
+    results, k = [], 0
+    for line, body in handoff_entries(text):
+        pl = handoff_plan(line, body, job, opts)
+        items = [("run", a, g, {}) for a, g in pl[1]] if pl[0] == "multi" else [pl]
+        for it in items:
+            if it[0] == "skip":
+                results.append({"line": line, "result": "skipped", "why": it[1]}); continue
+            if it[0] == "refuse":
+                tier, why = it[1], it[2]
+                ledger(job=job, action=("handoff: " + line)[:300], decision="refused", tier=str(tier), why=why)
+                results.append({"line": line, "result": "refused", "tier": tier, "why": why}); continue
+            k += 1
+            sub = f"{job[:56]}-{k}"
+            o = {"label": [], **{x: opts[x] for x in ("evidence", "dry-run") if opts.get(x)}, **it[3]}
+            try:
+                buf = __import__("io").StringIO(); real_out = sys.stdout; sys.stdout = buf
+                try:
+                    do(sub, it[1], it[2], o)
+                finally:
+                    sys.stdout = real_out
+                r = json.load(open(f"{COS}/outbox/{sub}/receipt.json")) if not o.get("dry-run") else json.loads(buf.getvalue() or "{}")
+                results.append({"line": line, "result": "dry-run" if o.get("dry-run") else "ran", "tier": 0, "job": sub,
+                                "says": (r.get("receipt") or {}).get("summary", ""), "verdict": (r.get("receipt") or {}).get("verdict", "")})
+            except Refuse as e:
+                if e.tier is not None:
+                    ledger(job=sub, action=("handoff: " + line)[:300], decision="refused", tier=str(e.tier), why=str(e))
+                results.append({"line": line, "result": "refused", "tier": e.tier if e.tier is not None else "-", "why": str(e)})
+    ran = [r for r in results if r["result"] in ("ran", "dry-run")]
+    ref = [r for r in results if r["result"] == "refused"]
+    by_tier = {}
+    for r in ref:
+        by_tier[str(r["tier"])] = by_tier.get(str(r["tier"]), 0) + 1
+    summary = (f"Handoff: {len(ran)} tier-0 line(s) {'previewed' if opts.get('dry-run') else 'done'}, {len(ref)} refused"
+               + (" (" + ", ".join(f"tier {t}: {n}" for t, n in sorted(by_tier.items())) + ")" if ref else "")
+               + f", {sum(1 for r in results if r['result'] == 'skipped')} skipped. Refused lines go to Cassidy by tier: tier 1 is one yes, "
+               "tier 2 always asks, 'never' is never.")
+    rec = {"job": job, "lane": "gh", "receipt": {"status": "done", "summary": summary}, "handoff": results}
+    if not opts.get("dry-run"):
+        receipt(job, rec)
+    else:
+        out(rec)
+    return 0
 
 
 def rows():
@@ -679,7 +991,7 @@ def main(argv):
         a = rest[i]
         if a == "--dry-run":
             opts["dry-run"] = True; i += 1
-        elif a in ("--evidence", "--title", "--body-file", "--milestone", "--row", "--parent", "--label"):
+        elif a in ("--evidence", "--title", "--body-file", "--milestone", "--row", "--parent", "--label", "--branch"):
             if i + 1 >= len(rest):
                 raise Refuse(f"{a} needs a value. Run: cos-run gh --help", code=64)
             if a == "--label":
@@ -693,6 +1005,15 @@ def main(argv):
             args.append(a); i += 1
     if action == "today":
         return today()
+    if action == "whose":
+        c = card(args[0] if args else "")
+        out({"card": c["ref"], "mine": mine(c), "owner": owner_words(c), "state": c["state"], "title": c["title"]})
+        return 0
+    if action == "doc-guard":
+        out(doc_guard(args[0] if args else ""))
+        return 0
+    if action == "handoff":
+        return handoff(job, args[0] if args else "", opts)
     if action == "plain":
         return plain(args[0] if args else "")
     if action == "undo":

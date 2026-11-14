@@ -77,7 +77,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,claude/lake,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
@@ -362,6 +362,48 @@ jq -e --arg tip "$FEAT_TIP" '.draft.base == "origin/feat" and .draft.base_sha ==
 HOME="$T" "$COS/bin/cos-run" draft dr2 "x" --base 'feat;rm' >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses a bad --base" || fail "draft accepted a bad --base"
 HOME="$T" "$COS/bin/cos-run" draft dr3 "x" --base nosuch >/dev/null 2>&1; rc=$?
 [[ $rc -eq 75 && ! -e "$T/cos/outbox/dr3/receipt.json" ]] && pass "draft stops before the model when its base can't be fetched" || fail "draft went on without a fresh base (exit $rc)"
+# DRD and DADR drafts (plan item 8): Cassidy's cards only, from main; no status flipped to Approved or accepted; never a
+# DRD and a DADR in one diff; at most three questions. A stub cos-gh answers "whose"; the real one guards the diff.
+printf '#!/bin/bash\ncase "$2" in whose) cat "$HOME/whose.json";; *) exec "%s" "$@";; esac\n' "$COS/bin/cos-gh" > "$T/cos/bin/cos-gh"; chmod +x "$T/cos/bin/cos-gh"
+cp "$COS/bin/cos-flow" "$T/cos/bin/"; echo '{"now":"2026-11-14T18:00:00+00:00","items":[],"prs":[],"docs":[]}' > "$T/flowfix.json"
+echo '{"mine":true,"owner":"cassidythilton"}' > "$T/whose.json"; HOME="$T" "$COS/bin/cos-run" draft dd0 "x" --doc drd --card data-org#712 >/dev/null 2>&1; [[ $? -eq 66 && ! -e "$T/cos/outbox/dd0/.draft-doc" ]] && pass "draft --doc stops when its brief template is missing" || fail "draft --doc ran without its template"
+mkdir -p "$T/cos/claude/briefs"; cp "$COS/claude/briefs/draft-doc.md" "$T/cos/claude/briefs/"
+git -C "$T/seed" push -q "$T/origin.git" main:cassidy/1-x 2>/dev/null
+{ head -1 "$T/cos/bin/claude"; cat <<'INS'
+[[ "$*" != *CHECKER* ]] && echo x >> "$HOME/claude.calls"
+if [[ "$*" != *CHECKER* && -f "$HOME/.docmode" && "$PWD" == */.worktrees/* ]]; then mkdir -p drd
+  printf -- '---\nid: DRD-0099\nstatus: %s\n---\n' "$(cat "$HOME/.docmode")" > drd/DRD-0099-test.md
+  [[ -f "$HOME/.docmode2" ]] && { mkdir -p dadr; printf -- '---\nid: DADR-0099\nstatus: proposed\n---\n' > dadr/DADR-0099-test.md; }
+  echo '{"structured_output":{"status":"done","summary":"stub doc","open_questions":["1?","2?","3?","4?"]},"session_id":"s2","total_cost_usd":1}'; exit 0; fi
+INS
+tail -n +2 "$T/cos/bin/claude"; } > "$T/claude.new" && mv "$T/claude.new" "$T/cos/bin/claude" && chmod +x "$T/cos/bin/claude"
+echo '{"mine":false,"owner":"nicholas"}' > "$T/whose.json"; c0="$(wc -l < "$T/claude.calls" 2>/dev/null || echo 0)"
+HOME="$T" "$COS/bin/cos-run" draft dd1 "x" --doc drd --card data-org#800 >/dev/null 2>"$T/err"; rc=$?
+[[ $rc -eq 65 && "$(wc -l < "$T/claude.calls" 2>/dev/null || echo 0)" == "$c0" && ! -d "$T/cos/repos/data-org/.worktrees/cos-dd1" ]] && grep -q "never a draft of their doc" "$T/err" \
+  && pass "draft --doc refuses another owner's card, before any model or worktree" || fail "draft --doc on another owner's card (rc $rc)"
+HOME="$T" "$COS/bin/cos-run" draft dd2 "x" --doc drd >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft --doc refuses without --card" || fail "draft --doc ran without --card"
+echo '{"mine":true,"owner":"cassidythilton"}' > "$T/whose.json"
+HOME="$T" "$COS/bin/cos-run" draft dd3 "x" --doc drd --card data-org#712 --base feat >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft --doc refuses a base other than main" || fail "draft --doc ran from another base"
+HOME="$T" "$COS/bin/cos-run" draft dd4 "x" --card data-org#712 >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses --card without --doc" || fail "draft took --card without --doc"
+HOME="$T" "$COS/bin/cos-run" draft dd5 "x" --doc memo --card data-org#712 >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses a --doc other than drd or dadr" || fail "draft took --doc memo"
+echo Draft > "$T/.docmode"
+COS_FLOW_FIXTURE="$T/flowfix.json" HOME="$T" "$COS/bin/cos-run" draft dd6 "He wants the label facts written up" --doc drd --card data-org#712 >/dev/null 2>&1
+jq -e '.draft.doc.kind == "drd" and .draft.doc.card == "data-org#712" and .draft.doc.new_ids == ["DRD-0099"] and .draft.doc.next_id.free == true
+       and (.receipt.open_questions | length) == 3 and (.receipt.status != "blocked")' "$T/cos/outbox/dd6/receipt.json" >/dev/null 2>&1 \
+  && grep -q 'draft-drd/SKILL.md' "$T/cos/outbox/dd6/brief.md" && grep -q 'From the Chief' "$T/cos/outbox/dd6/brief.md" && grep -q '^drd data-org#712$' "$T/cos/outbox/dd6/.draft-doc" \
+  && pass "draft --doc on his card: the draft-drd brief, the new ID checked free, at most three questions" || fail "draft --doc pass path ($(jq -c '{d:.draft.doc,q:(.receipt.open_questions|length),s:.receipt.status}' "$T/cos/outbox/dd6/receipt.json" 2>/dev/null))"
+echo Approved > "$T/.docmode"
+COS_FLOW_FIXTURE="$T/flowfix.json" HOME="$T" "$COS/bin/cos-run" draft dd7 "x" --doc drd --card data-org#712 >/dev/null 2>&1
+jq -e '.receipt.status == "blocked" and (.draft.blocked | test("Approved"))' "$T/cos/outbox/dd7/receipt.json" >/dev/null 2>&1 \
+  && pass "a draft that sets a DRD to Approved is blocked (no job flips a status)" || fail "a draft flipped a status to Approved and wasn't blocked"
+HOME="$T" "$COS/bin/cos-run" draft dd8 "x" --base cassidy/1-x >/dev/null 2>&1
+jq -e '.receipt.status == "blocked"' "$T/cos/outbox/dd8/receipt.json" >/dev/null 2>&1 && [[ ! -e "$T/cos/outbox/dd8/apply.sh" ]] \
+  && pass "a blocked draft on one of his branches is never staged for a push" || fail "a blocked draft was staged for a push"
+echo Draft > "$T/.docmode"; touch "$T/.docmode2"
+COS_FLOW_FIXTURE="$T/flowfix.json" HOME="$T" "$COS/bin/cos-run" draft dd9 "x" --doc drd --card data-org#712 >/dev/null 2>&1
+jq -e '.receipt.status == "blocked" and (.draft.blocked | test("separate PRs"))' "$T/cos/outbox/dd9/receipt.json" >/dev/null 2>&1 \
+  && pass "a draft that adds a DRD and a DADR is blocked (separate PRs)" || fail "a DRD and a DADR went in one draft"
+rm -f "$T/.docmode" "$T/.docmode2"
 # A lock held by a live job: the next job waits, then stops. It never goes on without the lock.
 sleep 60 & LIVE=$!; echo "$LIVE" > "$T/cos/state/data-org-main.lock"
 COS_LOCK_WAIT=2 HOME="$T" "$COS/bin/cos-run" investigate ivl "x" >/dev/null 2>&1; rc=$?
@@ -587,6 +629,205 @@ lgate 'cos-run lake j1 "how many"' investigate 2
 lgate 'grep -n cos-gh README.md' investigate 0
 for f in investigate draft build; do jq -e '(.permissions.allow | map(select(test("lake-query"))) | length == 0) and (.permissions.deny | index("Bash(lake-query*)"))' "$COS/claude/settings.$f.json" >/dev/null 2>&1 \
   && pass "settings.$f: lake-query is denied, not allowed" || fail "settings.$f still allows lake-query"; done
+
+echo "13. Build B: throughput, DRD and DADR flow, gh-scan per caller"
+# cos-flow on a fixture board: nothing reaches GitHub. Now is 2026-11-14 18:00Z (11:00 MT).
+T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; mkdir -p "$T/cos/bin" "$T/cos/state"
+cp "$COS/bin/cos-flow" "$T/cos/bin/"
+python3 -I - "$T/flow.json" <<'PY'
+import json, sys
+def it(n, status, state="OPEN", reason=None, owner="nicholas", author=None, moves=(), comments=(), body="", archived=False, created="2026-11-01T00:00:00Z", title=None):
+    return {"id": f"I{n}", "isArchived": archived, "createdAt": created, "fieldValueByName": ({"name": status} if status else None),
+            "content": {"__typename": "Issue", "number": n, "title": title or f"card {n}", "url": f"https://github.com/wisecodeai/data-org/issues/{n}",
+                        "state": state, "stateReason": reason, "closedAt": ("2026-11-12T00:00:00Z" if state == "CLOSED" else None), "createdAt": created,
+                        "body": body, "repository": {"name": "data-org"}, "author": {"login": author or owner},
+                        "assignees": {"nodes": ([{"login": owner}] if owner else [])}, "labels": {"nodes": []}, "subIssues": {"nodes": []},
+                        "comments": {"nodes": [{"createdAt": c, "author": {"login": owner}, "bodyText": "A or B? Melanie decides.", "url": "u"} for c in comments]},
+                        "moves": {"nodes": [{"createdAt": a, "previousStatus": f, "status": t, "project": {"number": 1}} for a, f, t in moves]},
+                        "refs": {"nodes": []}}}
+items = [
+  it(10, "Defining", moves=[("2026-10-15T00:00:00Z", "", "Intake"), ("2026-10-25T00:00:00Z", "Intake", "Defining")]),
+  it(11, "Shipping", owner="cassidythilton", moves=[("2026-11-11T00:00:00Z", "Defining", "Shipping")]),
+  it(12, "Completed No Delivery", state="CLOSED", reason="COMPLETED", moves=[("2026-11-12T00:00:00Z", "Shipping", "Completed No Delivery")]),
+  it(13, None, owner=None, author="cassidythilton"),
+  it(14, "Discovery", state="CLOSED", reason="COMPLETED", owner="melanie"),
+  it(15, "Discovery", owner="cassidythilton"),
+  it(16, "Defining", owner="melanie", moves=[("2026-11-13T00:00:00Z", "Shipping", "Defining")], comments=["2026-11-14T17:00:00Z"]),
+  it(17, "Defining", archived=True),
+]
+prs = [{"number": 900, "title": "DRD-0040 (Draft): x", "body": "Tile: #15", "isDraft": True, "author": {"login": "cassidythilton"}, "url": "https://github.com/wisecodeai/data-org/pull/900",
+        "files": [{"path": "drd/DRD-0040-x.md", "additions": 9, "deletions": 0}], "reviewRequests": [], "reviews": [], "headRefName": "cassidy/15-x"},
+       {"number": 901, "title": "DRD-0040 (Draft): y", "body": "Tile: #99", "isDraft": True, "author": {"login": "nicholas"}, "url": "https://github.com/wisecodeai/data-org/pull/901",
+        "files": [{"path": "drd/DRD-0040-y.md", "additions": 9, "deletions": 0}], "reviewRequests": [], "reviews": [], "headRefName": "nicholas/99-y"}]
+docs = [{"path": "drd/DRD-0039-z.md", "kind": "DRD", "front": {"id": "DRD-0039", "status": "Draft", "source_issue": "#10", "review_by": "2026-10-01"}}]
+atlas = "cc:1  2026-11-14  claude Label facts  (wisecodeai/data-org @ cassidy/15-label-facts)\ncc:2  2026-11-13  claude old  (wisecodeai/data-org @ cassidy/99-old)"
+json.dump({"now": "2026-11-14T18:00:00+00:00", "items": items, "prs": prs, "docs": docs, "atlas": atlas, "gate": "",
+           "make_next_id": "  claimed by open PR #901: DRD-0040\n\n  next free: DRD-0041"}, open(sys.argv[1], "w"))
+PY
+fl() { COS_FLOW_FIXTURE="$T/flow.json" HOME="$T" "$T/cos/bin/cos-flow" "$@"; }
+fl lanes --json | jq -e '.items == 7 and .view.Defining == 2 and .view.Discovery == 2 and .view["No Status"] == 1 and .open.Discovery == 1 and .closed["Completed No Delivery"] == 1' >/dev/null 2>&1 \
+  && pass "cos-flow lanes: counts every item as the Lanes view does (open and closed, archived left out)" || fail "cos-flow lanes ($(fl lanes --json 2>&1 | jq -c .view 2>/dev/null))"
+fl week --json | jq -e '.forward == 1 and .back == 1 and .finished == 1 and (.stuck_over_14_days | map(.card) | index("#10") != null and index("#11") == null)
+   and .median_days_in.Shipping.n == 2' >/dev/null 2>&1 \
+  && pass "cos-flow week: forward, back and finished moves from the lane history, and cards past 14 days in one lane" || fail "cos-flow week ($(fl week --json 2>&1 | jq -c '{forward,back,finished}' 2>/dev/null))"
+EV="$(fl evidence --json)"
+jq -e 'any(.[]; .card == "#14" and .to == "Completed No Delivery" and (.next | test("no bot moves it")))
+   and any(.[]; .card == "#15" and .to == "Defining" and (.next | test("^cos-run gh <job> lane data-org#15")) and (.evidence | test("ID clash")))
+   and all(.[]; .mine or ((.next | test("cos-run gh|make ")) | not))' <<<"$EV" >/dev/null 2>&1 \
+  && pass "cos-flow evidence: lines for owners; a tier-0 call only on his card; never a bot move on another owner's card; ID clash named" || fail "cos-flow evidence ($EV)"
+fl nostatus --json | jq -e '.open | length == 1 and .[0].card == "#13" and .[0].mine == true' >/dev/null 2>&1 && pass "cos-flow nostatus: open cards in No Status, for their owners" || fail "cos-flow nostatus"
+TD="$(fl today --json)"
+jq -e '(.cards | map(.card) | sort) == ["#15","#16"] and any(.cards[]; .card == "#16" and .signals[0].row == 1 and (.who_drafts | test("to-do list")))
+   and any(.cards[]; .card == "#15" and (.why | test("Agent Atlas")) and .docs.has_drd == true)' <<<"$TD" >/dev/null 2>&1 \
+  && pass "cos-flow today: only cards worked today (board and Agent Atlas), the card's DRD facts, PR #524's rows, owners' to-do for others" || fail "cos-flow today ($(jq -c '[.cards[] | {card,signals,who_drafts}]' <<<"$TD" 2>/dev/null))"
+fl next-id DRD 0040 >/dev/null 2>&1; rc=$?
+NI="$(fl next-id DRD 0040 --json 2>/dev/null)"
+[[ $rc -eq 65 ]] && jq -e '.free == false and (.claimed_by | map(.pr) | sort) == [900, 901] and .make_next_id_missed[0].pr == 900 and .next_free_all_prs == "DRD-0041"' <<<"$NI" >/dev/null 2>&1 \
+  && pass "cos-flow next-id refuses a number any open PR claims, and names what make next-id didn't show" || fail "cos-flow next-id DRD 0040 (rc $rc: $NI)"
+fl next-id DRD 0041 >/dev/null 2>&1 && pass "cos-flow next-id passes a free number" || fail "cos-flow next-id DRD 0041"
+fl next-id DRD 0039 >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "cos-flow next-id refuses a number on main" || fail "cos-flow next-id passed a number on main"
+fl debt --json | jq -e '.id_clashes["DRD-0040"] == [900, 901] and (.defining_no_drd | map(.card) | index("#16") != null)' >/dev/null 2>&1 \
+  && pass "cos-flow debt: Defining cards with no DRD, and an ID two open PRs claim" || fail "cos-flow debt"
+fl brief capture "$T/out" >/dev/null 2>&1; grep -q '^## DRD and DADR check' "$T/out/flow-capture.md" 2>/dev/null && grep -q '^## Evidence for lane moves' "$T/out/flow-capture.md" && [[ -s "$T/out/flow-today.json" ]] \
+  && pass "cos-flow brief capture: the facts the 16:00 capture reads" || fail "cos-flow brief capture"
+fl move data-org#16 Shipping >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-flow has no write command (an unknown command is refused)" || fail "cos-flow accepted a write-like command"
+grep -q 'flow-capture.md' "$COS/claude/briefs/capture.md" && grep -q 'flow-week.md' "$COS/claude/briefs/week.md" && grep -q 'DADR candidates' "$COS/claude/briefs/followups.md" \
+  && grep -q 'cos-flow brief' "$COS/bin/cos-sched" && pass "briefs: capture and week read cos-flow's facts; follow-ups list DADR candidates with timestamps" || fail "briefs don't read cos-flow's facts"
+grep -q '"Bash(cos-flow week\*)"' "$COS/claude/settings.investigate.json" && ! grep -q 'cos-flow brief' "$COS/claude/settings.investigate.json" \
+  && pass "investigate jobs may run cos-flow's reads (not brief, which writes files)" || fail "settings.investigate cos-flow rules"
+rm -rf "$T"
+
+# gh-scan: each caller keeps its own "since"; PRs others assigned to him are always listed. A stub stands in for gh.
+T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; mkdir -p "$T/cos/bin" "$T/cos/state"
+cp "$COS/bin/cos-gh-scan" "$COS/bin/cos-run" "$COS/bin/cos-ledger" "$T/cos/bin/"
+cat > "$T/cos/bin/gh" <<'STUB'
+#!/bin/bash
+[[ "$1 $2" == "api user" ]] && { echo '{"login":"cassidythilton"}'; exit 0; }
+[[ "$*" == *review-requested* ]] && { echo '{"data":{"search":{"issueCount":0,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}'; exit 0; }
+cat "$HOME/search.json"
+STUB
+chmod +x "$T/cos/bin/gh"
+echo '{"data":{"search":{"issueCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"__typename":"PullRequest","number":55,"title":"Gold key review","url":"https://github.com/wisecodeai/data-org/pull/55","updatedAt":"2026-11-01T00:00:00Z","isDraft":false,"reviewDecision":"REVIEW_REQUIRED","repository":{"nameWithOwner":"wisecodeai/data-org"},"author":{"login":"dgonzo"},"assignees":{"nodes":[{"login":"cassidythilton"}]},"reviewRequests":{"nodes":[]},"reviews":{"nodes":[]},"comments":{"nodes":[]},"reviewThreads":{"nodes":[]}}]}}}' > "$T/search.json"
+echo '{"at": "2026-11-13T01:00:00+00:00"}' > "$T/cos/state/gh-scan-last.json"
+gs() { HOME="$T" PATH="$T/cos/bin:$PATH" COS_GH_WAITS=0 "$T/cos/bin/cos-gh-scan" "$@"; }
+gs "$T/o1" --state watch >/dev/null 2>&1
+grep -q 'data-org#55 Gold key review. By dgonzo' "$T/o1/digest.md" 2>/dev/null && jq -e '.counts.assigned_prs == 1 and .state == "watch"' "$T/o1/scan.json" >/dev/null 2>&1 \
+  && pass "gh-scan lists a PR someone else assigned to him, with no new activity" || fail "gh-scan didn't list the assigned PR"
+[[ -f "$T/cos/state/gh-scan-last-watch.json" && ! -e "$T/cos/state/gh-scan-last-brief.json" ]] && grep -q '2026-11-13T01:00:00' "$T/cos/state/gh-scan-last.json" \
+  && pass "gh-scan --state watch keeps its own since and leaves the brief's and the shared one alone" || fail "gh-scan --state watch touched another caller's since"
+gs "$T/o2" --state brief >/dev/null 2>&1
+jq -e '.since | startswith("2026-11-13T01:00:00")' "$T/o2/scan.json" >/dev/null 2>&1 \
+  && pass "gh-scan --state brief: an hourly watch never moves the morning brief's since" || fail "gh-scan --state brief since ($(jq -r .since "$T/o2/scan.json" 2>/dev/null))"
+gs "$T/o3" --state nightly >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "gh-scan refuses a --state other than brief or watch" || fail "gh-scan took --state nightly"
+HOME="$T" "$T/cos/bin/cos-run" gh-scan gs4 --state nightly >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-run gh-scan refuses a bad --state" || fail "cos-run gh-scan took a bad --state"
+HOME="$T" PATH="$T/cos/bin:$PATH" COS_GH_WAITS=0 "$T/cos/bin/cos-run" gh-scan gs5 --state watch >/dev/null 2>&1
+jq -e '.receipt.status == "done"' "$T/cos/outbox/gs5/receipt.json" >/dev/null 2>&1 && pass "cos-run gh-scan <job> --state watch runs" || fail "cos-run gh-scan --state watch"
+HOME="$T" "$T/cos/bin/cos-run" quick qf1 "x" --with "cos-flow week; rm -rf ~" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "quick refuses: cos-flow with anything after it" || fail "quick ran cos-flow with a chained command"
+HOME="$T" "$T/cos/bin/cos-run" quick qf2 "x" --with "cos-flow brief week /tmp/x" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "quick refuses: cos-flow brief (it writes files)" || fail "quick ran cos-flow brief"
+rm -rf "$T"
+
+# Tier 0 for DRD and DADR drafts, and a Cowork handoff. Stubs stand in for gh, git's ls-remote, make and cos-push-draft.
+T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; mkdir -p "$T/cos/bin" "$T/cos/data-org-main" "$T/cards" "$T/cos/handbook" "$T/cos/outbox"
+cp "$COS/bin/cos-ledger" "$COS/bin/cos-gh" "$COS/bin/cos-run" "$COS/bin/cos-flow" "$T/cos/bin/"
+cat > "$T/cos/bin/gh" <<'STUB'
+#!/bin/bash
+a="$*"; echo "gh ${a//$'\n'/ }" >> "$HOME/gh.log"
+[[ "$1 $2" == "api user" ]] && { echo "cassidythilton"; exit 0; }
+[[ "$1" == api && "$2" == repos/*/compare/* ]] && { cat "$HOME/compare.txt" 2>/dev/null; exit 0; }
+if [[ "$1 $2" == "api graphql" ]]; then r=""; n=""; for x in "$@"; do case "$x" in r=*) r="${x#r=}";; n=*) n="${x#n=}";; esac; done
+  [[ "$*" == *mutation* ]] && exit 0; cat "$HOME/cards/$r-$n.json"; exit 0; fi
+if [[ "$1 $2" == "issue edit" ]]; then f="$HOME/cards/${5#wisecodeai/}-$3.json"
+  [[ "$6" == --add-label ]] && jq --arg v "$7" '.data.repository.issueOrPullRequest.labels.nodes += [{name:$v}]' "$f" > "$f.t" && mv "$f.t" "$f"; exit 0; fi
+[[ "$1 $2" == "pr list" ]] && { echo '[]'; exit 0; }
+[[ "$1 $2" == "pr create" ]] && { echo "https://github.com/wisecodeai/data-org/pull/999"; exit 0; }
+exit 0
+STUB
+printf '#!/bin/bash\nif [[ "$1" == ls-remote ]]; then for b in $(cat "$HOME/heads" 2>/dev/null); do [[ "$*" == *" $b" ]] && echo "abc refs/heads/$b"; done; exit 0; fi\nexec /usr/bin/git "$@"\n' > "$T/cos/bin/git"
+printf '#!/bin/bash\necho "make ${DRY_RUN:+DRY_RUN=1 }$*" >> "$HOME/make.log"\n' > "$T/cos/bin/make"
+printf '#!/bin/bash\necho "$*" >> "$HOME/push.log"\n' > "$T/cos/bin/cos-push-draft"
+chmod +x "$T/cos/bin/"{gh,git,make,cos-push-draft,cos-gh,cos-ledger,cos-run,cos-flow}
+for c in 712:cassidythilton 800:nicholas; do n="${c%%:*}"; o="${c#*:}"
+  jq -n --argjson n "$n" --arg o "$o" '{data:{repository:{issueOrPullRequest:{__typename:"Issue", id:"I_\($n)", number:$n, title:"card \($n)", state:"OPEN",
+    url:"https://github.com/wisecodeai/data-org/issues/\($n)", author:{login:$o}, assignees:{nodes:[{login:$o}]}, labels:{nodes:[]}, milestone:null, parent:null,
+    subIssues:{nodes:[]}, blockedBy:{nodes:[]}, projectItems:{nodes:[{id:"PVTI_\($n)", project:{number:1, id:"PVT_1"}, fieldValues:{nodes:[{name:"Discovery", field:{name:"Status", id:"F_STATUS"}}]}}]}}}}}' > "$T/cards/data-org-$n.json"; done
+echo '{"now":"2026-11-14T18:00:00+00:00","items":[],"docs":[{"path":"drd/DRD-0039-z.md","kind":"DRD","front":{"id":"DRD-0039"}}],"prs":[{"number":901,"title":"t","body":"","url":"https://github.com/wisecodeai/data-org/pull/901","headRefName":"nicholas/9-y","files":[{"path":"drd/DRD-0040-y.md"}]}]}' > "$T/flow.json"
+mkdraft() {  # mkdraft <job> <card> <new doc path> [status] [checker verdict] [extra doc path]
+  local d="$T/cos/outbox/$1"; mkdir -p "$d"
+  { printf -- '--- /dev/null\n+++ b/%s\n@@ -0,0 +1,3 @@\n+---\n+status: %s\n+---\n' "$3" "${4:-Draft}"; [[ -n "${6:-}" ]] && printf -- '--- /dev/null\n+++ b/%s\n@@ -0,0 +1 @@\n+x\n' "$6"; } > "$d/draft.diff"
+  jq -n --arg c "$2" --arg s "$(shasum -a 256 "$d/draft.diff" | cut -d' ' -f1)" --arg v "${5:-pass}" \
+    '{receipt:{status:"done"}, checker:{verdict:$v}, draft:{base:"origin/main", base_sha:"0000000", sha256:$s, doc:{kind:"drd", card:$c}}}' > "$d/receipt.json"; }
+gx() { COS_FLOW_FIXTURE="$T/flow.json" HOME="$T" PATH="$T/cos/bin:$PATH" "$T/cos/bin/cos-run" gh "$@"; }
+gx w1 whose data-org#712 2>/dev/null | jq -e '.mine == true' >/dev/null && gx w2 whose data-org#800 2>/dev/null | jq -e '.mine == false and .owner == "nicholas"' >/dev/null \
+  && pass "cos-run gh whose: reads who owns a card, writes nothing" || fail "cos-run gh whose"
+mkdraft drd1 data-org#712 drd/DRD-0041-label-facts.md
+gx pd1 push drd1 --branch cassidy/712-label-facts >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 ]] && grep -q "^drd1 [0-9a-f]\{64\} cassidy/712-label-facts$" "$T/push.log" 2>/dev/null && jq -s -e 'any(.[]; .job == "pd1" and .decision == "done" and (.evidence | test("DRD-0041 free")))' "$T/cos/state/ledger/tier_zero.jsonl" >/dev/null 2>&1 \
+  && pass "tier 0: a DRD draft goes to a new cassidy/<issue>-<topic> branch after its ID is re-checked free, ledgered" || fail "tier 0 doc push (rc $rc)"
+dpref() { local want="$1"; shift; local n0; n0="$(wc -l < "$T/push.log" 2>/dev/null || echo 0)"
+  gx "$@" >/dev/null 2>"$T/err"; local rc=$?
+  [[ $rc -eq $want && "$(wc -l < "$T/push.log" 2>/dev/null || echo 0)" == "$n0" ]] && pass "tier 0 refuses: $* ($(head -c 100 "$T/err"))" || fail "tier 0 didn't refuse (rc $rc): $*"; }
+mkdraft drd2 data-org#712 drd/DRD-0040-taken.md;           dpref 65 pd2 push drd2 --branch cassidy/712-taken
+echo "cassidy/712-exists" > "$T/heads"; mkdraft drd3 data-org#712 drd/DRD-0041-a.md; dpref 65 pd3 push drd3 --branch cassidy/712-exists
+dpref 64 pd4 push drd3 --branch cassidy/label-facts
+mkdraft drd5 data-org#800 drd/DRD-0041-b.md;               dpref 65 pd5 push drd5 --branch cassidy/800-b
+mkdraft drd6 data-org#712 drd/DRD-0041-c.md Approved;      dpref 65 pd6 push drd6 --branch cassidy/712-c
+mkdraft drd7 data-org#712 drd/DRD-0041-d.md Draft fail;    dpref 65 pd7 push drd7 --branch cassidy/712-d
+mkdraft drd8 data-org#712 drd/DRD-0041-e.md Draft pass dadr/DADR-0060-e.md; dpref 65 pd8 push drd8 --branch cassidy/712-e
+mkdir -p "$T/cos/outbox/nd1"; echo '{"receipt":{"status":"done"},"checker":{"verdict":"pass"},"draft":{"base":"origin/main","sha256":"x"}}' > "$T/cos/outbox/nd1/receipt.json"
+dpref 64 pd9 push nd1 --branch cassidy/712-x
+# A draft PR for a doc: the ID in the title, Closes for a DRD, Refs for a DADR, the ID still free.
+echo "cassidy/712-label-facts" > "$T/heads"; echo "drd/DRD-0041-label-facts.md" > "$T/compare.txt"
+for j in dp1 dp2 dp3 dp4 dp5; do mkdir -p "$T/cos/outbox/$j"; done
+printf 'A merge registers a document.\nTile: #712\nCloses #713\n' > "$T/cos/outbox/dp1/b.md"; cp "$T/cos/outbox/dp1/b.md" "$T/cos/outbox/dp2/b.md"; cp "$T/cos/outbox/dp1/b.md" "$T/cos/outbox/dp3/b.md"; cp "$T/cos/outbox/dp1/b.md" "$T/cos/outbox/dp5/b.md"
+printf 'Tile: #712\nCloses #712\n' > "$T/cos/outbox/dp4/b.md"
+prref() { local want="$1"; shift; local n0; n0="$(grep -c 'pr create' "$T/gh.log" 2>/dev/null)"
+  gx "$@" >/dev/null 2>"$T/err"; local rc=$?
+  [[ $rc -eq $want && "$(grep -c 'pr create' "$T/gh.log" 2>/dev/null)" == "$n0" ]] && pass "tier 0 refuses a draft PR: ${3:-} ${5:-} ($(head -c 90 "$T/err"))" || fail "draft PR not refused (rc $rc): $*"; }
+prref 64 dp2 draft-pr data-org cassidy/712-label-facts --title "Label facts" --body-file "$T/cos/outbox/dp2/b.md"
+prref 64 dp3 draft-pr data-org cassidy/712-label-facts --title "DRD-0041 Label facts" --body-file "$T/cos/outbox/dp3/b.md"
+prref 64 dp4 draft-pr data-org cassidy/712-label-facts --title "DADR-0061 (Draft): Choose" --body-file "$T/cos/outbox/dp4/b.md"
+prref 65 dp5 draft-pr data-org cassidy/712-label-facts --title "DRD-0040 (Draft): Label facts" --body-file "$T/cos/outbox/dp5/b.md"
+gx dp1 draft-pr data-org cassidy/712-label-facts --title "DRD-0041 (Draft): Label facts" --body-file "$T/cos/outbox/dp1/b.md" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 ]] && grep -q 'pr create --draft --repo wisecodeai/data-org --head cassidy/712-label-facts --title DRD-0041 (Draft): Label facts' "$T/gh.log" \
+  && pass "tier 0: a DRD draft PR opens with the ID in its title, after the ID is re-checked" || fail "tier 0 doc draft PR (rc $rc)"
+# A Cowork handoff block: tier-0 lines run, the rest are refused by tier, previews and reads skipped.
+mkdir -p "$T/cos/outbox/hoin"; cat > "$T/cos/outbox/hoin/block.sh" <<'HO'
+# Ship DRD-0041 (from Cowork's handoff skill)
+DRY_RUN=1 make set-pillar CARD=712 TO=Defining
+make set-pillar CARD=712 TO=Defining
+gh issue edit 712 --repo wisecodeai/data-org --add-label type/drd
+make ragb CARD=712 TO=GREEN
+make promote CARD=712 TO=Shipping
+git push -u origin cassidy/712-label-facts
+gh pr merge 5 --repo wisecodeai/data-org --squash
+make set-pillar CARD=800 TO=Defining
+echo hi; rm -rf ~
+sed -i '' 's/status: Draft/status: Approved/' drd/DRD-0041-label-facts.md
+gh pr create --title "DRD-0041: Label facts" --body "$(cat <<'EOF'
+A merge registers a document.
+Tile: #712
+EOF
+)"
+make next-id KIND=DRD   # confirm 0041 is still free before pushing
+HO
+gx ho1 handoff "$T/cos/outbox/hoin/block.sh" >/dev/null 2>&1; rc=$?
+HR="$T/cos/outbox/ho1/receipt.json"
+[[ $rc -eq 0 ]] && jq -e '([.handoff[] | select(.result == "ran")] | length) == 1 and ([.handoff[] | select(.result == "skipped")] | length) == 2
+   and any(.handoff[]; .result == "refused" and .tier == 1 and (.line | test("ragb")))
+   and any(.handoff[]; .result == "refused" and .tier == 2 and (.line | test("promote")))
+   and any(.handoff[]; .result == "refused" and .tier == 2 and (.line | test("CARD=800")))
+   and any(.handoff[]; .result == "refused" and .tier == 2 and (.line | test("merge")))
+   and any(.handoff[]; .result == "refused" and .tier == 0 and (.line | test("^git push")))
+   and any(.handoff[]; .result == "refused" and .tier == "never" and (.line | test("Approved")))
+   and any(.handoff[]; .result == "refused" and .tier == 1 and (.line | test("pr create")))
+   and any(.handoff[]; .result == "refused" and (.line | test("rm -rf")))' "$HR" >/dev/null 2>&1 \
+  && grep -q 'issue edit 712 --repo wisecodeai/data-org --add-label type/drd' "$T/gh.log" && ! grep -qE '^make -s (ragb|promote)|CARD=800' "$T/make.log" 2>/dev/null && ! grep -q 'pr merge' "$T/gh.log" \
+  && pass "handoff: a Cowork block's tier-0 line runs; ragb, promote, merge, others' cards, git, a status flip and chained commands are refused by tier" \
+  || fail "handoff (rc $rc: $(jq -c '[.handoff[] | {r:.result,t:.tier,l:(.line|.[0:30])}]' "$HR" 2>/dev/null))"
+jq -s -e '[.[] | select(.decision == "refused" and (.action | startswith("handoff:")))] | length >= 6' "$T/cos/state/ledger/tier_zero.jsonl" >/dev/null 2>&1 \
+  && pass "handoff: each refused line is ledgered with its tier" || fail "handoff refusals not ledgered"
+gx ho2 handoff /etc/hosts >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "handoff refuses a block outside ~/cos/outbox" || fail "handoff read a file outside the outbox"
+rm -rf "$T"
 
 echo "11. Flight recorder"
 T="$(mktemp -d)"

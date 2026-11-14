@@ -3,7 +3,7 @@
 Read this first if you're a new agent (Claude Code, Cursor, or anything else) picking up this kit with no history.
 It takes about ten minutes. Then read the files it points to before you change anything.
 
-Last updated: 2026-11-14 (Build A). `./install.sh` runs 271 checks; all pass on a committed, pushed tree (one check fails on
+Last updated: 2026-11-14 (Build B). `./install.sh` runs 321 checks; all pass on a committed, pushed tree (one check fails on
 purpose while there are uncommitted changes). A fresh agent read this file cold and fact-checked it against the files.
 
 ## 1. What this is, in one paragraph
@@ -93,7 +93,7 @@ yourself. If one stops working, Cassidy regenerates it in Grok and stores it (IN
 | `quick` | Cursor Agent (cheap) | answers from read-only commands passed with `--with` (its model can't run anything) | nothing |
 | `investigate` | Claude Code | reads widely (repos, gh, Slack connector, transcripts) and stages batches | the job folder |
 | `atlas` | Claude Code, via `cos-atlas` | finds a past chat by name, or lists recent work for a sweep | the job folder |
-| `gh-scan` | a Python script, no model | everything in GitHub that may need him, for each brief | the job folder, `state/gh-scan-last.json` |
+| `gh-scan` | a Python script, no model | everything in GitHub that may need him, for each brief. `--state brief` (morning and evening briefs) and `--state watch` (hourly watch) each keep their own "since"; PRs others assigned to him are always listed | the job folder, `state/gh-scan-last[-brief|-watch].json` |
 | `draft` | Claude Code | a repo change on its own branch from `--base` (default main); the receipt carries the diff's sha256 | a worktree branch, never pushed by the job |
 | `build` | Claude Code, then a verifier and Codex | one build slice in `~/builds/<slug>` (made from the template on first use; the pair lane is gone) with before-and-after `./verify` | that build folder |
 | `apply` | a script | runs an approved `apply.sh`, once, from a fixed allow-list: `make ragb|field|set-pillar|complete|promote|board-add|ship-link|context-request`, `gh issue create/edit/comment`, `gh pr comment/review/merge/ready`, `gh pr edit --add-reviewer`, `cos-link`, `cos-push-draft`, and for builds a `git push` of a build branch and `gh pr create --draft`. The `WRITE_OK` patterns in cos-run are the authority. | GitHub |
@@ -101,6 +101,7 @@ yourself. If one stops working, Cassidy regenerates it in Grok and stores it (IN
 | `fix` | Claude (opus) | fixes the kit in `~/cos/fixes/<job>`, tested by `cos-sandbox-test`, reviewed by Codex and a checker | that worktree |
 | `land` | a script | fast-forwards the kit to an approved fix, installs, rolls back if a check fails, pushes; `land <job> revert` undoes it | `~/cos/kit`, GitHub |
 | `gh` | a Python script (`cos-gh`), no model | tier 0: labels, assignee, milestone, links, board-add, roadmap fields, his lane moves with evidence, a dictated issue, a draft PR, a draft push, on his own cards only. Re-read, write through make targets, read back, ledger (`state/ledger/tier_zero.jsonl`) with undo. Others' cards: off (`gh_tier0_others_cards` in standing-approvals.json). | GitHub |
+| (`cos-flow`) | a Python script, no model, not a lane | board facts for STEWARD: `lanes` (as the Lanes view counts), `week` (lane moves from `ProjectV2ItemStatusChangedEvent`), `evidence` ("evidence says #N can move to <lane>", for owners), `nostatus`, `today` (PR #524's DRD/DADR check on cards worked today), `debt`, `next-id` (every open PR, not just the newest 30). cos-sched stages `flow-capture.md` / `flow-week.md` in the job folder; board-pulse adds lane counts to `board-health.csv` | nothing |
 | `preview` | none | a staged batch in plain words with each line's tier, and the call to run on his yes | nothing |
 | `lake` | Cursor Agent on a Claude model | one data question after his yes, in `~/cos/outbox/<job>/ws` walled by `claude/lake/cli.json` and `claude/cursor-lake-hook` (which runs the gate); only reads and `lake-query`. Never scheduled. | `result.md` in the job folder |
 | `eval` | Claude, judged by Codex | blind A/B of a prompt change on `evals/core.json`; KEEPER's test before proposing (kept by Cassidy, 2026-11-14) | the job folder |
@@ -161,7 +162,19 @@ minutes, so the fix lane is for the Chief, not for you.
   deny holds; a hook "allow" doesn't override a cli.json deny; without `--force`, unlisted shell commands are refused;
   writes are allowed unless denied, so deny `Write(**)`.
 
-## 9. Open items (as of 2026-11-14, after Build A)
+## 9. Open items (as of 2026-11-14, after Build B)
+
+- Build B (plan items 8 and 9) is in: `cos-flow`; `cos-run draft --doc drd|dadr --card <his card>` (his cards only,
+  from main, at most three questions, no flip to Approved/accepted, never a DRD and a DADR in one diff); `cos-run gh
+  push <draft> --branch cassidy/<issue>-<topic>` and doc checks on `draft-pr` (ID in the title, Closes/Refs, ID free
+  across every open PR); `cos-run gh handoff <file>|-` for a Cowork handoff block; `whose` and `doc-guard`; gh-scan
+  `--state`. Not yet proven live: a DRD draft through to a draft PR, a handoff block from Cowork. The bots don't know
+  any of it until the Grok pastes (intents in the Build B notes in the side-session notes folder, then
+  `grokbot/pending-pastes.md`).
+- data-org's `make next-id` reads `gh pr list` with gh's default limit (newest 30 of 51 open PRs) and names one PR per
+  number. `cos-flow next-id` covers both; a fix in data-org's `scripts/dataorg.sh` is Cassidy's call.
+- The Lanes view has no filter live (the work-system doc says `-reason:not-planned`): it shows closed cards too.
+
 
 - Build A of `docs/plan-2026-11-14-smoother.md` is in (items 1, 2, 4, 6), with the eval lane kept (Cassidy's decision
   after the Grok export). Next: Build B (items 8 and 9), then the

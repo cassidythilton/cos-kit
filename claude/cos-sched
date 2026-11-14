@@ -58,7 +58,8 @@ fi
 if [[ $DRY -eq 1 ]]; then
   if [[ "$LANE" == script ]]; then echo "cos-obligations --act  -> $BOT"
   elif [[ "$LANE" == quick ]]; then echo "cos-run quick $JOB <pulse question> --with 'board-pulse --record'  -> $BOT"
-  else echo "cos-run $LANE $JOB $BRIEFS/$SLOT.md  -> $BOT"; [[ -f "$BRIEFS/$SLOT.md" ]] || echo "MISSING brief: $BRIEFS/$SLOT.md"; fi
+  else [[ "$SLOT" == capture || "$SLOT" == week ]] && echo "cos-flow brief $SLOT $COS/outbox/$JOB  (board facts the brief reads, read-only)"
+       echo "cos-run $LANE $JOB $BRIEFS/$SLOT.md  -> $BOT"; [[ -f "$BRIEFS/$SLOT.md" ]] || echo "MISSING brief: $BRIEFS/$SLOT.md"; fi
   exit 0
 fi
 
@@ -68,10 +69,18 @@ log "start $JOB"
 # so a crash can't pass it off as this run's result.
 OUTD="$COS/outbox/$JOB"; R="$OUTD/receipt.json"; ERR="$OUTD/sched.err"; rc=0
 mkdir -p "$OUTD"; [[ -f "$R" ]] && mv "$R" "$OUTD/receipt.prev.json"
+# Capture and week read board facts from cos-flow (no model, read-only): lane counts, the week's lane moves, evidence
+# lines for owners, No Status cards, and the DRD/DADR check on cards worked today. Staged before the job starts so the
+# job reads facts instead of re-deriving them. If the read fails, the file says so and the job must say so too.
+if [[ "$SLOT" == capture || "$SLOT" == week ]]; then
+  "$HOME/cos/bin/cos-flow" brief "$SLOT" "$OUTD" >/dev/null 2>"$OUTD/flow.err" \
+    || printf '# Board facts NOT read\n\ncos-flow failed (%s). Say so in the summary; do not infer lane counts, moves or DRD facts.\n' \
+         "$(tail -c 200 "$OUTD/flow.err" | tr '\n' ' ')" > "$OUTD/flow-$SLOT.md"
+fi
 if [[ "$LANE" == script ]]; then
   COS_CALLER=sched cos-obligations --act >/dev/null 2>"$ERR" || rc=$?
 elif [[ "$LANE" == quick ]]; then
-  COS_CALLER=sched cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), and how many owners need a nudge. If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
+  COS_CALLER=sched cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), how many owners need a nudge, and each open card in No Status with its owner (they place it in a lane; never a bot on another owner's card). If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
     --with "board-pulse --record" >/dev/null 2>"$ERR" || rc=$?
 else
   COS_CALLER=sched cos-run "$LANE" "$JOB" "$BRIEFS/$SLOT.md" >/dev/null 2>"$ERR" || rc=$?

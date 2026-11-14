@@ -4,11 +4,12 @@
 #   cos-run quick       <job-id> "<question>" [--with "<read-only command>"]...   Cursor Agent, ask mode, cheap model
 #   cos-run investigate <job-id> "<brief>"    [--in <folder>] [--resume <id>]    Claude Code, touches nothing
 #   cos-run draft       <job-id> "<brief>"    [--in <folder>] [--resume <id>]    Claude Code, own branch, never pushed
+#                       [--doc drd|dadr --card <his card>]  a DRD or DADR by data-org's draft skills, his cards only
 #                       [--base <branch>]  the data-org branch to start from (default main), fetched fresh; the receipt
 #                       carries draft.diff's sha256 against it
 #   cos-run apply      <job-id> <sha256>                                         runs a reviewed write batch, once
 #   cos-run apply-sheet <job-id> <sha256>                                         writes a reviewed sheet.json, cell by cell, once
-#   cos-run gh-scan     <job-id> [since]                                          everything in GitHub that may need Cassidy, no model
+#   cos-run gh-scan     <job-id> [since] [--state brief|watch]                    everything in GitHub that may need Cassidy, no model
 #   cos-run atlas       <job-id> "<the name he used>"                             finds a past chat in Agent Atlas, read-only
 #   cos-run fix         <job-id> "<problem>"                                      Claude fixes the kit in its own copy, tested in a sandbox
 #   cos-run land        <job-id> <sha256>|revert                                  lands (or undoes) a reviewed fix: merge, install, push
@@ -35,30 +36,41 @@ lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies th
 cos-run quick <job> "<question>" --with "<read-only command>" [--with ...]
   Cursor Agent (cheap model) answers from the output of the commands you pass. Its model runs nothing itself.
   Reads only: make board|stale|weed|roadmap-check|ship-check|raqs|..., gh issue|pr view|list|diff|checks, gh search,
-  gh api (GET), git log|show|grep|..., cat, head, sed -n, ls, board-pulse. No ; & | ` $ < >. Quote ">=" filters.
+  gh api (GET), git log|show|grep|..., cat, head, sed -n, ls, board-pulse, cos-flow lanes|week|evidence|nostatus|today|debt.
+  No ; & | ` $ < >. Quote ">=" filters.
 Examples:
   cos-run quick q-stale "Which of my cards are stale?" --with "make stale DAYS=3"
   cos-run quick q-prs "What PRs wait on me?" --with "gh pr list --repo wisecodeai/data-org --search 'review-requested:@me'"
+  cos-run quick q-flow "How did throughput look this week?" --with "cos-flow week" --with "cos-flow lanes"
 H
 ;;
     investigate|atlas|draft) cat <<'H'
 cos-run investigate <job> "<brief>" [--in <folder>] [--resume <session>] [--async]
 cos-run atlas       <job> "<the name Cassidy used for a past chat>" [--async]
 cos-run draft       <job> "<brief>" [--base <branch>] [--resume <session>] [--async]
+cos-run draft       <job> "<brief>" --doc drd|dadr --card <his card> [--resume <session>] [--async]
   Claude Code reads widely and writes only in the job folder (draft: its own cassidy/cos-<job> branch, never pushed by
   the job). A checker grades the receipt; one revision round runs if it blocks. Receipt verdict: VERIFIED (checker
   passed), NOT VERIFIED (it blocked), INCONCLUSIVE (it didn't run). Over 3 minutes? Use --async.
+  --doc: a DRD or DADR on Cassidy's own card only, from main, by data-org's draft-drd / draft-dadr skill. Round 1
+  returns at most three numbered questions; resume with his answers for round 2 (make next-id, scaffold, gate, lint).
+  Never flips a status to Approved or accepted; never a DRD and a DADR in one diff. Another owner's card: refused.
 Examples:
   cos-run investigate inv-720-status "What does PR #720 still need? Five lines, with links." --async
   cos-run atlas atlas-dash "the dashboard chat"
   cos-run draft dr-720-fix "Fix the broken link in docs/x.md" --base cassidy/720-topic --async
+  cos-run draft drd-712 "He wants the label-facts requirement written up" --doc drd --card data-org#712 --async
+  cos-run draft drd-712 "1-yes 2-Cassidy 3-skip" --resume <session from round 1> --async
 H
 ;;
     gh-scan) cat <<'H'
-cos-run gh-scan <job> [since]
-  One read-only pass over everything in GitHub that may need Cassidy. No model.
+cos-run gh-scan <job> [since] [--state brief|watch]
+  One read-only pass over everything in GitHub that may need Cassidy. No model. Each caller keeps its own "since":
+  --state brief for the morning and evening briefs, --state watch for the hourly watch, so a watch never hides
+  overnight activity from the morning brief. PRs others assigned to him are always listed.
 Examples:
-  cos-run gh-scan scan-20261114
+  cos-run gh-scan scan-brief-20261114 --state brief
+  cos-run gh-scan scan-watch-20261114-0900 --state watch
   cos-run gh-scan scan-20261114 2026-11-13T16:00:00Z
 H
 ;;
@@ -159,7 +171,7 @@ LANE="${1:-}"
 JOB="${2:-}"; [[ -n "$JOB" ]] || usage_fail "$LANE" "missing the job id"
 BRIEF_IN="${3:-}"
 [[ -n "$BRIEF_IN" || "$LANE" =~ ^(receipt|gh-scan|preview)$ ]] || usage_fail "$LANE" "missing the third argument (the brief, the question or the lane's value)"
-shift $(( $# < 3 ? $# : 3 ))
+if [[ "$LANE" == gh-scan && "$BRIEF_IN" == --* ]]; then BRIEF_IN=""; shift 2; else shift $(( $# < 3 ? $# : 3 )); fi
 export PATH="$HOME/cos/bin:$PATH"
 # Jobs use their own clones under ~/cos/repos. launchd jobs cannot read ~/Documents (macOS privacy, TCC),
 # so nothing a job needs may live there. Cassidy's checkout in ~/Documents is never touched.
@@ -167,10 +179,16 @@ COS="$HOME/cos"; REPO="$COS/repos/data-org"; MAIN="$COS/data-org-main"; NBREPO="
 ZOOM=""; for z in "$COS/zoom" "$HOME/Documents/Zoom"; do [[ -d "$z" && -r "$z" ]] && { ZOOM="$z"; break; }; done
 # Best-effort. A ledger failure must not change the lane's exit code.
 ledger() { "$HOME/cos/bin/cos-ledger" "$@" >/dev/null 2>&1 || true; }
-IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0; BASE=""; LAKE_ENV="dev"
+IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0; BASE=""; LAKE_ENV="dev"; SCAN_STATE=""; DOC=""; DOC_CARD=""
 while [[ $# -gt 0 ]]; do
-  [[ "$1" =~ ^--(in|base|resume|with|slug|env)$ && $# -lt 2 ]] && usage_fail "$LANE" "$1 needs a value"
+  [[ "$1" =~ ^--(in|base|resume|with|slug|env|state|doc|card)$ && $# -lt 2 ]] && usage_fail "$LANE" "$1 needs a value"
   case "$1" in
+    --state) [[ "$LANE" == gh-scan && "$2" =~ ^(brief|watch)$ ]] || usage_fail "$LANE" "--state is for gh-scan: brief (the morning and evening briefs) or watch (the hourly watch)"
+             SCAN_STATE="$2"; shift 2 ;;
+    --doc) [[ "$LANE" == draft && "$2" =~ ^(drd|dadr)$ ]] || usage_fail "$LANE" "--doc is for draft: drd or dadr"
+           DOC="$2"; shift 2 ;;
+    --card) [[ "$LANE" == draft && "$2" =~ ^((wisecodeai/)?[A-Za-z0-9._-]+)?#[0-9]+$ ]] || usage_fail "$LANE" "--card is for draft: data-org#712"
+            DOC_CARD="$2"; shift 2 ;;
     --in) IN="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2
             [[ "$BASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$ && "$BASE" != *..* ]] || usage_fail "$LANE" "bad --base branch '$BASE'" ;;
@@ -360,7 +378,7 @@ case "$LANE" in investigate|atlas|draft|build|fix|lake) long_lane ;; esac
 # gh-scan: one read-only GitHub pass (claude/cos-gh-scan), a script with no model in it. The Chief runs it for every brief.
 if [[ "$LANE" == gh-scan ]]; then
   OUT="$COS/outbox/$JOB"; mkdir -p "$OUT"
-  "$COS/bin/cos-gh-scan" "$OUT" ${BRIEF_IN:+"$BRIEF_IN"} > "$OUT/run.out" 2> "$OUT/run.err" || true
+  "$COS/bin/cos-gh-scan" "$OUT" ${BRIEF_IN:+"$BRIEF_IN"} ${SCAN_STATE:+--state "$SCAN_STATE"} > "$OUT/run.out" 2> "$OUT/run.err" || true
   [[ -f "$OUT/receipt.json" ]] || jq -n --arg j "$JOB" --arg e "$(tail -c 300 "$OUT/run.err" 2>/dev/null)" \
     '{job: $j, lane: "gh-scan", receipt: {status: "failed", summary: ("GitHub read failed: the scan crashed. " + $e)}}' > "$OUT/receipt.json"
   cat "$OUT/receipt.json"; async_done "$OUT/receipt.json"; exit 0
@@ -748,6 +766,27 @@ if [[ "$LANE" == "apply" ]]; then
 fi
 
 if [[ -f "$BRIEF_IN" ]]; then cp "$BRIEF_IN" "$OUT/brief.md"; else printf '%s\n' "$BRIEF_IN" > "$OUT/brief.md"; fi
+# A DRD or DADR draft (plan item 8): only on Cassidy's own card, only from main, by data-org's draft-drd or draft-dadr
+# skill. A resumed job keeps its kind and card. The job folder is writable by the model, so a saved pair is checked again.
+if [[ "$LANE" == draft ]]; then
+  if [[ -z "$DOC" && -f "$OUT/.draft-doc" ]]; then read -r DOC DOC_CARD < "$OUT/.draft-doc" || true
+    [[ "$DOC" =~ ^(drd|dadr)$ && "$DOC_CARD" =~ ^((wisecodeai/)?[A-Za-z0-9._-]+)?#[0-9]+$ ]] || { echo "the saved draft kind or card is not valid; refusing" >&2; exit 64; }; fi
+  [[ -n "$DOC_CARD" && -z "$DOC" ]] && usage_fail draft "--card goes with --doc drd|dadr"
+  if [[ -n "$DOC" ]]; then
+    [[ -n "$DOC_CARD" ]] || usage_fail draft "--doc needs --card <Cassidy's card>, such as data-org#712"
+    [[ -z "$BASE" || "$BASE" == main ]] || usage_fail draft "a new DRD or DADR starts from main (--base main)"
+    WH="$("$COS/bin/cos-gh" "$JOB" whose "$DOC_CARD" 2>&1)" || { echo "cos-run draft: couldn't read $DOC_CARD: ${WH:0:300}" >&2; exit 66; }
+    if [[ "$(jq -r '.mine' <<<"$WH" 2>/dev/null)" != true ]]; then
+      echo "cos-run draft refused: $DOC_CARD is $(jq -r '.owner' <<<"$WH" 2>/dev/null)'s card. Owners own their docs: a line in their to-do list, never a draft of their doc." >&2
+      ledger tier_zero job="$JOB" action="draft $DOC $DOC_CARD" decision=refused tier=never why="another owner's doc"; exit 65
+    fi
+    [[ -s "$COS/claude/briefs/draft-doc.md" ]] || { echo "cos-run draft: $COS/claude/briefs/draft-doc.md is missing (run ./install.sh). Nothing ran." >&2; exit 66; }
+    printf '%s %s\n' "$DOC" "$DOC_CARD" > "$OUT/.draft-doc"
+    KIND="$(tr '[:lower:]' '[:upper:]' <<<"$DOC")"
+    TPL="$(KIND="$KIND" LC="$DOC" SKILL="draft-$DOC" CARD="$DOC_CARD" perl -pe 's/\{\{KIND\}\}/$ENV{KIND}/g; s/\{\{LC\}\}/$ENV{LC}/g; s/\{\{SKILL\}\}/$ENV{SKILL}/g; s/\{\{CARD\}\}/$ENV{CARD}/g' "$COS/claude/briefs/draft-doc.md")"
+    { printf '%s\n\nFrom the Chief (Cassidy'"'"'s words or answers):\n' "$TPL"; cat "$OUT/brief.md"; } > "$OUT/brief.tmp" && mv "$OUT/brief.tmp" "$OUT/brief.md"
+  fi
+fi
 finish() {
   if [[ ${GIT_STALE:-0} -eq 1 ]]; then  # say plainly when the data-org copy is older than this run
     jq '.receipt.summary = ("Note: GitHub was unreachable from the Mac, so this used data-org main as last fetched. " + (.receipt.summary // ""))' \
@@ -761,7 +800,7 @@ if [[ "$LANE" == "quick" ]]; then
   # Reads only. No ; & | ` $ < > anywhere, so no chaining and no redirect (an unquoted '>=' in a search filter would
   # make a file). gh api must be a read: no mutation, no method but GET, no fields unless -X GET.
   A_='[^;&|`$<>]*'
-  READONLY="^(board-pulse( --week)?( --record)?( --json)?|make (board|roadmap-check( CARD=[0-9]+)?|stale( DAYS=[0-9]+)?|weed( DAYS=[0-9]+)?|ship-check|raqs|socialize|gate|selftest|doctor)|gh (issue|pr) (view|list|diff|checks) $A_|gh search (issues|prs|code|commits|repos) $A_|gh repo view $A_|gh api $A_|git (-C [^[:space:];&|\`\$<>]+ )?(log|status|diff|show|grep|ls-files|ls-remote|rev-parse) $A_|cat $A_|head $A_|sed -n $A_|ls $A_)$"
+  READONLY="^(board-pulse( --week)?( --record)?( --json)?|cos-flow (lanes|week|evidence|nostatus|today|debt)( --days [0-9]{1,2}| --date [0-9]{4}-[0-9]{2}-[0-9]{2})?( --json)?|make (board|roadmap-check( CARD=[0-9]+)?|stale( DAYS=[0-9]+)?|weed( DAYS=[0-9]+)?|ship-check|raqs|socialize|gate|selftest|doctor)|gh (issue|pr) (view|list|diff|checks) $A_|gh search (issues|prs|code|commits|repos) $A_|gh repo view $A_|gh api $A_|git (-C [^[:space:];&|\`\$<>]+ )?(log|status|diff|show|grep|ls-files|ls-remote|rev-parse) $A_|cat $A_|head $A_|sed -n $A_|ls $A_)$"
   quick_ok() {
     # Judge the command the way the shell will run it: single-quoted text is inert, double-quoted text is inert unless
     # it can expand ($ or a backtick). What's left must be a listed read with no ; & | ` $ < >.
@@ -893,9 +932,28 @@ if [[ "$LANE" == "draft" ]]; then
      '. + {draft: {base: $b, base_sha: $from, fetched_sha: $tip, fetched_fresh: true, base_moved: ($from != $tip), file: "draft.diff", files: $n, sha256: $s}}
       | .receipt.artifacts = ((.receipt.artifacts // []) + [$out + "/draft.diff"])' \
      "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+  # No job flips a DRD or DADR to Approved or accepted, and a DRD and a DADR never go in one PR (plan item 8). Checked on
+  # the diff itself, outside the model. A blocked draft is never staged for a push.
+  DG="$("$COS/bin/cos-gh" "$JOB" doc-guard "$OUT/draft.diff" 2>/dev/null || echo '{}')"
+  DRAFT_BLOCK="$(jq -r '.block // empty' <<<"$DG" 2>/dev/null)"
+  if [[ -n "$DOC" ]]; then
+    DID="$(jq -r '.new_ids[0] // empty' <<<"$DG")"; NJ='null'
+    [[ -n "$DID" ]] && NJ="$("$COS/bin/cos-flow" next-id "${DID%%-*}" "${DID##*-}" --json 2>/dev/null || true)"
+    jq -e . >/dev/null 2>&1 <<<"$NJ" || NJ='null'
+    jq --arg k "$DOC" --arg c "$DOC_CARD" --argjson g "$DG" --argjson nid "$NJ" \
+       '.draft.doc = {kind: $k, card: $c, new_ids: ($g.new_ids // []), next_id: $nid}
+        | if ((.receipt.open_questions // []) | length) > 3 then .receipt.open_questions = .receipt.open_questions[0:3]
+            | .receipt.summary = ("Note: the job asked more than three questions; only the first three are kept. " + (.receipt.summary // "")) else . end
+        | if ($nid != null and $nid.free == false) then .receipt.summary = ("Needs you: " + $nid.says + " " + (.receipt.summary // "")) else . end' \
+       "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+  fi
+  if [[ -n "$DRAFT_BLOCK" ]]; then
+    jq --arg b "$DRAFT_BLOCK" '.receipt.status = "blocked" | .draft.blocked = $b | .receipt.summary = ("Needs you: " + $b + " Not staged for a push. " + (.receipt.summary // ""))' \
+       "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+  fi
   # Commit the change on the job's branch, and when the base is one of Cassidy's branches (an open PR of his), stage
   # the push in the batch with the diff's sha256. It runs only on his yes, through cos-push-draft.
-  if [[ "$DRAFT_N" -gt 0 ]]; then
+  if [[ "$DRAFT_N" -gt 0 && -z "$DRAFT_BLOCK" ]]; then
     git -C "$WORKDIR" diff --cached --quiet || git -C "$WORKDIR" -c user.name="$(git -C "$REPO" config user.name || echo cos)" commit -q \
       -m "$(head -1 "$OUT/brief.md" | cut -c1-72)" -m "Drafted by cos-run draft $JOB; pushed only on Cassidy's yes." 2>>"$OUT/run.err" || true
     if [[ "$BASE" =~ ^cassidy/ ]]; then

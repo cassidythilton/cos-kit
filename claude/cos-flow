@@ -1,0 +1,842 @@
+#!/usr/bin/env -S python3 -I
+"""cos-flow: read-only facts about the data-org board for STEWARD's briefs (plan 2026-11-14, items 8 and 9). No model.
+
+  cos-flow lanes    [--json]          lane counts as the Lanes view shows them (every item, by Status), plus open-only
+  cos-flow week     [--days 7] [--json]   the throughput readout from GitHub's own lane-move history
+                                      (ProjectV2ItemStatusChangedEvent): forward and backward moves, finishes, drops,
+                                      median days in Defining and Shipping, cards in one lane past 14 days
+  cos-flow evidence [--json]          "evidence says #N can move to <lane>" lines, each for its owner, each with a link
+  cos-flow nostatus [--json]          open cards in No Status, for their owners
+  cos-flow today    [--date YYYY-MM-DD] [--json]   DRD/DADR facts on cards worked today (board activity and Agent
+                                      Atlas recent work): the card's DRD line, drd/ and dadr/ on main, open doc PRs,
+                                      and the structural signals of PR #524's four-row check
+  cos-flow debt     [--json]          definition debt for the Friday brief
+  cos-flow next-id  DRD|DADR <NNNN> [--head <branch>]   is this number still free? Runs make next-id, then checks
+                                      every open PR (make next-id reads only the newest 30) and main. Exit 65 if taken.
+  cos-flow brief    capture|week <out-dir>   writes the files a scheduled brief reads (flow-*.md and flow-*.json)
+
+Read-only: GraphQL queries, gh pr list, git show of origin/main. It never moves a card, never comments, never edits.
+Lanes move only through make set-pillar (Status) and finishes through make complete, by the person on the card or by
+Cassidy on his own cards with the evidence cited (cos-run gh lane). Team numbers only: no sums per person.
+COS_FLOW_FIXTURE=<file.json> replaces GitHub, git and Agent Atlas with a fixture (installer tests).
+"""
+import datetime as dt
+import json
+import os
+import re
+import statistics
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+COS = f"{HOME}/cos"
+REPO_DIR = os.environ.get("DATA_ORG_REPO", f"{COS}/repos/data-org")
+MAIN = f"{COS}/data-org-main"
+ORG, PROJECT, ME = "wisecodeai", 1, "cassidythilton"
+from zoneinfo import ZoneInfo
+MT = ZoneInfo("America/Denver")
+FIX = os.environ.get("COS_FLOW_FIXTURE")
+_fix = json.load(open(FIX)) if FIX else None
+NOW = dt.datetime.fromisoformat(_fix["now"]) if _fix and _fix.get("now") else dt.datetime.now(dt.timezone.utc)
+
+# The board's eight Status options in board order (scripts/dataorg.sh PILLARS). The lanes are unordered for where a card
+# sits; "forward" and "back" below use this order only to count moves, and the readout says so.
+ACTIVE = ["Intake", "Discovery", "Defining", "Shipping", "Delivery Prep"]
+DONE_NAMES = ("Completed No Delivery", "Delivered")
+ORDER = {"Intake": 0, "Discovery": 1, "Defining": 2, "Shipping": 3, "Delivery Prep": 4, "Delivered": 5}
+BOARD_ORDER = ["Intake", "Discovery", "Defining", "Shipping", "Completed No Delivery", "Delivery Prep",
+               "Delivered · 🟢 DONE DONE", "Dropped · ⚫"]
+NET_ERR = re.compile(r"(i/o timeout|timed out|connection reset|connection refused|dial tcp|EOF|TLS handshake|"
+                     r"no such host|HTTP 50[234]|temporarily unavailable|network is unreachable)", re.I)
+
+
+def lane_key(s):
+    """Board name -> short lane: 'Delivered · 🟢 DONE DONE' -> 'Delivered', 'Dropped · ⚫' -> 'Dropped', '' -> 'No Status'."""
+    s = (s or "").strip()
+    if not s:
+        return "No Status"
+    for k in ("Delivered", "Dropped"):
+        if s.startswith(k):
+            return k
+    return s
+
+
+def gh(*args, timeout=120):
+    last = ""
+    for wait in (0, 10, 30):
+        time.sleep(wait)
+        try:
+            r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            last = f"timed out after {timeout} s"
+            continue
+        if r.returncode == 0:
+            return r.stdout
+        last = (r.stderr or r.stdout).strip()[:300]
+        if not NET_ERR.search(last):
+            break
+    raise RuntimeError(last or "gh failed")
+
+
+ITEMS_Q = """query($after:String){organization(login:"wisecodeai"){projectV2(number:1){items(first:40,after:$after){
+ pageInfo{hasNextPage endCursor}
+ nodes{id isArchived createdAt type
+  fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}
+  content{__typename
+   ... on Issue{number title url state stateReason closedAt createdAt body repository{name} author{login}
+     assignees(first:10){nodes{login}} labels(first:30){nodes{name}}
+     subIssues(first:30){nodes{number title state}}
+     comments(last:15){nodes{createdAt author{login} bodyText url}}
+     moves:timelineItems(first:100,itemTypes:[PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]){nodes{
+       ... on ProjectV2ItemStatusChangedEvent{createdAt previousStatus status project{number}}}}
+     refs:timelineItems(last:25,itemTypes:[CROSS_REFERENCED_EVENT,CONNECTED_EVENT,CLOSED_EVENT]){nodes{__typename
+       ... on CrossReferencedEvent{createdAt source{... on PullRequest{number url state merged title repository{name}}}}
+       ... on ConnectedEvent{createdAt subject{... on PullRequest{number url state merged title repository{name}}}}
+       ... on ClosedEvent{createdAt}}}}
+   ... on PullRequest{number title url state closedAt createdAt body repository{name} author{login}
+     assignees(first:10){nodes{login}} labels(first:30){nodes{name}}
+     comments(last:15){nodes{createdAt author{login} bodyText url}}
+     moves:timelineItems(first:100,itemTypes:[PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]){nodes{
+       ... on ProjectV2ItemStatusChangedEvent{createdAt previousStatus status project{number}}}}}
+   ... on DraftIssue{title createdAt}}}}}}}"""
+
+
+def ts(s):
+    return dt.datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
+
+
+def nodes(x, key):
+    return ((x or {}).get(key) or {}).get("nodes") or []
+
+
+def fetch_items():
+    if _fix is not None:
+        raw = _fix.get("items", [])
+    else:
+        raw, after = [], None
+        while True:
+            args = ["api", "graphql", "-f", f"query={ITEMS_Q}"] + (["-f", f"after={after}"] if after else [])
+            d = json.loads(gh(*args))["data"]["organization"]["projectV2"]["items"]
+            raw += d["nodes"]
+            if not d["pageInfo"]["hasNextPage"]:
+                break
+            after = d["pageInfo"]["endCursor"]
+    cards = []
+    for it in raw:
+        if it.get("isArchived"):
+            continue  # archived items are in no view
+        c = it.get("content") or {}
+        kind = c.get("__typename") or "DraftIssue"
+        status = ((it.get("fieldValueByName") or {}).get("name")) or ""
+        repo = (c.get("repository") or {}).get("name", "")
+        n = c.get("number")
+        moves = sorted([m for m in nodes(c, "moves") if m and (m.get("project") or {}).get("number") == PROJECT],
+                       key=lambda m: m["createdAt"])
+        refs = []
+        for r in nodes(c, "refs"):
+            pr = r.get("source") or r.get("subject") or {}
+            refs.append({"type": r.get("__typename"), "at": r.get("createdAt"), "pr": pr if pr.get("number") else None})
+        assignees = [a["login"] for a in nodes(c, "assignees")]
+        author = (c.get("author") or {}).get("login", "")
+        cards.append({
+            "ref": (f"{repo}#{n}" if n else "draft"), "short": (f"#{n}" if repo == "data-org" else f"{repo}#{n}") if n else "draft",
+            "repo": repo, "n": n, "kind": kind, "title": c.get("title", ""), "url": c.get("url", ""),
+            "state": c.get("state") or "OPEN", "reason": c.get("stateReason") or "", "closed_at": c.get("closedAt"),
+            "created": c.get("createdAt") or it.get("createdAt"), "item_created": it.get("createdAt"),
+            "status": status, "lane": lane_key(status), "body": c.get("body") or "", "author": author,
+            "assignees": assignees, "labels": [l["name"] for l in nodes(c, "labels")],
+            "subs": [{"n": s["number"], "title": s["title"], "state": s["state"]} for s in nodes(c, "subIssues")],
+            "comments": [{"at": x["createdAt"], "by": (x.get("author") or {}).get("login", "ghost"), "text": x.get("bodyText", ""),
+                          "url": x.get("url", "")} for x in nodes(c, "comments")],
+            "moves": [{"at": m["createdAt"], "from": lane_key(m.get("previousStatus")), "to": lane_key(m.get("status"))} for m in moves],
+            "refs": refs,
+        })
+    return cards
+
+
+def mine(c):
+    """His card: he is an assignee, or he wrote it and nobody is assigned (same rule as cos-gh)."""
+    return ME in c["assignees"] or (c["author"] == ME and not c["assignees"])
+
+
+def owner(c):
+    return ", ".join(c["assignees"]) or (f"{c['author']} (author, unassigned)" if c["author"] else "nobody")
+
+
+def is_open(c):
+    return c["state"] == "OPEN"
+
+
+# ------------------------------------------------------------------ lanes
+def lanes(cards):
+    view, open_, closed = {}, {}, {}
+    for c in cards:
+        k = c["lane"]
+        view[k] = view.get(k, 0) + 1
+        (open_ if is_open(c) else closed)[k] = (open_ if is_open(c) else closed).get(k, 0) + 1
+    order = [lane_key(x) for x in BOARD_ORDER] + ["No Status"]
+    return {"as_of": NOW.isoformat(), "items": len(cards), "order": order,
+            "view": {k: view.get(k, 0) for k in order}, "open": {k: open_.get(k, 0) for k in order},
+            "closed": {k: closed.get(k, 0) for k in order},
+            "note": "The Lanes view (Project 1, view 1) has no filter: it shows every item that isn't archived, open and "
+                    "closed, in its Status column. 'view' counts that; 'open' counts open items only."}
+
+
+def lanes_md(L):
+    out = [f"## Lanes, {NOW.astimezone(MT):%b %-d %H:%M} MT ({L['items']} items on the board, archived left out)", "",
+           "| Lane | Lanes view shows | Open | Closed |", "|---|---|---|---|"]
+    for k in L["order"]:
+        out.append(f"| {k} | {L['view'][k]} | {L['open'][k]} | {L['closed'][k]} |")
+    out += ["", L["note"]]
+    return "\n".join(out)
+
+
+# ------------------------------------------------------------------ throughput
+def segments(c):
+    """The card's stays in each lane, from its move history. A stay with no recorded start uses the item's add date."""
+    segs, cur, start, known = [], None, None, False
+    if c["moves"]:
+        first = c["moves"][0]
+        if first["from"] != "No Status":
+            cur, start, known = first["from"], c["item_created"], False
+    for m in c["moves"]:
+        if cur is not None:
+            segs.append({"lane": cur, "start": start, "end": m["at"], "start_known": known})
+        cur, start, known = m["to"], m["at"], True
+    if cur is None and c["lane"] != "No Status":
+        cur, start, known = c["lane"], c["item_created"], False
+    if cur is not None:
+        segs.append({"lane": cur, "start": start, "end": None, "start_known": known})
+    return segs
+
+
+def days(a, b):
+    return (ts(b) - ts(a)).total_seconds() / 86400
+
+
+def classify(frm, to):
+    if frm == "No Status":
+        return "placed"
+    if frm in DONE_NAMES and to in DONE_NAMES:
+        return "relabeled"  # one finish lane to the other: not a second finish
+    if to in DONE_NAMES:
+        return "finish"
+    if to == "Dropped":
+        return "drop"
+    if to == "No Status":
+        return "cleared"
+    if frm in DONE_NAMES or frm == "Dropped":
+        return "back"  # out of a terminal lane
+    if frm in ORDER and to in ORDER:
+        return "forward" if ORDER[to] > ORDER[frm] else "back"
+    return "other"
+
+
+def week(cards, n_days=7):
+    lo = NOW - dt.timedelta(days=n_days)
+    moves = []
+    for c in cards:
+        for m in c["moves"]:
+            if ts(m["at"]) >= lo:
+                moves.append({"card": c["short"], "url": c["url"], "from": m["from"], "to": m["to"], "at": m["at"],
+                              "kind": classify(m["from"], m["to"])})
+    count = lambda k: sum(1 for m in moves if m["kind"] == k)
+    ended = {"Defining": [], "Shipping": []}
+    now_in = {"Defining": [], "Shipping": []}
+    stuck = []
+    for c in cards:
+        for s in segments(c):
+            if s["lane"] in ended and s["end"] and ts(s["end"]) >= lo and s["start"]:
+                ended[s["lane"]].append(days(s["start"], s["end"]))
+            if s["end"] is None and is_open(c) and s["start"]:
+                age = days(s["start"], NOW.isoformat())
+                if s["lane"] in now_in:
+                    now_in[s["lane"]].append(age)
+                if s["lane"] in ACTIVE and age > 14:
+                    stuck.append({"card": c["short"], "url": c["url"], "title": c["title"][:70], "lane": s["lane"],
+                                  "days": round(age), "since_known": s["start_known"], "owner": owner(c)})
+    med = lambda xs: round(statistics.median(xs), 1) if xs else None
+    return {"window_days": n_days, "from": lo.isoformat(), "to": NOW.isoformat(), "moves": len(moves),
+            "forward": count("forward"), "back": count("back"), "finished": count("finish"), "dropped": count("drop"),
+            "placed": count("placed"), "cleared": count("cleared"), "relabeled": count("relabeled"),
+            "finished_by_lane": {k: sum(1 for m in moves if m["kind"] == "finish" and m["to"] == k) for k in DONE_NAMES},
+            "median_days_in": {k: {"stays_ended_in_window": med(v), "n": len(v)} for k, v in ended.items()},
+            "median_age_now": {k: {"days": med(v), "n": len(v)} for k, v in now_in.items()},
+            "stuck_over_14_days": sorted(stuck, key=lambda x: -x["days"]),
+            "move_list": sorted(moves, key=lambda m: m["at"]),
+            "note": "Forward and back follow the board's order (Intake, Discovery, Defining, Shipping, Delivery Prep, "
+                    "Delivered) only to count moves; the lanes stay unordered for where a card sits. 'placed' is a card's "
+                    "first lane. Days in a lane start at the move into it; a stay older than the history starts at the "
+                    "day the card was added (marked 'since added'). Team numbers only."}
+
+
+def week_md(W):
+    m = W["median_days_in"]; a = W["median_age_now"]
+    f = lambda x: "none" if x is None else f"{x}"
+    out = [f"## Throughput, the last {W['window_days']} days (from GitHub's lane-move history)", "",
+           f"- Moves: {W['moves']}. Forward {W['forward']}, back {W['back']}, finished {W['finished']} "
+           f"(Completed No Delivery {W['finished_by_lane']['Completed No Delivery']}, Delivered {W['finished_by_lane']['Delivered']}), "
+           f"dropped {W['dropped']}, first placed {W['placed']}" + (f", Status cleared {W['cleared']}" if W["cleared"] else "")
+           + (f", moved between the two finish lanes {W['relabeled']}" if W["relabeled"] else "") + ".",
+           f"- Median days in Defining, stays that ended this week: {f(m['Defining']['stays_ended_in_window'])} (n={m['Defining']['n']}). "
+           f"Shipping: {f(m['Shipping']['stays_ended_in_window'])} (n={m['Shipping']['n']}).",
+           f"- Median age of open cards now in Defining: {f(a['Defining']['days'])} days (n={a['Defining']['n']}); "
+           f"in Shipping: {f(a['Shipping']['days'])} days (n={a['Shipping']['n']}).",
+           f"- Open cards in one active lane past 14 days: {len(W['stuck_over_14_days'])}.", ""]
+    if W["move_list"]:
+        out += ["Moves this week:", ""] + [f"- {x['at'][:10]} {x['card']}: {x['from']} → {x['to']} ({x['kind']})" for x in W["move_list"]] + [""]
+    if W["stuck_over_14_days"]:
+        out += ["In one lane past 14 days (for each owner's list, not a ranking):", ""]
+        out += [f"- {x['card']} {x['title']}: {x['lane']}, {x['days']} days{'' if x['since_known'] else ' since added'}. Owner: {x['owner']}"
+                for x in W["stuck_over_14_days"]] + [""]
+    out.append(W["note"])
+    return "\n".join(out)
+
+
+# ------------------------------------------------------------------ docs on main and in open PRs
+FRONT_KEYS = ("id", "title", "status", "owner", "source_issue", "review_by", "date", "deciders", "revisit")
+
+
+def front(text):
+    m = re.match(r"^---\n(.*?)\n---", text or "", re.S)
+    if not m:
+        return {}
+    out = {}
+    for line in m.group(1).splitlines():
+        mm = re.match(r"^([a-z_]+):\s*(.*)$", line)
+        if not mm or mm.group(1) not in FRONT_KEYS:
+            continue
+        v = mm.group(2).strip()
+        q = re.match(r'^(["\'])(.*?)\1', v)  # a quoted value keeps its '#'; a trailing comment goes
+        out[mm.group(1)] = q.group(2) if q else re.split(r"\s+#", v, maxsplit=1)[0].strip()
+    return out
+
+
+_main_sha = None
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", REPO_DIR, *args], capture_output=True, text=True)
+
+
+def refresh_main():
+    """Fetch origin/main into the job clone, under the same lock board-pulse and cos-run use. No lock in 60 s: use the
+    ref as it is and say so."""
+    global _main_sha
+    if _fix is not None:
+        _main_sha = "fixture"; return True
+    lock = f"{COS}/state/data-org-main.lock"
+    got = False
+    for _ in range(60):
+        if subprocess.run(["shlock", "-f", lock, "-p", str(os.getpid())]).returncode == 0:
+            got = True; break
+        time.sleep(1)
+    fresh = False
+    if got:
+        fresh = git("fetch", "-q", "origin", "main").returncode == 0
+        try:
+            if open(lock).read().strip() == str(os.getpid()):
+                os.remove(lock)
+        except Exception:
+            pass
+    _main_sha = git("rev-parse", "--short", "origin/main").stdout.strip() or "unknown"
+    return fresh
+
+
+_cache = {}
+
+
+def main_docs():
+    """Every DRD and DADR on origin/main: path, kind and frontmatter. Read once per run."""
+    if "docs" in _cache:
+        return _cache["docs"]
+    _cache["docs"] = _main_docs()
+    return _cache["docs"]
+
+
+def _main_docs():
+    if _fix is not None:
+        return _fix.get("docs", [])
+    out = []
+    ls = git("ls-tree", "--name-only", "origin/main", "drd/", "dadr/").stdout.split()
+    for p in ls:
+        if not re.match(r"^(drd/DRD|dadr/DADR)-\d{4}-.*\.md$", p):
+            continue
+        txt = git("show", f"origin/main:{p}").stdout
+        out.append({"path": p, "kind": "DRD" if p.startswith("drd/") else "DADR", "front": front(txt)})
+    return out
+
+
+def open_prs():
+    if "prs" not in _cache:
+        _cache["prs"] = _open_prs()
+    return _cache["prs"]
+
+
+def _open_prs():
+    if _fix is not None:
+        return _fix.get("prs", [])
+    d = json.loads(gh("pr", "list", "--repo", f"{ORG}/data-org", "--state", "open", "--limit", "300", "--json",
+                      "number,title,body,isDraft,author,url,files,reviewRequests,reviews,headRefName,createdAt"))
+    return d
+
+
+_main_paths = None
+
+
+def main_paths():
+    global _main_paths
+    if _main_paths is None:
+        _main_paths = {d["path"] for d in main_docs()}
+    return _main_paths
+
+
+def doc_files(pr):
+    """The DRD and DADR files a PR touches. New means the path isn't on main (an amend is not a new doc)."""
+    out = []
+    for f in pr.get("files") or []:
+        p = f.get("path", "")
+        m = re.match(r"^(drd|dadr)/((DRD|DADR)-(\d{4}))-.*\.md$", p)
+        if m:
+            out.append({"path": p, "id": m.group(2), "kind": m.group(3), "num": int(m.group(4)),
+                        "added": p not in main_paths()})
+    return out
+
+
+def clashes(prs):
+    """IDs that more than one open PR adds as a new file: whichever merges second fails the gate's duplicate-ID check."""
+    seen = {}
+    for pr in prs:
+        for f in doc_files(pr):
+            if f["added"]:
+                seen.setdefault(f["id"], set()).add(pr["number"])
+    return {k: sorted(v) for k, v in seen.items() if len(v) > 1}
+
+
+def issue_refs(text, repo="data-org"):
+    """Card numbers a PR body or source_issue names: Tile: #n, Closes #n, Refs #n, "#n"."""
+    found = set()
+    for m in re.finditer(r"(?:(?:wisecodeai/)?([A-Za-z0-9._-]+))?#(\d+)", text or ""):
+        r = m.group(1) or repo
+        found.add(f"{r}#{m.group(2)}")
+    return found
+
+
+def src_ref(doc):
+    s = (doc.get("front") or {}).get("source_issue", "")
+    return next(iter(issue_refs(s)), "") if s else ""
+
+
+# ------------------------------------------------------------------ the card's DRD facts (PR #524: read the DRD line and drd/ first)
+NO_DRD = re.compile(r"\b(no DRD|needs no DRD|does not need a DRD|doesn't need a DRD|DRD:\s*(none|n/?a))\b", re.I)
+
+
+def doc_facts(c, docs, prs):
+    body_ids = sorted(set(re.findall(r"\b(DRD-\d{4})\b", c["body"])))
+    body_dadr = sorted(set(re.findall(r"\b(DADR-\d{4})\b", c["body"])))
+    on_main = [{"id": (d["front"].get("id") or os.path.basename(d["path"])[:8]), "kind": d["kind"], "status": d["front"].get("status", ""),
+                "path": d["path"], "review_by": d["front"].get("review_by", "")} for d in docs if src_ref(d) == c["ref"]]
+    in_prs = []
+    for pr in prs:
+        files = doc_files(pr)
+        if files and c["ref"] in issue_refs(pr.get("body", "")):
+            for f in files:
+                in_prs.append({"id": f["id"], "kind": f["kind"], "pr": pr["number"], "url": pr["url"], "new": f["added"],
+                               "draft": pr.get("isDraft", False)})
+    subs = [s for s in c["subs"] if re.search(r"\b(DRD|DADR)\b", s["title"])]
+    # A DADR card: its title names a DADR ("DADR-0047: ...", "... → DADR"), or its label says so, or its only docs are DADRs.
+    is_dadr_card = (bool(re.search(r"(^\s*\[?DADR\b|→\s*DADR\b|\bDADR-\d{4}\b)", c["title"])) or "type/dadr" in c["labels"]
+                    or (bool(body_dadr) and not body_ids and not any(d["kind"] == "DRD" for d in on_main)))
+    has_drd = bool(body_ids or any(x["kind"] == "DRD" for x in on_main + in_prs) or any("DRD" in s["title"] for s in subs))
+    return {"body_drd": body_ids, "body_dadr": body_dadr, "body_says_no_drd": bool(NO_DRD.search(c["body"])),
+            "on_main": on_main, "in_open_prs": in_prs, "doc_subs": subs, "dadr_card": is_dadr_card, "has_drd": has_drd}
+
+
+def local_day(s):
+    return ts(s).astimezone(MT).date() if s else None
+
+
+def atlas_cards(day):
+    """Card numbers from Agent Atlas recent work: <name>/<n>-<topic> branches and #n in titles, for chats dated `day`.
+    Only numbers leave lake chats (HANDOFF rule 6)."""
+    if _fix is not None:
+        text, err = _fix.get("atlas", ""), ""
+    else:
+        try:
+            p = subprocess.run([f"{COS}/bin/cos-atlas", "recent", "--days", "2"], capture_output=True, text=True, timeout=60)
+            text, err = p.stdout, ("" if p.returncode == 0 else (p.stderr.strip()[:200] or f"exit {p.returncode}"))
+        except Exception as e:
+            text, err = "", str(e)[:200]
+    found = {}
+    for line in text.splitlines():
+        m = re.match(r"^\S+\s+(\d{4}-\d{2}-\d{2})\s", line)
+        if not m or m.group(1) != day.isoformat():
+            continue
+        repo_m = re.search(r"\((?:wisecodeai/)?([A-Za-z0-9._-]+)\s*@\s*([^)\s]+)\)", line)
+        if repo_m:
+            b = re.match(r"^[A-Za-z0-9._-]+/(\d+)-", repo_m.group(2))
+            if b:
+                found[f"{repo_m.group(1)}#{b.group(1)}"] = "Agent Atlas: a chat on branch " + repo_m.group(2)
+        for t in re.findall(r"(?<![\w/])#(\d{2,5})\b", line.split("[lake chat")[0]):
+            found.setdefault(f"data-org#{t}", "Agent Atlas: a chat title names it")
+    return found, err
+
+
+def worked_today(cards, day):
+    """Cards with work on `day` (Mountain time): a comment, a lane move, a linked or cross-referenced PR, a close."""
+    out = {}
+    for c in cards:
+        why = []
+        if any(local_day(x["at"]) == day for x in c["comments"]):
+            why.append("comment")
+        if any(local_day(m["at"]) == day for m in c["moves"]):
+            why.append("lane move")
+        if any(local_day(r["at"]) == day and r["pr"] for r in c["refs"]):
+            why.append("PR event")
+        if any(local_day(r["at"]) == day and r["type"] == "ClosedEvent" for r in c["refs"]):
+            why.append("closed")
+        if why:
+            out[c["ref"]] = ", ".join(why)
+    return out
+
+
+def signals(c, f, day):
+    """PR #524's four rows, as far as structure can tell. Row 2 (two real options, or a decider) is read from the words
+    by the brief's job; this only points at today's comments."""
+    rows = []
+    entered_defining = any(m["to"] == "Defining" and local_day(m["at"]) == day for m in c["moves"])
+    if (c["lane"] == "Defining" or entered_defining) and not f["has_drd"] and not f["dadr_card"] and not f["body_says_no_drd"]:
+        rows.append({"row": 1, "says": "a DRD sub-item under the card (it is in Defining and has no DRD)",
+                     "signal": "entered Defining today" if entered_defining else "in Defining with no DRD line, file or PR"})
+    for x in f["in_open_prs"]:
+        if x["kind"] == "DRD" and not x["new"]:
+            rows.append({"row": 3, "says": f"the amend is already a PR: {x['id']} in #{x['pr']}", "signal": "an open PR changes an existing DRD", "url": x["url"]})
+    if not rows and c["lane"] in ("Intake", "Discovery") and not f["has_drd"] and not f["body_says_no_drd"]:
+        rows.append({"row": 4, "says": "likely no DRD; one sentence on the card saying so",
+                     "signal": f"a {c['lane']} card (a question, a probe or a readout) with no DRD line"})
+    return rows
+
+
+def who_drafts(c, rows, f):
+    if not is_open(c):
+        return "closed: nothing to draft"
+    if f["dadr_card"] and (f["body_dadr"] or any(x["kind"] == "DADR" for x in f["on_main"] + f["in_open_prs"])):
+        ids = sorted(set(f["body_dadr"] + [x["id"] for x in f["on_main"] + f["in_open_prs"] if x["kind"] == "DADR"]))
+        return f"a DADR card whose DADR exists ({', '.join(ids)}): nothing new to draft"
+    want = [r for r in rows if r["row"] in (1, 2)]
+    if not mine(c):
+        return (f"{owner(c)}'s card: a line in their to-do list (row {want[0]['row']}), never a draft of their doc" if want
+                else f"{owner(c)}'s card: nothing unless row 2 fits the words; then a line in their to-do list, never a draft")
+    if want:
+        return f"Cassidy's card: offer a DRD draft (cos-run draft <job> \"<brief>\" --doc drd --card {c['ref']})"
+    return f"Cassidy's card: nothing to draft unless row 2 fits the words; then offer a DADR draft (--doc dadr --card {c['ref']})"
+
+
+def today(cards, docs, prs, day):
+    board = worked_today(cards, day)
+    atlas, atlas_err = atlas_cards(day)
+    by_ref = {c["ref"]: c for c in cards}
+    refs = sorted(set(board) | set(atlas), key=lambda r: (r.split("#")[0], int(r.split("#")[1])))
+    out, off_board = [], []
+    for r in refs:
+        c = by_ref.get(r)
+        if not c:
+            off_board.append({"card": r, "why": atlas.get(r, "")}); continue
+        f = doc_facts(c, docs, prs)
+        today_comments = [{"by": x["by"], "at": x["at"], "url": x["url"], "text": re.sub(r"\s+", " ", x["text"])[:280]}
+                          for x in c["comments"] if local_day(x["at"]) == day]
+        out.append({"card": c["short"], "ref": c["ref"], "url": c["url"], "title": c["title"], "lane": c["lane"],
+                    "state": c["state"], "owner": owner(c), "mine": mine(c), "why": ", ".join(x for x in (board.get(r), atlas.get(r)) if x),
+                    "docs": f, "signals": signals(c, f, day), "comments_today": today_comments,
+                    "who_drafts": who_drafts(c, signals(c, f, day), f)})
+    return {"day": day.isoformat(), "main": _main_sha, "cards": out, "off_board": off_board, "atlas_error": atlas_err,
+            "check": "PR #524 (open, not merged; read from its branch cassidy/375-day-drd-dadr-check): 1) enters Defining or "
+                     "other teams build on the data -> a DRD sub-item when the card has none; 2) two or more real options, or "
+                     "a choice that needs a decider -> a DADR card in Defining; 3) changes an existing DRD -> a PR that amends "
+                     "it; 4) a question, probe, readout or one-team task -> no DRD, one sentence on the card."}
+
+
+def today_md(T):
+    out = [f"## DRD and DADR check, cards worked {T['day']} (origin/main {T['main']})", "", T["check"], ""]
+    if T["atlas_error"]:
+        out += [f"Agent Atlas was not read ({T['atlas_error']}); board activity only.", ""]
+    if not T["cards"]:
+        out.append("No card on the board had work today.")
+    for c in T["cards"]:
+        f = c["docs"]
+        known = ", ".join([*f["body_drd"], *f["body_dadr"]] + [f"{x['id']} ({x['status'] or 'no status'}, main)" for x in f["on_main"]]
+                          + [f"{x['id']} (PR #{x['pr']})" for x in f["in_open_prs"]] + [f"sub #{s['n']} {s['title'][:40]}" for s in f["doc_subs"]])
+        out += [f"### {c['card']} {c['title'][:80]}", f"- Lane {c['lane']}{'' if c['state'] == 'OPEN' else ' (closed)'}. Owner {c['owner']}. Worked: {c['why']}.",
+                f"- DRD line and docs: {known or 'none found'}" + ("; the body says no DRD" if f["body_says_no_drd"] else "") + ("; this is a DADR card" if f["dadr_card"] else "") + "."]
+        for s in c["signals"]:
+            out.append(f"- Row {s['row']}: {s['says']}. Signal: {s['signal']}." + (f" {s['url']}" if s.get("url") else ""))
+        if not c["signals"]:
+            out.append("- No structural signal. Row 2 (options or a decider) depends on the words: read today's comments.")
+        for x in c["comments_today"]:
+            out.append(f"  - {x['by']} {x['at'][11:16]}Z: {x['text']} ({x['url']})")
+        out.append(f"- Who drafts: {c['who_drafts']}.")
+        out.append("")
+    if T["off_board"]:
+        out += ["Worked today, not on the board: " + ", ".join(f"{x['card']} ({x['why']})" for x in T["off_board"]), ""]
+    return "\n".join(out)
+
+
+# ------------------------------------------------------------------ evidence lines (owners move their own cards)
+def evidence(cards, docs, prs):
+    out = []
+    clash = clashes(prs)
+    docs_by_src = {}
+    for d in docs:
+        docs_by_src.setdefault(src_ref(d), []).append(d)
+    for c in cards:
+        if not c["n"]:
+            continue
+        link = lambda d: f"https://github.com/{ORG}/data-org/blob/main/{d['path']}"
+        mine_c = mine(c)
+        def add(lane, why, url, rule, finish=False):
+            if mine_c:
+                call = (f"stage: make complete CARD={c['n']} WHY=\"{why}\" (tier 1)" if finish else
+                        f"cos-run gh <job> lane {c['ref']} \"{lane}\" --evidence {url} (tier 0, his card)" if lane in ACTIVE else
+                        f"stage: make set-pillar CARD={c['n']} TO=\"{lane}\" (tier 1)")
+            else:
+                call = "the person on the card makes the move; no bot moves it"
+            out.append({"card": c["short"], "ref": c["ref"], "title": c["title"][:70], "owner": owner(c), "mine": mine_c,
+                        "from": c["lane"], "to": lane, "evidence": why, "url": url, "rule": rule, "next": call})
+        if not is_open(c):
+            if c["lane"] in ACTIVE:
+                if c["reason"] == "NOT_PLANNED":
+                    add("Dropped", f"closed as not planned {c['closed_at'][:10]}", c["url"], "closed, still in an active lane (board weeding, group 4)")
+                else:
+                    add("Completed No Delivery", f"closed as completed {(c['closed_at'] or '')[:10]}; Delivered instead if value is proven",
+                        c["url"], "closed, still in an active lane (board weeding, group 4)")
+            continue
+        f = doc_facts(c, docs, prs)
+        if c["lane"] in ("Intake", "Discovery"):
+            hit = next((x for x in f["in_open_prs"] if x["new"]), None)
+            if hit:
+                cl = [n for n in clash.get(hit["id"], []) if n != hit["pr"]]
+                add("Defining", f"{hit['id']} is drafted in PR #{hit['pr']}" + (f" (ID clash: PR {', '.join('#' + str(n) for n in cl)} also adds {hit['id']}; renumber before either merges)" if cl else ""),
+                    hit["url"], "Defining holds a DRD draft or a DADR choice (work system, Lanes)")
+            elif f["on_main"]:
+                d = f["on_main"][0]
+                add("Defining", f"{d['id']} is on main ({d['status']})", f"https://github.com/{ORG}/data-org/blob/main/{d['path']}",
+                    "Defining holds a DRD draft or a DADR choice (work system, Lanes)")
+        if c["lane"] == "Defining":
+            for d in docs_by_src.get(c["ref"], []):
+                st = d["front"].get("status", "").lower()
+                if d["kind"] == "DRD" and st == "approved" and not f["dadr_card"]:
+                    add("Shipping", f"{d['front'].get('id')} is Approved on main", link(d), "the DRD passes its gate (Defining's exit; CI moves Definition to Ship on Approved)")
+                if d["kind"] == "DADR" and st == "accepted" and f["dadr_card"]:
+                    add("Completed No Delivery", f"{d['front'].get('id')} is accepted on main", link(d),
+                        "the deciders chose an option: the DADR card finishes (make complete), it doesn't move", finish=True)
+        if c["lane"] in DONE_NAMES or c["lane"] == "Dropped":
+            fix = ("close it as not planned: a drop closes the issue (work system, Drop and finish), or move it back"
+                   if c["lane"] == "Dropped" else "close it as completed (make complete), or move it back to the lane of its work")
+            out.append({"card": c["short"], "ref": c["ref"], "title": c["title"][:70], "owner": owner(c), "mine": mine_c,
+                        "from": c["lane"], "to": None, "hygiene": True, "evidence": f"open, but in {c['lane']}: {fix}", "url": c["url"],
+                        "rule": "a terminal lane holds closed cards (board weeding, group 4)",
+                        "next": "Cassidy decides on his card (tier 1 or 2)" if mine_c else "the person on the card decides"})
+    return out
+
+
+def evidence_md(E):
+    if not E:
+        return "## Evidence for lane moves\n\nNone: no card's GitHub evidence points to another lane today."
+    out = ["## Evidence for lane moves (owners move their own cards; no bot moves another owner's card)", ""]
+    for x in E:
+        if x.get("hygiene"):
+            out.append(f"- {x['card']} is {x['evidence']} ({x['url']}). Owner: {x['owner']}. Next: {x['next']}.")
+        else:
+            out.append(f"- evidence says {x['card']} can move to {x['to']}: {x['evidence']} ({x['url']}). Now: {x['from']}. "
+                       f"Owner: {x['owner']}. Next: {x['next']}.")
+    return "\n".join(out)
+
+
+# ------------------------------------------------------------------ No Status
+def nostatus(cards):
+    rows = [{"card": c["short"], "url": c["url"], "title": c["title"][:70], "owner": owner(c), "mine": mine(c),
+             "added": (c["item_created"] or "")[:10],
+             "next": (f"cos-run gh <job> board-add {c['ref']} Intake (tier 0, lands it in a lane), or the lane he names"
+                      if mine(c) else "a line in the owner's list: pick a lane with make set-pillar")}
+            for c in cards if is_open(c) and c["lane"] == "No Status" and c["n"]]
+    closed = sum(1 for c in cards if not is_open(c) and c["lane"] == "No Status")
+    return {"open": rows, "closed_no_status": closed}
+
+
+def nostatus_md(N):
+    if not N["open"]:
+        return "## No Status\n\nNo open card is in No Status." + (f" ({N['closed_no_status']} closed cards have no Status.)" if N["closed_no_status"] else "")
+    return "\n".join([f"## No Status: {len(N['open'])} open cards the Lanes view puts in its No Status column", ""] +
+                     [f"- {x['card']} {x['title']}. Owner: {x['owner']}. Next: {x['next']}." for x in N["open"]] +
+                     ([f"", f"{N['closed_no_status']} closed cards also have no Status."] if N["closed_no_status"] else []))
+
+
+# ------------------------------------------------------------------ definition debt (Friday)
+def gate_raq():
+    if _fix is not None:
+        return _fix.get("gate", "")
+    if not os.path.isdir(MAIN):
+        return "make gate not run: ~/cos/data-org-main is missing"
+    p = subprocess.run(["make", "-s", "gate"], cwd=MAIN, capture_output=True, text=True, env=dict(os.environ, NO_COLOR="1"), timeout=300)
+    lines, cur = [], ""
+    for l in (p.stdout + p.stderr).splitlines():
+        if re.match(r"^(drd|dadr)/\S+\.md", l):
+            cur = l.split()[0]
+        elif re.search(r"RAQ|box", l) and cur:
+            lines.append(f"{cur}: {l.strip()}")
+    return "\n".join(lines[:60]) + (f"\n... and {len(lines) - 60} more" if len(lines) > 60 else "") or ("make gate: clean" if p.returncode == 0 else f"make gate exit {p.returncode}, no RAQ lines")
+
+
+def debt(cards, docs, prs):
+    today_d = NOW.astimezone(MT).date()
+    defining = []
+    for c in cards:
+        if is_open(c) and c["lane"] == "Defining" and c["n"]:
+            f = doc_facts(c, docs, prs)
+            if not f["has_drd"] and not f["dadr_card"] and not f["body_says_no_drd"]:
+                defining.append({"card": c["short"], "url": c["url"], "title": c["title"][:70], "owner": owner(c), "mine": mine(c)})
+    dadrs, drds = [], []
+    for d in docs:
+        fr = d["front"]; st = fr.get("status", "").lower()
+        rb = fr.get("review_by", "")
+        past = bool(re.match(r"^\d{4}-\d{2}-\d{2}$", rb)) and dt.date.fromisoformat(rb) < today_d
+        if d["kind"] == "DADR" and (st == "proposed" or (past and st not in ("accepted", "rejected", "superseded", "deprecated"))):
+            dadrs.append({"id": fr.get("id"), "status": st, "date": fr.get("date", ""), "review_by": rb, "past_review_by": past,
+                          "owner": fr.get("owner", ""), "card": src_ref(d), "path": d["path"]})
+        if d["kind"] == "DRD" and past and st in ("draft", "in review"):
+            drds.append({"id": fr.get("id"), "status": fr.get("status"), "review_by": rb, "owner": fr.get("owner", ""), "card": src_ref(d), "path": d["path"]})
+    no_reviewer = []
+    for pr in prs:
+        if doc_files(pr) and not (pr.get("reviewRequests") or []) and not (pr.get("reviews") or []):
+            no_reviewer.append({"pr": pr["number"], "url": pr["url"], "title": pr["title"][:70], "author": (pr.get("author") or {}).get("login", ""),
+                                "draft": pr.get("isDraft", False), "ids": sorted({f["id"] for f in doc_files(pr)})})
+    return {"defining_no_drd": defining, "dadrs_waiting": dadrs, "drds_past_review_by": drds, "doc_prs_no_reviewer": no_reviewer,
+            "id_clashes": clashes(prs),
+            "gate_raq": gate_raq(), "main": _main_sha}
+
+
+def debt_md(D):
+    out = [f"## Definition debt (origin/main {D['main']})", ""]
+    out += [f"Cards in Defining with no DRD ({len(D['defining_no_drd'])}):"] + ([f"- {x['card']} {x['title']}. Owner: {x['owner']}." for x in D["defining_no_drd"]] or ["- None."]) + [""]
+    out += [f"DADRs still proposed, or past review_by ({len(D['dadrs_waiting'])}):"] + \
+           ([f"- {x['id']} ({x['status']}, dated {x['date'] or '?'}{', past review_by ' + x['review_by'] if x['past_review_by'] else ''}). Owner: {x['owner'] or '?'}. Card: {x['card'] or '?'}." for x in D["dadrs_waiting"]] or ["- None."]) + [""]
+    out += [f"DRDs past review_by, not yet Approved ({len(D['drds_past_review_by'])}):"] + \
+           ([f"- {x['id']} ({x['status']}, review_by {x['review_by']}). Owner: {x['owner'] or '?'}." for x in D["drds_past_review_by"]] or ["- None."]) + [""]
+    out += [f"Doc PRs with no reviewer ({len(D['doc_prs_no_reviewer'])}):"] + \
+           ([f"- #{x['pr']} {x['title']} ({', '.join(x['ids'])}{', draft' if x['draft'] else ''}). Author: {x['author']}." for x in D["doc_prs_no_reviewer"]] or ["- None."]) + [""]
+    out += [f"IDs claimed by more than one open PR ({len(D['id_clashes'])}):"] + \
+           ([f"- {k}: PRs {', '.join('#' + str(n) for n in v)}. Whichever merges second fails the gate's duplicate-ID check." for k, v in D["id_clashes"].items()] or ["- None."]) + [""]
+    out += ["Draft boxes and RAQs (make gate, lines naming a RAQ or a box):", "```", D["gate_raq"], "```"]
+    return "\n".join(out)
+
+
+# ------------------------------------------------------------------ next-id, checked against every open PR
+def next_id(kind, num, head=None):
+    kind = kind.upper()
+    if kind not in ("DRD", "DADR") or not re.match(r"^\d{1,4}$", num or ""):
+        raise SystemExit("usage: cos-flow next-id DRD|DADR <NNNN> [--head <branch>]")
+    want = f"{kind}-{int(num):04d}"
+    if _fix is not None:
+        make_out = _fix.get("make_next_id", "")
+    else:
+        try:
+            p = subprocess.run(["make", "-s", "next-id", f"KIND={kind}"], cwd=MAIN, capture_output=True, text=True, timeout=300,
+                               env=dict(os.environ, NO_COLOR="1"))
+            make_out = (p.stdout + p.stderr).strip()
+        except Exception as e:
+            make_out = f"make next-id did not run: {e}"
+    claims = []
+    for pr in open_prs():
+        if head and pr.get("headRefName") == head:
+            continue  # our own PR's claim
+        for f in doc_files(pr):
+            if f["id"] == want:
+                claims.append({"pr": pr["number"], "url": pr["url"], "path": f["path"], "branch": pr.get("headRefName", "")})
+    on_main = [d["path"] for d in main_docs() if os.path.basename(d["path"]).startswith(want + "-")]
+    make_saw = re.findall(rf"claimed by open PR #?(\d+): {want}\b", make_out)
+    # make next-id reads `gh pr list` with gh's default limit (the newest 30 open PRs) and keeps one PR per number.
+    newest30 = sorted((pr["number"] for pr in open_prs()), reverse=True)[:30]
+    floor = min(newest30) if len(newest30) == 30 else 0
+    missed = [{"pr": c["pr"], "why": "older than the newest 30 open PRs it reads" if c["pr"] < floor else "it names one PR per number"}
+              for c in claims if str(c["pr"]) not in make_saw]
+    taken_nums = {d_num for d in main_docs() for d_num in [int(m.group(1)) for m in [re.match(rf"^{kind}-(\d{{4}})-", os.path.basename(d["path"]))] if m]}
+    for pr in open_prs():
+        taken_nums |= {f["num"] for f in doc_files(pr) if f["kind"] == kind}
+    free_next = f"{kind}-{(max(taken_nums) + 1 if taken_nums else 1):04d}"
+    free = not claims and not on_main
+    return {"id": want, "free": free, "on_main": on_main, "claimed_by": claims, "make_next_id": make_out,
+            "make_next_id_missed": missed, "next_free_all_prs": free_next,
+            "says": (f"{want} is free: not on main and no other open PR adds it." if free else
+                     f"{want} is taken ({'on main: ' + ', '.join(on_main) if on_main else 'by open PR ' + ', '.join('#' + str(c['pr']) for c in claims)}). "
+                     f"Renumber first: the next free number, counting every open PR, is {free_next}.") +
+                    "".join(f" make next-id didn't show PR #{m['pr']} ({m['why']})." for m in missed)}
+
+
+# ------------------------------------------------------------------ main
+def emit(obj, md, as_json):
+    print(json.dumps(obj, indent=1, ensure_ascii=False) if as_json else md)
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__); return 0
+    cmd, rest = argv[0], argv[1:]
+    as_json = "--json" in rest
+    rest = [a for a in rest if a != "--json"]
+    opt = lambda name, default=None: rest[rest.index(name) + 1] if name in rest and rest.index(name) + 1 < len(rest) else default
+    if cmd == "next-id":
+        if len(rest) < 2:
+            print("usage: cos-flow next-id DRD|DADR <NNNN> [--head <branch>]", file=sys.stderr); return 64
+        refresh_main()
+        r = next_id(rest[0], rest[1], opt("--head"))
+        emit(r, r["says"], as_json)
+        return 0 if r["free"] else 65
+    if cmd not in ("lanes", "week", "evidence", "nostatus", "today", "debt", "brief"):
+        print(f"cos-flow: unknown command '{cmd}'. Run: cos-flow --help", file=sys.stderr); return 64
+    try:
+        cards = fetch_items()
+    except Exception as e:
+        print(f"cos-flow: GitHub read failed: {str(e)[:300]}. Nothing below was read, so nothing can be said about the board.", file=sys.stderr)
+        return 75
+    if cmd == "lanes":
+        L = lanes(cards); emit(L, lanes_md(L), as_json); return 0
+    if cmd == "week":
+        W = week(cards, int(opt("--days", "7"))); emit(W, week_md(W), as_json); return 0
+    if cmd == "nostatus":
+        N = nostatus(cards); emit(N, nostatus_md(N), as_json); return 0
+    fresh = refresh_main()
+    docs, prs = main_docs(), open_prs()
+    note = "" if fresh else f"\n(origin/main was not refreshed just now; read as of {_main_sha})"
+    if cmd == "evidence":
+        E = evidence(cards, docs, prs); emit(E, evidence_md(E) + note, as_json); return 0
+    if cmd == "today":
+        d = opt("--date")
+        day = dt.date.fromisoformat(d) if d else NOW.astimezone(MT).date()
+        T = today(cards, docs, prs, day); emit(T, today_md(T) + note, as_json); return 0
+    if cmd == "debt":
+        D = debt(cards, docs, prs); emit(D, debt_md(D) + note, as_json); return 0
+    if cmd == "brief":
+        if len(rest) < 2 or rest[0] not in ("capture", "week"):
+            print("usage: cos-flow brief capture|week <out-dir>", file=sys.stderr); return 64
+        od = rest[1]; os.makedirs(od, exist_ok=True)
+        parts = {}
+        if rest[0] == "capture":
+            day = NOW.astimezone(MT).date()
+            parts = {"today": (today(cards, docs, prs, day), today_md), "evidence": (evidence(cards, docs, prs), evidence_md),
+                     "nostatus": (nostatus(cards), nostatus_md)}
+        else:
+            parts = {"week": (week(cards), week_md), "lanes": (lanes(cards), lanes_md), "debt": (debt(cards, docs, prs), debt_md),
+                     "evidence": (evidence(cards, docs, prs), evidence_md), "nostatus": (nostatus(cards), nostatus_md)}
+        md = [f"# Board facts for the {rest[0]} brief (cos-flow, read-only, {NOW.astimezone(MT):%Y-%m-%d %H:%M} MT){note}", ""]
+        for k, (obj, fn) in parts.items():
+            json.dump(obj, open(os.path.join(od, f"flow-{k}.json"), "w"), indent=1, ensure_ascii=False)
+            md += [fn(obj), ""]
+        open(os.path.join(od, f"flow-{rest[0]}.md"), "w").write("\n".join(md))
+        print(os.path.join(od, f"flow-{rest[0]}.md"))
+        return 0
+    return 64
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

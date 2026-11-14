@@ -1,15 +1,20 @@
 #!/usr/bin/env -S python3 -I
 """cos-gh-scan: one read-only pass over everything in GitHub that may need Cassidy. No model in the middle.
 
-  cos-run gh-scan <job> [since]      (the Chief, for every morning and evening brief)
-  cos-gh-scan <job-folder> [since]   (what cos-run calls)
+  cos-run gh-scan <job> [since] [--state brief|watch]   (the Chief: --state brief for the morning and evening briefs,
+                                                         --state watch for the hourly GitHub watch)
+  cos-gh-scan <job-folder> [since] [--state brief|watch] (what cos-run calls)
 
 Two GraphQL searches across org:wisecodeai cover it all: open issues and PRs that involve him (author, assignee,
 mention, commenter) and open PRs that request his review. For each item it reads recent comments, reviews, review
 requests and unresolved review threads, then sorts into "needs you" and "for your information".
 
-"since" defaults to the last successful scan (~/cos/state/gh-scan-last.json), else 24 hours ago. Writes scan.json,
-digest.md and receipt.json in the job folder. Read-only: queries only, never a mutation.
+"since" defaults to the last successful scan by the same caller, else 24 hours ago. Each caller keeps its own: --state
+brief uses ~/cos/state/gh-scan-last-brief.json and --state watch gh-scan-last-watch.json, so a 6:00 watch can't hide
+overnight activity from the 6:30 brief. With no --state, the shared gh-scan-last.json (the old behavior). A new state
+starts from the shared file. What is scanned doesn't change with --state; only the window does.
+PRs assigned to Cassidy that he didn't write are always listed, as assigned issues are counted, not only when they have
+new activity. Writes scan.json, digest.md and receipt.json in the job folder. Read-only: queries only, never a mutation.
 
 Why gh: Grok's own GitHub app waits on a wisecodeai org owner's approval, so every GitHub read comes from this Mac.
 """
@@ -34,6 +39,7 @@ QUERY = '''query($q: String!, $after: String) {
         assignees(first: 5) { nodes { login } }
         comments(last: 15) { nodes { author { login } createdAt url bodyText } } }
       ... on PullRequest { number title url updatedAt isDraft reviewDecision repository { nameWithOwner } author { login }
+        assignees(first: 5) { nodes { login } }
         reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
         reviews(last: 15) { nodes { author { login } state submittedAt url bodyText } }
         comments(last: 15) { nodes { author { login } createdAt url bodyText } }
@@ -95,19 +101,35 @@ def snip(text, n=160):
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit('usage: cos-gh-scan <job-folder> [since ISO time]')
-    out_dir = sys.argv[1]
+    global LAST
+    argv = sys.argv[1:]
+    state = None
+    if '--state' in argv:
+        i = argv.index('--state')
+        state = argv[i + 1] if i + 1 < len(argv) else ''
+        del argv[i:i + 2]
+        if state not in ('brief', 'watch'):
+            print('cos-gh-scan: --state is brief or watch', file=sys.stderr)
+            return 64
+    if not argv:
+        sys.exit('usage: cos-gh-scan <job-folder> [since ISO time] [--state brief|watch]')
+    shared = LAST
+    if state:
+        LAST = os.path.join(STATE, f'gh-scan-last-{state}.json')
+    out_dir = argv[0]
     os.makedirs(out_dir, exist_ok=True)
     job = os.path.basename(out_dir.rstrip('/'))
     since = None
-    if len(sys.argv) > 2:
-        since = ts(sys.argv[2])
-    elif os.path.exists(LAST):
-        try:
-            since = ts(json.load(open(LAST))['at'])
-        except Exception:
-            since = None
+    if len(argv) > 1:
+        since = ts(argv[1])
+    else:
+        for f in (LAST, shared):  # a new state starts from the shared file
+            if os.path.exists(f):
+                try:
+                    since = ts(json.load(open(f))['at'])
+                    break
+                except Exception:
+                    since = None
     since = since or NOW - datetime.timedelta(hours=24)
     if since.tzinfo is None:
         since = since.replace(tzinfo=datetime.timezone.utc)
@@ -171,10 +193,14 @@ def main():
 
     assigned = [n for n in items.values() if n['__typename'] == 'Issue' and me in [a['login'] for a in n['assignees']['nodes']]]
     assigned_new = [n for n in assigned if ts(n['updatedAt']) > since]
+    # PRs someone else wrote and assigned to him: an ask, whether or not anything happened since the last scan.
+    assigned_prs = [n for n in items.values() if n['__typename'] == 'PullRequest' and who(n) != me
+                    and me in [a['login'] for a in (n.get('assignees') or {}).get('nodes', [])]]
 
     ok = not errors
     head = (f"GitHub: scanned {mt(NOW)} MT, since {mt(since)}. {len(need)} need you, {len(rr)} review request(s), "
-            f"{len(assigned)} issues assigned ({len(assigned_new)} updated), {n_involves} open items involve you.")
+            f"{len(assigned)} issues assigned ({len(assigned_new)} updated), {len(assigned_prs)} PR(s) by others assigned to you, "
+            f"{n_involves} open items involve you.")
     if not ok:
         prev = ''
         if os.path.exists(LAST):
@@ -188,6 +214,9 @@ def main():
     lines += ['## Needs you', ''] + ([f'- **{k}**: {r} {t}. {d} ({u})' for k, r, t, d, u in need] or ['- Nothing.']) + ['']
     lines += ['## Assigned issues updated since the last scan', ''] + \
              ([f"- {ref(n)} {n['title']} (updated {mt(ts(n['updatedAt']))})" for n in sorted(assigned_new, key=lambda n: n['updatedAt'], reverse=True)] or ['- None.']) + ['']
+    lines += ['## PRs assigned to you (written by someone else)', ''] + \
+             ([f"- {ref(n)} {n['title']}. By {who(n)}, {'draft' if n.get('isDraft') else 'open'}, updated {mt(ts(n['updatedAt']))} ({n['url']})"
+               for n in sorted(assigned_prs, key=lambda n: n['updatedAt'], reverse=True)] or ['- None.']) + ['']
     lines += ['## For your information', ''] + ([f'- {k}: {r} {t}. {d}' for k, r, t, d, u in fyi] or ['- Nothing.']) + ['']
     digest = '\n'.join(lines)
     if not ok and not (involves or rr):
@@ -196,7 +225,8 @@ def main():
     open(os.path.join(out_dir, 'digest.md'), 'w').write(digest)
     json.dump({'at': NOW.isoformat(), 'since': since.isoformat(), 'me': me, 'errors': errors, 'counts': {
         'need': len(need), 'review_requested': len(rr), 'assigned': len(assigned), 'assigned_updated': len(assigned_new),
-        'involves': n_involves}, 'need': need, 'fyi': fyi}, open(os.path.join(out_dir, 'scan.json'), 'w'), indent=1)
+        'assigned_prs': len(assigned_prs), 'involves': n_involves}, 'state': state or 'shared', 'need': need, 'fyi': fyi,
+        'assigned_prs': [{'ref': ref(n), 'title': n['title'], 'author': who(n), 'url': n['url'], 'updated': n['updatedAt']} for n in assigned_prs]}, open(os.path.join(out_dir, 'scan.json'), 'w'), indent=1)
     status = 'done' if ok else ('partial' if involves or rr else 'failed')
     json.dump({'job': job, 'lane': 'gh-scan', 'receipt': {'status': status, 'summary': digest,
                'artifacts': [os.path.join(out_dir, 'digest.md'), os.path.join(out_dir, 'scan.json')]}},

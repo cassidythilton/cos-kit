@@ -106,7 +106,14 @@
       "Bash(git -C * blame *)",
       "Bash(stat *)",
       "Bash(shasum *)",
-      "Bash(file *)"
+      "Bash(file *)",
+      "Bash(cos-flow lanes*)",
+      "Bash(cos-flow week*)",
+      "Bash(cos-flow evidence*)",
+      "Bash(cos-flow nostatus*)",
+      "Bash(cos-flow today*)",
+      "Bash(cos-flow debt*)",
+      "Bash(cos-flow next-id*)"
     ],
     "deny": [
       "Bash(*EXECUTE=1*)",

@@ -5,7 +5,8 @@
 #
 #   board-pulse                 markdown: headlines, then each target's raw output
 #   board-pulse --json          headlines as JSON
-#   board-pulse --record ...    also append the headlines to ~/cos/state/board-health.csv (team level only)
+#   board-pulse --record ...    also append the headlines to ~/cos/state/board-health.csv (team level only), with the
+#                               lane counts the Lanes view shows (cos-flow lanes): one cumulative-flow row a day
 #   board-pulse --week ...      the weekly window: make stale DAYS=7, plus make socialize
 #                               (stand-ins for the proposed `make week`, per docs/2026-10-29-commands-by-cadence.md)
 set -euo pipefail
@@ -50,10 +51,26 @@ H="$(jq -n --arg asof "$(date -u +%FT%TZ)" --arg sha "$SHA" --argjson days "$DAY
    roadmap_gaps: ($gap|n), roadmap_gaps_of: ($gapof|n), roadmap_drift: ($drift|n),
    shipping_no_ragb: ($noragb|n), shipping_untouched: ($untouched|n)}')"
 
+# Lane counts as the Lanes view shows them (every item that isn't archived, by Status) and the open cards in No Status,
+# from cos-flow (read-only). A failed read leaves the lane cells blank; it never stops the pulse.
+FLOW="${COS_FLOW:-$COS/bin/cos-flow}"
+LJ="$("$FLOW" lanes --json 2>/dev/null || true)"; NJ="$("$FLOW" nostatus --json 2>/dev/null || true)"
+jq -e . >/dev/null 2>&1 <<<"$LJ" || LJ='{}'; jq -e . >/dev/null 2>&1 <<<"$NJ" || NJ='{}'
+H="$(jq --argjson l "$LJ" --argjson n "$NJ" '. + {lanes: ($l.view // null), lanes_open: ($l.open // null), no_status_open: (($n.open // null) | if . == null then null else length end), no_status_cards: ($n.open // [])}' <<<"$H")"
+COLS="as_of,main,stale_days,stale,active,weed,roadmap_gaps,roadmap_gaps_of,roadmap_drift,shipping_no_ragb,shipping_untouched,lanes_intake,lanes_discovery,lanes_defining,lanes_shipping,lanes_completed_no_delivery,lanes_delivery_prep,lanes_delivered,lanes_dropped,lanes_no_status,no_status_open"
 if [[ $RECORD -eq 1 ]]; then
   mkdir -p "$STATE"; F="$STATE/board-health.csv"
-  [[ -f "$F" ]] || echo "as_of,main,stale_days,stale,active,weed,roadmap_gaps,roadmap_gaps_of,roadmap_drift,shipping_no_ragb,shipping_untouched" > "$F"
-  jq -r '[.as_of,.main,.stale_days,.stale,.active,.weed,.roadmap_gaps,.roadmap_gaps_of,.roadmap_drift,.shipping_no_ragb,.shipping_untouched]|@csv' <<<"$H" >> "$F"
+  [[ -f "$F" ]] || echo "$COLS" > "$F"
+  # A file from before the lane columns: widen the header in place. Old rows keep blank lane cells (no backfill).
+  if [[ "$(head -1 "$F")" != "$COLS" ]]; then
+    old_n="$(head -1 "$F" | awk -F, '{print NF}')"; new_n="$(awk -F, '{print NF}' <<<"$COLS")"
+    if [[ "$COLS" == "$(head -1 "$F"),"* ]]; then
+      pad="$(printf '%*s' $((new_n - old_n)) '' | tr ' ' ',')"
+      { echo "$COLS"; tail -n +2 "$F" | sed "s/\$/$pad/"; } > "$F.new" && mv "$F.new" "$F"
+    fi
+  fi
+  jq -r '[.as_of,.main,.stale_days,.stale,.active,.weed,.roadmap_gaps,.roadmap_gaps_of,.roadmap_drift,.shipping_no_ragb,.shipping_untouched,
+          .lanes.Intake,.lanes.Discovery,.lanes.Defining,.lanes.Shipping,.lanes["Completed No Delivery"],.lanes["Delivery Prep"],.lanes.Delivered,.lanes.Dropped,.lanes["No Status"],.no_status_open]|@csv' <<<"$H" >> "$F"
 fi
 
 if [[ $JSON -eq 1 ]]; then echo "$H"; exit 0; fi
@@ -63,7 +80,10 @@ jq -r '"# Board pulse, \(.as_of) (origin/main \(.main))",
   "- Stale, no comment or PR event in \(.stale_days) day(s): \(.stale) of \(.active) active cards",
   "- Weed candidates, no owner or silent 14 days: \(.weed)",
   "- Roadmap gaps, missing Pillar metric or Target: \(.roadmap_gaps) of \(.roadmap_gaps_of). Drift, Target differs from milestone: \(.roadmap_drift)",
-  "- Shipping and Delivery Prep: \(.shipping_no_ragb) with no RAGB, \(.shipping_untouched) flagged untouched"' <<<"$H"
+  "- Shipping and Delivery Prep: \(.shipping_no_ragb) with no RAGB, \(.shipping_untouched) flagged untouched",
+  (if .lanes then "- Lanes view: " + ([.lanes | to_entries[] | "\(.key) \(.value)"] | join(", ")) else "- Lanes view: not read (cos-flow lanes failed)" end),
+  (if .no_status_open == null then "- No Status: not read" elif .no_status_open == 0 then "- No Status: no open card" else
+   "- No Status, open cards for their owners to place in a lane: " + ([.no_status_cards[] | "\(.card) (\(.owner))"] | join(", ")) end)' <<<"$H"
 printf '\n## make stale DAYS=%s\n```\n%s\n```\n\n## make ship-check\n```\n%s\n```\n\n## make roadmap-check\n```\n%s\n```\n\n## make weed\n```\n%s\n```\n' "$DAYS" "$STALE" "$SHIP" "$RC" "$WEED"
 [[ -n "$SOC" ]] && printf '\n## make socialize\n```\n%s\n```\n' "$SOC"
 exit 0

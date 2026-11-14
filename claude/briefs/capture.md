@@ -27,3 +27,23 @@ stays at team level: no sums per person.
 Done means: plan.md, notes.md, the log body files and apply.sh in the job folder; summary "Capture: N rows. Batch
 <sha256>: K writes on your cards (G logs, L lane moves). U touched with no log. C with no card. P notes for others."
 If there is nothing to capture today, set summary to exactly: NO CHANGE
+
+DRDs and DADRs (plan item 8). Read flow-capture.md in the job folder first: cos-flow staged the board facts there
+(read-only). For each card worked today it gives the card's DRD line, the DRDs and DADRs on main and in open PRs,
+and the structural rows of PR #524's four-row check. PR #524 is open, not merged: say "per PR #524 (open)" when you
+use the check. Apply the check to each card worked today, and only to those:
+1. Enters Defining, or other teams build on the data: a DRD sub-item, when the card has no DRD.
+2. Two or more real options, or a choice that needs a decider: a DADR card in Defining. Read today's comments,
+   transcripts and Slack for this row; cite the line or the transcript timestamp.
+3. Changes an existing DRD: a PR that amends that DRD.
+4. A question, a probe, a readout or a one-team task: no DRD, one sentence on the card.
+Never propose a second DRD for a requirement that already has one (read the DRD line and drd/ first). Each row you
+add states its signal in one line; a card with no row says why in one line. Cassidy's cards: a row in plan.md that
+offers a draft (the Chief runs cos-run draft <job> "<brief>" --doc drd|dadr --card <card>). Others' cards: a line in
+that owner's to-do list in notes.md, never a draft of their doc. Never stage a status change to Approved or accepted.
+notes.md gets a section "DRD and DADR check" with one line per card worked today.
+
+Lane evidence (plan item 9). flow-capture.md also lists "evidence says #N can move to <lane>" lines and open cards
+in No Status. Copy each line for another owner into that owner's to-do list in notes.md, with its link. Never stage a
+lane move on another owner's card. For Cassidy's own cards, a move goes in apply.sh only when the evidence is on
+GitHub and the promote bars hold, as above; a finish is make complete, never make promote.

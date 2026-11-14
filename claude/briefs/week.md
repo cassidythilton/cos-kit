@@ -15,3 +15,13 @@ git -C ~/cos/data-org-main show origin/cassidy/roadmap-skill:.cursor/skills/road
 Open items: read the "State" section of ~/cos/handbook/board-handoff.md. For each open item nobody has started, one
 line: what it needs, who decides, and the proposal. Where Cassidy decides, stage it (apply.sh for cards, links and
 fields; sheet.json for cells). Where someone else decides, a drafted question to them. Never a write on their card.
+
+Throughput and definition debt (plan items 8 and 9). Read flow-week.md in the job folder first: cos-flow staged the
+board facts there (read-only), from GitHub's own lane-move history. Put in week.md, with numbers as given:
+- Throughput: forward and back moves, finishes (Completed No Delivery, Delivered), drops, median days in Defining and
+  in Shipping, and the cards in one lane past 14 days. Next to it, the lane counts as the Lanes view shows them, and
+  the board-health.csv trend. Team numbers only, never per person. Moves back count as much as moves forward.
+- Definition debt: cards in Defining with no DRD; DADRs still proposed or past review_by; DRDs past review_by;
+  drafts whose open boxes don't map to a RAQ (make gate); doc PRs with no reviewer; any ID two open PRs claim.
+- Evidence lines and No Status cards, each in its owner's list. No bot moves another owner's card.
+If flow-week.md says the board facts were not read, say so first and leave those sections out.
