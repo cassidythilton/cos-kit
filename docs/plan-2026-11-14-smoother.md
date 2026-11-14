@@ -26,8 +26,8 @@ agent-compatibility scan of data-org, and moving the walls into data-org's CI.
 
 | | His cards and PRs (author or assignee is cassidythilton) | Anyone's card on Project 1 |
 |---|---|---|
-| Tier 0: just do it. A line in the evening brief AND a ledger entry with the undo. | labels, assignee, milestone; sub-issue and blocked-by links; board-add; the roadmap fields (Pillar metric, Theme, Horizon, Target); his own lane moves (`make set-pillar`); an issue he dictated; pushes to `cassidy/*`; opening a draft PR and marking it ready | board-add; filling a BLANK roadmap field (`make field` without `REPLACE=1`), only with the value from the card's Data Roadmap row (a sub-item copies its parent's Pillar metric); the value cites the sheet row |
-| Tier 1: one "yes" in the chat, text shown inline | comments, review replies, RAGB, `make complete` | replacing a set field (`REPLACE=1`), such as Target drift; linking it as a sub-issue or blocker |
+| Tier 0: just do it. A line in the evening brief AND a ledger entry with the undo. | labels, assignee, milestone; sub-issue and blocked-by links; board-add; the roadmap fields (Pillar metric, Theme, Horizon, Target); his own lane moves (`make set-pillar`); an issue he dictated; pushes to `cassidy/*`; opening a draft PR (marking it ready is tier 1: it can request reviews, which notifies people) | board-add; filling a BLANK roadmap field (`make field` without `REPLACE=1`), only with the value from the card's Data Roadmap row (a sub-item copies its parent's Pillar metric); the value cites the sheet row |
+| Tier 1: one "yes" in the chat, text shown inline | comments, review replies, RAGB, `make complete`, marking a PR ready, requesting a review | replacing a set field (`REPLACE=1`), such as Target drift; linking it as a sub-issue or blocker |
 | Tier 2: always ask, with a preview | merges, closes, deletes | lane moves, assignee changes, PR approvals, issue bodies, drops |
 | Never | | RAGB (the owner sets it), Initiative, DRD, KPI (derived, never typed) |
 
@@ -68,3 +68,52 @@ Read each, then adopt the idea where it fits; don't install wholesale. Say in th
 | `continual-learning` | a stop hook that, every N turns, mines new transcripts and updates learned preferences in place | keeps `cassidy-mode` current instead of a monthly re-mine. Must follow its transcript-scoping rule (only this workspace's transcripts) and never write canon or lake-chat content. Propose; Cassidy approves before it's on. |
 | `ralph-loop` | a stop hook re-feeds the same prompt until a completion phrase appears or an iteration cap is hit | overnight builds: run a build until `./verify` passes, with a hard cap and the caffeinate rule from item 4. Only for build-lane work in `~/builds/<slug>`, never for anything that writes to GitHub or the board. |
 | `thermos` / `interrogate` | several models review the same diff | already done (Codex plus a Claude checker); no change |
+
+## DRDs and DADRs in the daily flow
+
+The repo already says when the work needs a DRD or a DADR: Cassidy's PR #524 (open since 2026-10-26, no review
+yet) adds a four-row check to `docs/2026-10-12-work-system.md` and to all three `day` skills. The bots use that check,
+not one of their own. Until #524 merges, read it from its branch, and say so.
+
+| Signal (PR #524) | The plan adds |
+|---|---|
+| The card enters Defining, or other teams build on the data | a DRD sub-item, when the card has no DRD |
+| Two or more real options, or a choice that needs a decider | a DADR card in Defining |
+| The work changes an existing DRD | a PR that amends that DRD |
+| A question, a probe, a readout, or a task inside one team | no DRD; one sentence on the card |
+
+When the bots look for it:
+- Daily (STEWARD, 16:00 capture): only cards worked today, from the board and the Agent Atlas recent-work list. Read
+  each card's DRD line and `drd/` first, so nobody gets a second DRD for the same requirement.
+- From calls and Slack (OPS follow-ups, 06:15): "we decided X", or "A or B?" with a named decider, is a DADR
+  candidate. A decision already made is recorded as discovered (it ends in Completed No Delivery). Cite the
+  transcript timestamp.
+- Weekly (STEWARD, Friday `week`): definition debt. Cards in Defining with no DRD; DADRs past `review_by` or still
+  `proposed` with no vote; Drafts whose open boxes don't map to a RAQ (`make gate`); doc PRs with no reviewer.
+
+Who drafts (owners own their work):
+- Cassidy's cards: the bot offers a draft. Others' cards: a line in that owner's to-do list, never a draft of their
+  doc. A DADR's deciders are named in it; the CDO ratifies. No job ever flips a status to Approved or accepted.
+
+How a draft gets made:
+1. A draft job (`cos-run draft --base main`) follows the repo's `draft-drd` or `draft-dadr` skill. Those are
+   interviews, and a job can't interview, so it fills every answer it can source (card, transcript with timestamp,
+   Slack, related DRDs), and returns at most three numbered questions only Cassidy can answer: the requirement as a
+   commitment, the ranked drivers, the owner.
+2. After his answers: `make next-id`, `make scaffold`, the sections, then `make gate` and `make lint-writing`.
+   A DRD and a DADR go in separate PRs (the DRD uses `Closes`, the DADR `Refs`, per the work system).
+3. Tier 0 pushes it to a `cassidy/<issue>-<topic>` branch and opens a draft PR. Right before the push, re-run
+   `make next-id`: if the number is now claimed by another open PR, renumber first. Put the ID in the PR title
+   (`DRD-00NN (Draft): <title>`), so people see the claim.
+4. Tier 1: marking it ready and requesting the one non-author review a Draft needs.
+- What goes to Grok: the title, the ID, the PR link and the questions. Not the doc text. A DRD cites canon tables and
+  aggregates, never canon values.
+
+When Cassidy drafts himself in Claude Cowork: its `handoff` skill returns ready-to-paste `make`/`gh` lines. He pastes
+the block to the Chief, which runs the tier-0 lines and asks about the rest by tier. The Cowork plugin itself never
+runs git or gh.
+
+Found while planning (2026-11-14): DRD-0034 is claimed twice. Cassidy's #681 added
+`drd/DRD-0034-label-facts-on-each-packaged-food.md` at 13:46Z on Nov 13; Nicholas's #768 added
+`drd/DRD-0034-what-available-means-for-a-food-barcode.md` at 15:17Z. `make next-id` reads open PRs' files, so it
+would have flagged it; it likely wasn't run. Whichever merges second fails the gate's duplicate-ID check.
