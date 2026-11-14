@@ -117,3 +117,39 @@ Found while planning (2026-11-14): DRD-0034 is claimed twice. Cassidy's #681 add
 `drd/DRD-0034-label-facts-on-each-packaged-food.md` at 13:46Z on Nov 13; Nicholas's #768 added
 `drd/DRD-0034-what-available-means-for-a-food-barcode.md` at 15:17Z. `make next-id` reads open PRs' files, so it
 would have flagged it; it likely wasn't run. Whichever merges second fails the gate's duplicate-ID check.
+
+## Throughput (David, PR #704, 2026-11-11)
+
+David: "I depend on the Lanes view to understand throughput." He asked Cassidy for a Makefile pass and a process he
+can adopt to keep the Lanes view current. So the system must keep lanes true, using the board's own Status field, and
+never at the cost of honesty.
+
+Facts checked 2026-11-14:
+- GitHub records every lane move as `ProjectV2ItemStatusChangedEvent` on the issue timeline: from, to, who, when
+  (e.g. #630 → Discovery by cassidythilton, 2026-10-31). Throughput can be counted, not guessed.
+- Our `~/cos/state/board-health.csv` has stale, weed and roadmap counts, but no lane counts.
+- `make board-add` without `PILLAR` leaves Status empty. The board's "No Status" column (5 cards today) is invisible
+  to the Lanes view.
+
+1. Lanes move on evidence, through native actions only. Moves use `make set-pillar` (Status), finishes use
+   `make complete`. Never `make promote` to move a lane (it closes the issue), never a close from a PR. The evidence
+   that earns each move is the work system's lane table (a DRD passes its gate, the deciders choose an option, the
+   increment ships and its VRs pass, a consumer can use it).
+2. Who moves what (fits the tiers): Cassidy's own cards, tier 0 when the evidence is on GitHub (a merged DRD PR, an
+   accepted DADR, a merged ship PR), with the evidence cited in the ledger; `make complete` is tier 1. Others' cards:
+   never moved by a bot. STEWARD's daily capture lists "evidence says #N can move to <lane>: <evidence link>" in that
+   owner's to-do list. The person on the card makes the move.
+3. Every tier-0 board-add lands in a lane: `PILLAR=Intake` for anyone's card unless Cassidy names one for his own.
+   Never leave a card in No Status. The daily pulse lists No Status cards for their owners.
+4. Measure it, read-only: add lane counts to `board-health.csv` daily (a cumulative-flow line), and a weekly readout
+   from the status-change events: forward moves, cards finished (Completed No Delivery, Delivered), median days in
+   Defining and in Shipping, and cards in one lane past 14 days. It goes in the Friday `week` brief.
+5. Offer it to David as the team's tool, not a private one: once the readout is right for two weeks, propose it to
+   data-org as a `make` target (a PR Cassidy owns, David reviews), so David reads throughput from the repo he
+   already trusts. Until then the board itself stays the source; the readout only explains it.
+6. Don't game it. A lane move without evidence is worse than a stale card. No bot moves a card to make a number
+   look better, and the readout counts moves back (Shipping → Defining) as well as forward.
+
+Open for Cassidy: David's three items on #704 (the card is #700; "Parked" vs "Dropped" is Cassidy's call; nobody
+owns targets in Pillar metric descriptions now) and his ask for a Makefile pass and a meeting on the Lanes process.
+Replying on #704 is a tier-1 comment.
