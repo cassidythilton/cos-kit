@@ -49,3 +49,22 @@ Rules for the build:
   another owner's card") each gain the blank-field exception.
 - The hard lines don't otherwise change: drafts only for Slack and email; no merges, closes or approvals without his
   yes; never repeat a token.
+
+## data-org's two plugins
+
+- `plugins/data-org` (Claude Code): wraps the Makefile and `gh`. This is the one the tiers follow.
+- `plugins/data-org-cowork-plugin` (v0.3.0, for Claude Cowork): drafts DRDs and DADRs and hands back paste-ready
+  `make`/`gh` commands instead of running them ("No git, no gh, no GitHub API, ever"). Not used by the bots. Read its
+  `day`, `card`, `sub`, `log` skills only as a second statement of the same rules.
+
+## Lauren Tan's plugins to weigh (github.com/poteto/plugins, MIT)
+
+Read each, then adopt the idea where it fits; don't install wholesale. Say in the build notes what was taken and why.
+
+| Plugin | Idea | Where it fits |
+|---|---|---|
+| `cli-for-agent` | non-interactive flags, `--help` with examples, fast errors that print the correct call, dry-run, idempotency | item 4: `cos-run` and the `cos-run gh` lane |
+| `pstack` | principles: encode-lessons-in-structure, subtract-before-you-add, never-block-on-the-human (irreversible still asks), prove-it-works, build-the-lever; skills: `verify-this`-style verdicts, `show-me-your-work` decision log, `reflect` | item 4 verdicts; item 6; the tier-0 ledger can borrow show-me-your-work's one-row-per-decision shape (what, why, evidence, result) |
+| `continual-learning` | a stop hook that, every N turns, mines new transcripts and updates learned preferences in place | keeps `cassidy-mode` current instead of a monthly re-mine. Must follow its transcript-scoping rule (only this workspace's transcripts) and never write canon or lake-chat content. Propose; Cassidy approves before it's on. |
+| `ralph-loop` | a stop hook re-feeds the same prompt until a completion phrase appears or an iteration cap is hit | overnight builds: run a build until `./verify` passes, with a hard cap and the caffeinate rule from item 4. Only for build-lane work in `~/builds/<slug>`, never for anything that writes to GitHub or the board. |
+| `thermos` / `interrogate` | several models review the same diff | already done (Codex plus a Claude checker); no change |
