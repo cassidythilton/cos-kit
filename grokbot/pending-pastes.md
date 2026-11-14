@@ -1,3 +1,11 @@
+# Grok pastes: APPLIED 2026-11-14
+
+All five Bots applied their files from `~/cos/grok-live/apply/` (the file method: each Bot copied its file, applied it,
+self-checked its memory against its playbook until "none", and re-exported to `~/cos/grok-live/after/`). Claude
+compared every export with the files: skills word for word, routines (one gh-scan with --state brief or watch; OPS
+morning brief paused), and memory (only rules changed; no fact about a person, date or project removed). Cassidy set
+the Permissions by hand. Next time, regenerate the apply files from `grokbot/` and use the same method.
+
 # Grok pastes, in the order to do them (one sitting)
 
 Written 2026-11-14 against the Grok export in `~/cos/grok-live/` (Chief, OPS, STEWARD, BUILDER, KEEPER, Custom Rules),
