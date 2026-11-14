@@ -23,3 +23,7 @@ card, and roadmap cards with no row, go in their own list.
 
 Done means: reconcile.md and, if any, apply.sh and sheet.json in the job folder.
 If the gap, drift and sheet-check lists are identical to the last reconcile in ~/cos/outbox, set summary to exactly: NO CHANGE
+
+Blank roadmap fields on other owners' cards: follow lane.md's exception (only when it's switched on). List every card
+named in more than one row's column J, with the rows and where their values differ, in open_questions; those cards get
+no fill until Cassidy settles them.

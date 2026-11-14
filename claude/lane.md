@@ -54,4 +54,12 @@ Write batches (board jobs):
 - Preview each make write with `DRY_RUN=1` first in the command (`DRY_RUN=1 make field CARD=652 FIELD=Target TO=2026-11-25`), never at the end, and quote the preview in notes.md.
 - Data questions: you don't query data. Write the question in open_questions as a `cos-run lake` request (the question, the tables you expect it to read, the shape of the answer); the Chief runs it after Cassidy's yes.
 - No write of any kind (RAGB, Status, log, make field) on a card whose owner isn't cassidythilton, in apply.sh or in needs_approval. Those go in that owner's nudge draft instead.
+  One exception, only when ~/cos/handbook/standing-approvals.json has "gh_tier0_others_cards": true (Cassidy, Nov 14,
+  after telling Melanie): a BLANK Pillar metric, Theme or Horizon on another owner's card, filled with its Data Roadmap
+  row's exact value, and only when that card is named in exactly one row's column J. Write the row to
+  <job folder>/rows/<card>.json as {"tab":"Data Roadmap","row":<n>,"row_name":"<column A>","read_at":"<ISO time>",
+  "J":"<column J>","C":"…","E":"…","I":"…","rows_naming_card":[<every row whose J names the card>]} and list the call
+  `cos-run gh <job> field data-org#<n> "<Field>" "<value>" --row <job folder>/rows/<card>.json` in needs_approval.
+  Never Target (the card's own date), never a set value, never RAGB or Status. A card named in two rows goes in
+  Cassidy's open_questions with both rows.
 - At most 40 lines. Summarize the batch in the receipt: how many writes of each kind, on which cards.

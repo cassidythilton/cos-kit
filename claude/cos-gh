@@ -558,10 +558,14 @@ def others_evidence(c, fname, val, opts):
         raise Refuse(f"can't read {rowf} as JSON.", code=64)
     col = SHEET_COL[fname]
     if row.get("tab") != "Data Roadmap" or not isinstance(row.get("row"), int) or not row.get("row_name") or not row.get("read_at"):
-        raise Refuse("row.json needs tab 'Data Roadmap', row (a number), row_name and read_at.", code=64)
+        raise Refuse("row.json needs tab 'Data Roadmap', row (a number), row_name, read_at and rows_naming_card (every row whose column J names the card).", code=64)
     pats = [f"{c['repo']}#{c['n']}"] + ([f"#{c['n']}"] if c["repo"] == "data-org" else [])
     if not any(re.search(rf"(?<![\w/-]){re.escape(p)}(?!\d)", row.get("J", "")) for p in pats):
         raise Refuse(f"the row's Github Reference (column J: '{row.get('J', '')}') doesn't name {c['ref']}.", tier=1)
+    rows = row.get("rows_naming_card")
+    if not isinstance(rows, list) or rows != [row["row"]]:
+        raise Refuse(f"{c['ref']} must be named in exactly one Data Roadmap row (rows_naming_card: {rows}). A card listed in "
+                     f"two rows can get two different values, so this is tier 1: show Cassidy both rows.", tier=1)
     if (row.get(col) or "").strip() != val:
         raise Refuse(f"the row's column {col} reads '{row.get(col, '')}', not '{val}'. Only the row's exact value goes on the card.", tier=1)
     return f"Data Roadmap row {row['row']} '{row['row_name'][:60]}' column {col} = '{val}', read {row['read_at']}"

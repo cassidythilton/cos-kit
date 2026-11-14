@@ -566,7 +566,9 @@ t0rows -e '[.[] | select(.decision=="refused")] | length >= 9 and all(.[]; .tier
 # Other people's cards, switched on only for this test: a blank field, only the sheet row's exact value.
 echo '{"gh_tier0_others_cards": true}' > "$T/cos/handbook/standing-approvals.json"; mkdir -p "$T/cos/outbox/o1" "$T/cos/outbox/o2"
 mkcard 802 nicholas '["nicholas"]' 1 '[{"name":"Defining","field":{"name":"Status","id":"F_STATUS"}}]'
-echo '{"tab":"Data Roadmap","row":12,"row_name":"Label facts","read_at":"2026-11-14T10:00","J":"#802 food-enrichment#220","C":"Relevance","I":"Nutrients · N1 NFP15 coverage"}' > "$T/row.json"
+echo '{"tab":"Data Roadmap","row":12,"row_name":"Label facts","read_at":"2026-11-14T10:00","J":"#802 food-enrichment#220","C":"Relevance","I":"Nutrients · N1 NFP15 coverage","rows_naming_card":[12]}' > "$T/row.json"
+echo '{"tab":"Data Roadmap","row":12,"row_name":"Label facts","read_at":"2026-11-14T10:00","J":"#802","C":"Relevance","I":"x","rows_naming_card":[12,19]}' > "$T/row2.json"
+t0ref o0d 65 field data-org#802 Theme "Relevance" --row "$T/row2.json"
 t0ref o0 65 field data-org#802 Theme "Quarantine" --row "$T/row.json"
 t0ref o0b 65 field data-org#802 Target 2026-12-31 --row "$T/row.json"
 t0ref o0c 65 board-add data-org#802 Discovery
