@@ -18,7 +18,7 @@ Work in a fresh Claude Code session. Read HANDOFF.md, then this file, then the d
 | 3 | Fewer cards: quick, investigate, atlas, gh-scan, receipt and the tier-0 lane go on Grok's always-allowed list; cards remain for apply, land and pushes | a Grok permissions change he makes | a day of lookups with no card |
 | 4 | Fewer failures: `cos-run <lane> --help` with examples; refusals print the correct call; verdicts VERIFIED / NOT VERIFIED / INCONCLUSIVE. Overnight: the brief says "plugged in, lid open" before he approves; long and async jobs run under `caffeinate -i -s -w <pid>`; an interrupted job's receipt says "didn't finish, rerun?" | nothing | fewer blocked receipts next week than this week |
 | 5 | The Chief answers like a person: the answer first; no ids, lanes, shas or checker notes unless asked; speaks up only when he's needed | a paste | five replies in a row need no translating |
-| 6 | Subtract: remove the eval and pair lanes, `lake-query` from the bots' lanes, and `~/cos/bin/*.bak*`. Add the lake handoff: Claude writes a prompt, Cassidy runs it in Cursor, and results come back as `~/cos/inbox/<job>/result.md` with aggregates and ids only, checked by the canon tripwire. Correct HANDOFF.md and README: canon stays on the Mac because of chat content, not queries (lake-query never ran in 303 jobs). | nothing | the checks pass with less code |
+| 6 | Subtract: remove the eval and pair lanes, `lake-query` from the bots' lanes, and `~/cos/bin/*.bak*`. Replace copy-paste with a `cos-run lake` lane (section below); a hand-run Cursor prompt stays as the fallback. Correct HANDOFF.md and README: canon stays on the Mac because of chat content, not queries (lake-query never ran in 303 jobs). | nothing | the checks pass with less code |
 | 8 | DRDs and DADRs in the daily flow (section below): PR #524's four-row check, daily and weekly detection, drafts only for Cassidy's cards, `make next-id` re-checked before every push | Build A | a DRD or DADR candidate surfaces from a real day, and a draft reaches a draft PR with no ID clash |
 | 9 | Throughput (section below): lanes move on evidence through Status only, never a bot move on others' cards, no No Status cards, lane counts and a Friday readout from GitHub's status-change history | Build A | a Friday brief with forward moves, finishes, days in lane and stuck cards that match the Lanes view |
 | 7 | Bonus: Steve Preston (org owner) approves Grok's GitHub app for data-org, data-org-notebook, and read access to org Projects. Requested in Slack 2026-11-14. | Steve | a GitHub read in Grok with no Mac hop |
@@ -157,3 +157,24 @@ Facts checked 2026-11-14:
 Open for Cassidy: David's three items on #704 (the card is #700; "Parked" vs "Dropped" is Cassidy's call; nobody
 owns targets in Pillar metric descriptions now) and his ask for a Makefile pass and a meeting on the Lanes process.
 Replying on #704 is a tier-1 comment.
+
+## The lake lane (replaces copy-paste; 2026-11-14)
+
+Cassidy: launching a Cursor agent from Grok, with logging, gates and his approval, beats copy-paste. The bots still
+never see the lake; a Cursor agent on his Mac does, and only an aggregates-only result comes back.
+
+- `cos-run lake <job> "<question>"`. Tier 1 with a preview: the Chief shows the question, the tables it expects to
+  read and the shape of the answer; his "yes" launches it. Never in tier 0, never on a schedule.
+- Engine: Cursor CLI (`agent -p`, as the quick lane already uses), pinned to a Claude model. Canon text never goes
+  to a non-Claude model (canon charter decision 14, as the kit reads it). Fallback if Cursor can't be gated as below:
+  Claude Code with `gate.sh`, which is already proven.
+- Where it runs: a data-org-notebook worktree, reading only through `lake-query` (read-only; `wcx` refuses writes;
+  canon tables only aggregated; a LIMIT or `--save`). Needs his VPN and `<env>-laker` sign-in; without them the job
+  stops at once with "connect the VPN and sign in", not a failure.
+- Gates, to verify in the build: Cursor's own permission config (allow `lake-query`, `uv run`, reads; deny writes,
+  network tools, git push, gh) and Cursor hooks running the same checks as `gate.sh`. If either can't be proven
+  with refusal tests, use the Claude Code fallback.
+- Output: `~/cos/outbox/<job>/result.md`: counts, rates and ids, each with its query. The canon tripwire checks the
+  file before anything reaches Grok; a hit holds the result on the Mac and says so.
+- Logging: the ledger records the job, the Cursor agent id, the queries run and the tripwire result. Agent Atlas
+  indexes the chat (it will be a lake chat), so it can be found again; its content stays on the Mac.
