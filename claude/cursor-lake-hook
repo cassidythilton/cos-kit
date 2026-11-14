@@ -1,0 +1,43 @@
+#!/bin/bash
+# cursor-lake-hook: Cursor's preToolUse hook for the lake lane (cos-run lake). Deny by default.
+#   Read-type tools: allowed, after gate.sh's secret and control rules.
+#   Shell: only `lake-query --sql "<SELECT>" [--lake] [--env dev|uat|prod] [--save]` or a plain `ls`, then gate.sh
+#          (which also refuses non-aggregate canon queries).
+#   Anything else (Write, Edit, Delete, MCP, web, a tool Cursor adds later): denied.
+# Cursor's own permission config (claude/lake/cli.json) is the first wall and holds even if this hook says allow
+# (proved 2026-11-14: a hook "allow" did not let a cli.json-denied curl run). This hook is the second.
+# Every decision is logged to <job folder>/lake-calls.jsonl, found from the workspace root (<job folder>/ws).
+input="$(cat)"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
+path="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.target_file // ""')"
+root="$(printf '%s' "$input" | jq -r '.workspace_roots[0] // ""')"
+OUTD=""; [[ "$root" == "$HOME"/cos/outbox/*/ws ]] && OUTD="${root%/ws}"
+log() { [[ -n "$OUTD" && -d "$OUTD" ]] || return 0
+  jq -nc --arg t "$(date -u +%FT%TZ)" --arg d "$1" --arg tool "$tool" --arg c "${cmd:0:600}" --arg p "${path:0:300}" --arg why "$2" \
+    '{ts: $t, decision: $d, tool: $tool, cmd: $c, path: $p, why: $why}' >> "$OUTD/lake-calls.jsonl" 2>/dev/null || true; }
+deny() { log deny "$1"; jq -nc --arg m "$1" '{permission: "deny", userMessage: ("lake lane: " + $m), agentMessage: ("BLOCKED by the lake lane: " + $m + ". This is final; answer with what you have or say BLOCKED.")}'; exit 0; }
+allow() { log allow ""; echo '{"permission":"allow"}'; exit 0; }
+gate() {  # $1 tool name for gate.sh; its exit 2 is a refusal
+  local msg
+  msg="$(jq -nc --arg t "$1" --arg c "$cmd" --arg p "$path" '{tool_name: $t, tool_input: {command: $c, file_path: $p}}' \
+    | COS_GATE_MODE=job COS_LANE=lake "$HOME/cos/claude/gate.sh" 2>&1 >/dev/null)"
+  [[ $? -eq 2 ]] && deny "${msg:-the gate refused it}"
+  return 0
+}
+case "$tool" in
+  Read|ReadFile|Grep|Glob|LS|List|ListDir|Search|SemanticSearch|FileSearch|Codebase)
+    gate Read; allow ;;
+  Shell|Terminal|Bash)
+    # Judge it as the shell will run it: double-quoted text is inert unless it can expand. Outside quotes, no
+    # ; & | ` $ < > (no chaining, no redirect, no substitution).
+    dq="$(printf '%s' "$cmd" | grep -oE '"[^"]*"' || true)"
+    [[ "$dq" == *'$'* || "$dq" == *'`'* ]] && deny "no \$ or backtick in a lake-query call"
+    bare="$(printf '%s' "$cmd" | sed -E 's/"[^"]*"/Q/g')"
+    [[ "$bare" =~ [\;\&\|\`\$\<\>] ]] && deny "no chaining, redirects or substitution"
+    if [[ "$bare" =~ ^lake-query\ --sql\ Q(\ --lake)?(\ --env\ (dev|uat|prod))?(\ --save)?$ || "$bare" =~ ^ls(\ [A-Za-z0-9._/~-]+)*$ ]]; then
+      gate Bash; allow
+    fi
+    deny "only lake-query --sql \"<SELECT>\" [--lake] [--env dev|uat|prod] runs here" ;;
+  *) deny "only reads and lake-query run here (not $tool)" ;;
+esac

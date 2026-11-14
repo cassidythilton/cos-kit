@@ -1,0 +1,713 @@
+#!/usr/bin/env -S python3 -I
+"""cos-gh: the tier-0 GitHub lane (cos-run gh). Small writes Cassidy approved once, in advance (plan 2026-11-14,
+item 1), done without asking and recorded so each can be undone.
+
+Every write: re-read the live card, check it is his (or, for another owner's card, that the field is blank and the value
+comes from the card's Data Roadmap row), preview it, run it through data-org's own interface (make targets; gh issue
+edit for labels, assignees and milestones; cos-link for links), read it back, and write one ledger row: what, why
+(evidence), old value, new value, the undo command and the verdict. Anything else is refused, naming its tier.
+No model runs here. Run cos-run gh --help for the calls.
+"""
+import datetime as dt
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+COS = f"{HOME}/cos"
+MAIN = f"{COS}/data-org-main"
+LEDGER_DIR = os.environ.get("COS_LEDGER_DIR", f"{COS}/state/ledger")
+ME = "cassidythilton"
+ORG = "wisecodeai"
+PROJECT = 1
+FIELDS = ("Pillar metric", "Theme", "Horizon", "Target")
+SHEET_COL = {"Pillar metric": "I", "Theme": "C", "Horizon": "E"}  # Target is never copied from the row (roadmap skill)
+LANES = ("Intake", "Discovery", "Defining", "Shipping", "Delivery Prep")  # tier 0 moves; finishes and drops are not
+JOB_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,60}$")
+REF_RE = re.compile(r"^(?:(?:wisecodeai/)?([A-Za-z0-9._-]+))?#([0-9]+)$")
+
+HELP = """cos-run gh: tier-0 GitHub writes, done without asking, each in the ledger with its undo.
+
+Usage:
+  cos-run gh <job> <action> [args] [--evidence "<why, with a link or source>"] [--dry-run]
+
+Actions on Cassidy's own cards and PRs (he is an assignee, or the author of an unassigned card):
+  label     <card> add|remove <label>
+  assignee  <card> add|remove <login>
+  milestone <card> "<milestone title>"|none
+  link      sub <parent> <child>            both cards his
+  link      blocked-by <card> <blocker>     both cards his
+  board-add <card> [<lane>]                 lands in Intake unless he names a lane; never No Status
+  field     <card> "<Pillar metric|Theme|Horizon|Target>" "<value>"
+  lane      <card> <Intake|Discovery|Defining|Shipping|Delivery Prep> --evidence "<GitHub link>"
+  create    <repo> --title "<title>" --body-file <job folder>/<file>.md [--label <l>]... [--milestone "<m>"] --evidence "<when he dictated it>"
+  draft-pr  <repo> <cassidy/branch> --title "<title>" --body-file <job folder>/<file>.md
+  push      <draft-job>                     a reviewed draft onto its cassidy/* base (cos-push-draft)
+
+Actions on anyone's card on Project 1 (off until Cassidy switches it on; see standing-approvals.json):
+  board-add <card>                          Intake only
+  field     <card> "<Pillar metric|Theme|Horizon>" "<value>" --row <job folder>/row.json | --parent <card>
+                                            only a BLANK field, only the row's value (or the parent's Pillar metric)
+
+Reading and undoing:
+  undo  <ref>       runs a ledger row's undo, after checking nobody changed the value since
+  today             today's tier-0 rows in plain words, for the evening brief ("Done without asking")
+  plain <apply.sh>  a staged batch in plain words with each line's tier, for an approval in words
+
+A card is data-org#712, food-enrichment#220 or wisecodeai/<repo>#<n>. Lanes and fields use the board's names.
+
+Examples:
+  cos-run gh t0-712-label label data-org#712 add type/discovery --evidence "he asked in Grok, 10:42"
+  cos-run gh t0-712-field field data-org#712 "Pillar metric" "Enables · N1" --evidence "Data Roadmap row 'Label facts'"
+  cos-run gh t0-712-lane lane data-org#712 Defining --evidence https://github.com/wisecodeai/data-org/pull/681
+  cos-run gh t0-undo-1 undo t0-20261114-104233-3f9a
+  cos-run gh brief today
+
+Refused here, with the tier that applies instead:
+  tier 1 (one yes): comments, review replies, RAGB, make complete, marking a PR ready, requesting a review, replacing a
+         set field on another owner's card, linking another owner's card
+  tier 2 (always ask): merges, closes, deletes, lane moves or assignee changes on others' cards, approvals, issue bodies,
+         drops
+  never: RAGB on another owner's card, Initiative, DRD, KPI
+Tier 1 and 2 go through a staged apply.sh and cos-run apply after Cassidy's yes."""
+
+
+class Refuse(Exception):
+    def __init__(self, msg, tier=None, code=65):
+        super().__init__(msg)
+        self.tier, self.code = tier, code
+
+
+def out(obj):
+    print(json.dumps(obj, indent=2, ensure_ascii=False))
+
+
+def run(argv, cwd=None, env=None, check=True):
+    e = dict(os.environ)
+    e.update(env or {})
+    p = subprocess.run(argv, cwd=cwd, env=e, text=True, capture_output=True)
+    if check and p.returncode != 0:
+        raise Refuse(f"{argv[0]} failed (exit {p.returncode}): {(p.stderr or p.stdout).strip()[-400:]}", code=1)
+    return p
+
+
+def gh_json(args):
+    return json.loads(run(["gh"] + args).stdout or "null")
+
+
+def ledger(**kv):
+    args = [f"{COS}/bin/cos-ledger", "tier_zero"] + [f"{k}={v}" for k, v in kv.items() if v is not None]
+    subprocess.run(args, capture_output=True)
+
+
+def ref_parts(s):
+    m = REF_RE.match(s or "")
+    if not m:
+        raise Refuse(f"'{s}' is not a card. Write data-org#712, food-enrichment#220 or wisecodeai/<repo>#<n>.", code=64)
+    return (m.group(1) or "data-org"), int(m.group(2))
+
+
+CARD_Q = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issueOrPullRequest(number:$n){
+ __typename
+ ... on Issue{id number title state url author{login} assignees(first:20){nodes{login}} labels(first:60){nodes{name}}
+   milestone{title} parent{number repository{name}} subIssues(first:100){nodes{number repository{name}}}
+   blockedBy(first:100){nodes{number repository{name}}}
+   projectItems(first:20){nodes{id project{number id} fieldValues(first:40){nodes{
+     ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name id}}}
+     ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name id}}}}}}}}
+ ... on PullRequest{id number title state isDraft url author{login} assignees(first:20){nodes{login}}
+   labels(first:60){nodes{name}} milestone{title} headRefName
+   projectItems(first:20){nodes{id project{number id} fieldValues(first:40){nodes{
+     ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name id}}}
+     ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name id}}}}}}}}}}}"""
+
+
+def card(ref):
+    """The live card, read fresh from GitHub. Never cached."""
+    repo, n = ref_parts(ref)
+    d = gh_json(["api", "graphql", "-F", f"o={ORG}", "-F", f"r={repo}", "-F", f"n={n}", "-f", f"query={CARD_Q}"])
+    node = (((d or {}).get("data") or {}).get("repository") or {}).get("issueOrPullRequest")
+    if not node:
+        raise Refuse(f"{ORG}/{repo}#{n} was not found (or gh can't read it).", code=66)
+    items = [i for i in (node.get("projectItems") or {}).get("nodes", []) if (i.get("project") or {}).get("number") == PROJECT]
+    item = items[0] if items else None
+    fields, field_ids = {}, {}
+    for v in ((item or {}).get("fieldValues") or {}).get("nodes", []):
+        f = (v or {}).get("field") or {}
+        if f.get("name"):
+            fields[f["name"]] = v.get("name") or v.get("date") or ""
+            field_ids[f["name"]] = f.get("id")
+    names = lambda key: [x["login"] if "login" in x else x["name"] for x in (node.get(key) or {}).get("nodes", [])]
+    refs = lambda key: [f"{x['repository']['name']}#{x['number']}" for x in (node.get(key) or {}).get("nodes", [])]
+    return {
+        "ref": f"{repo}#{n}", "repo": repo, "n": n, "kind": node["__typename"], "id": node["id"], "title": node.get("title", ""),
+        "state": node.get("state"), "url": node.get("url"), "author": (node.get("author") or {}).get("login", ""),
+        "assignees": names("assignees"), "labels": names("labels"), "milestone": (node.get("milestone") or {}).get("title", ""),
+        "parent": (f"{node['parent']['repository']['name']}#{node['parent']['number']}" if node.get("parent") else ""),
+        "subs": refs("subIssues"), "blocked_by": refs("blockedBy"), "item": (item or {}).get("id"),
+        "project_id": ((item or {}).get("project") or {}).get("id"), "fields": fields, "field_ids": field_ids,
+    }
+
+
+def mine(c):
+    """His card: he is an assignee, or he wrote it and nobody is assigned. A card he wrote for someone else is theirs."""
+    return ME in c["assignees"] or (c["author"] == ME and not c["assignees"])
+
+
+def owner_words(c):
+    return ", ".join(c["assignees"]) or (c["author"] + " (author, unassigned)")
+
+
+def others_enabled():
+    try:
+        with open(f"{COS}/handbook/standing-approvals.json") as f:
+            return json.load(f).get("gh_tier0_others_cards") is True
+    except Exception:
+        return False
+
+
+def in_arg(c):
+    return [] if c["repo"] == "data-org" else [f"IN={c['repo']}"]
+
+
+def make(argv, preview=True):
+    """data-org's own interface. Preview with DRY_RUN=1 first, as its skills say; stop if the preview fails."""
+    if not os.path.isdir(MAIN):
+        raise Refuse(f"{MAIN} is missing. Any cos-run investigate job rebuilds it.", code=66)
+    if preview:
+        p = run(["make", "-s"] + argv, cwd=MAIN, env={"DRY_RUN": "1", "NO_COLOR": "1"}, check=False)
+        if p.returncode != 0:
+            raise Refuse(f"the preview failed, so nothing ran: DRY_RUN=1 make {' '.join(argv)}: {(p.stderr or p.stdout).strip()[-300:]}", code=1)
+    return run(["make", "-s"] + argv, cwd=MAIN, env={"NO_COLOR": "1"})
+
+
+def field_id(name):
+    d = gh_json(["project", "field-list", str(PROJECT), "--owner", ORG, "--format", "json"])
+    for f in (d or {}).get("fields", []):
+        if f.get("name") == name:
+            return f.get("id")
+    raise Refuse(f"the board has no '{name}' field", code=1)
+
+
+def q(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
+def refuse_tier(action):
+    tiers = {
+        "comment": (1, "a comment"), "review": (1, "a review reply"), "ragb": (1, "RAGB (his cards; never on others')"),
+        "complete": (1, "make complete"), "ready": (1, "marking a PR ready (it requests reviews, which notifies people)"),
+        "request-review": (1, "requesting a review"), "merge": (2, "a merge"), "close": (2, "a close"), "delete": (2, "a delete"),
+        "approve": (2, "a PR approval"), "body": (2, "an issue body"), "drop": (2, "a drop"), "promote": (2, "make promote (it closes the issue)"),
+    }
+    if action in tiers:
+        t, what = tiers[action]
+        raise Refuse(f"{what} is tier {t}, not tier 0. Stage it in the job's apply.sh, show Cassidy the plain words, and "
+                     f"on his yes run: cos-run apply <job> <sha256>.", tier=t)
+    raise Refuse(f"unknown action '{action}'. Run: cos-run gh --help", code=64)
+
+
+# ------------------------------------------------------------------ planning: decide, then describe the write and its undo
+def plan(job, action, args, opts):
+    """Returns a dict: card(s), old, new, the write (a list of argv), the undo (argv), a read-back check. Or refuses."""
+    ev = opts.get("evidence")
+    need = lambda k, usage: args[k] if len(args) > k else (_ for _ in ()).throw(Refuse(f"missing arguments. {usage}", code=64))
+
+    if action == "label" or action == "assignee":
+        usage = f"cos-run gh {job} {action} data-org#712 add|remove <{'label' if action == 'label' else 'login'}>"
+        c = card(need(0, usage)); verb = need(1, usage); val = need(2, usage)
+        if verb not in ("add", "remove"):
+            raise Refuse(f"say add or remove. {usage}", code=64)
+        if not mine(c):
+            raise Refuse(f"{c['ref']} is {owner_words(c)}'s card. Labels and assignees on another owner's card are "
+                         f"tier {'1' if action == 'label' else '2'}: give them a note instead.", tier=1 if action == "label" else 2)
+        key = "labels" if action == "label" else "assignees"
+        have = val in c[key]
+        flag = f"--{verb}-{action}"
+        back = f"--{'remove' if verb == 'add' else 'add'}-{action}"
+        sub = "pr" if c["kind"] == "PullRequest" else "issue"
+        return dict(card=c, what=f"{verb} {action} {val}", old=("present" if have else "absent"), new=("present" if verb == "add" else "absent"),
+                    noop=(have == (verb == "add")),
+                    write=[["gh", sub, "edit", str(c["n"]), "--repo", f"{ORG}/{c['repo']}", flag, val]],
+                    undo=["gh", sub, "edit", str(c["n"]), "--repo", f"{ORG}/{c['repo']}", back, val],
+                    check=lambda c2: (val in c2[key]) == (verb == "add"),
+                    undo_check=lambda c2: (val in c2[key]) == have,
+                    sentence=f"{'Added' if verb == 'add' else 'Removed'} {action} {val} {'to' if verb == 'add' else 'from'} {c['ref']} ({c['title'][:60]})")
+
+    if action == "milestone":
+        usage = f'cos-run gh {job} milestone data-org#712 "Nov 25 · November slice to Live"|none'
+        c = card(need(0, usage)); val = need(1, usage)
+        if not mine(c):
+            raise Refuse(f"{c['ref']} is {owner_words(c)}'s card. A milestone change there is tier 1: give them a note.", tier=1)
+        new = "" if val == "none" else val
+        base = ["gh", "issue", "edit", str(c["n"]), "--repo", f"{ORG}/{c['repo']}"]
+        write = base + (["--remove-milestone"] if not new else ["--milestone", new])
+        undo = base + (["--remove-milestone"] if not c["milestone"] else ["--milestone", c["milestone"]])
+        return dict(card=c, what="milestone", old=c["milestone"], new=new, noop=(c["milestone"] == new), write=[write], undo=undo,
+                    check=lambda c2: c2["milestone"] == new, undo_check=lambda c2: c2["milestone"] == c["milestone"],
+                    sentence=f"Set the milestone on {c['ref']} to {new or 'none'} (was {c['milestone'] or 'none'})")
+
+    if action == "link":
+        usage = f"cos-run gh {job} link sub <parent> <child>   or   link blocked-by <card> <blocker>"
+        kind = need(0, usage); a = card(need(1, usage)); b = card(need(2, usage))
+        if kind not in ("sub", "blocked-by"):
+            raise Refuse(f"say sub or blocked-by. {usage}", code=64)
+        if not (mine(a) and mine(b)):
+            other = a if not mine(a) else b
+            raise Refuse(f"{other['ref']} is {owner_words(other)}'s card. Linking another owner's card is tier 1.", tier=1)
+        fa, fb = f"{ORG}/{a['repo']}#{a['n']}", f"{ORG}/{b['repo']}#{b['n']}"
+        have = (b["ref"] in a["subs"]) if kind == "sub" else (b["ref"] in a["blocked_by"])
+        mut = ("removeSubIssue(input:{issueId:$a,subIssueId:$b}){issue{number}}" if kind == "sub"
+               else "removeBlockedBy(input:{issueId:$a,blockingIssueId:$b}){issue{number}}")
+        listing = "subs" if kind == "sub" else "blocked_by"
+        return dict(card=a, other=b, what=f"link {kind}", old=("linked" if have else "not linked"), new="linked", noop=have,
+                    write=[["cos-link", kind, fa, fb]],
+                    undo=["gh", "api", "graphql", "-f", f"a={a['id']}", "-f", f"b={b['id']}", "-f", "query=mutation($a:ID!,$b:ID!){" + mut + "}"],
+                    check=lambda c2: b["ref"] in c2[listing], undo_check=lambda c2: b["ref"] not in c2[listing],
+                    sentence=(f"Made {b['ref']} a sub-issue of {a['ref']}" if kind == "sub" else f"Marked {a['ref']} blocked by {b['ref']}"))
+
+    if action == "board-add":
+        usage = f"cos-run gh {job} board-add data-org#712 [Intake|Discovery|Defining|Shipping|Delivery Prep]"
+        c = card(need(0, usage)); lane = args[1] if len(args) > 1 else "Intake"
+        if lane not in LANES:
+            raise Refuse(f"'{lane}' is not a tier-0 lane. Use one of: {', '.join(LANES)}.", code=64)
+        if not mine(c):
+            if not others_enabled():
+                raise Refuse(f"{c['ref']} is {owner_words(c)}'s card. Tier 0 on other people's cards is off until Cassidy "
+                             f"switches it on (he tells Melanie first). Give the owner a note instead.", tier=1)
+            if lane != "Intake":
+                raise Refuse(f"on another owner's card, board-add lands in Intake only; the owner picks the lane.", tier=2)
+        if c["state"] != "OPEN":
+            raise Refuse(f"{c['ref']} is closed; a closed card isn't boarded by a bot.", code=65)
+        url = c["url"]
+        write = [["make", "board-add", f"URL={url}", f"PILLAR={lane}"], ["make", "set-pillar", f"CARD={c['n']}", f"TO={lane}"] + in_arg(c)]
+        return dict(card=c, what="board-add", old=("on the board, " + (c["fields"].get("Status") or "No Status")) if c["item"] else "not on the board",
+                    new=f"on the board, {lane}", noop=bool(c["item"]) and c["fields"].get("Status") == lane, write=write,
+                    already_boarded=bool(c["item"]),
+                    undo=None,  # filled after the write, when the item id exists
+                    check=lambda c2: bool(c2["item"]) and c2["fields"].get("Status") == lane,
+                    undo_check=lambda c2: not c2["item"],
+                    sentence=f"Put {c['ref']} on the board in {lane}")
+
+    if action == "field":
+        usage = f'cos-run gh {job} field data-org#712 "Pillar metric" "Enables · N1"'
+        c = card(need(0, usage)); fname = need(1, usage); val = need(2, usage)
+        if fname in ("Initiative", "DRD", "KPI"):
+            raise Refuse(f"{fname} is derived, never typed. No bot sets it.", tier="never")
+        if fname == "RAGB":
+            refuse_tier("ragb")
+        if fname == "Status":
+            raise Refuse(f"Status is a lane: cos-run gh {job} lane {c['ref']} <lane> --evidence <link>", code=64)
+        if fname not in FIELDS:
+            raise Refuse(f"FIELD must be one of {', '.join(FIELDS)} (make field's list).", code=64)
+        if fname == "Target" and not re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+            raise Refuse("Target takes a date, YYYY-MM-DD.", code=64)
+        if not c["item"]:
+            raise Refuse(f"{c['ref']} isn't on the board. Board it first: cos-run gh <job> board-add {c['ref']}", code=65)
+        old = c["fields"].get(fname, "")
+        replace = False
+        if mine(c):
+            replace = bool(old) and old != val
+        else:
+            if not others_enabled():
+                raise Refuse(f"{c['ref']} is {owner_words(c)}'s card. Tier 0 on other people's cards is off until Cassidy "
+                             f"switches it on. Give the owner a note with the value and its source instead.", tier=1)
+            if old:
+                raise Refuse(f"{fname} on {c['ref']} is already '{old}'. Replacing a set field on another owner's card is tier 1.", tier=1)
+            ev = others_evidence(c, fname, val, opts)
+        write = ["make", "field", f"CARD={c['n']}", f"FIELD={fname}", f"TO={val}"] + in_arg(c) + (["REPLACE=1"] if replace else [])
+        if old:
+            undo = ["make", "field", f"CARD={c['n']}", f"FIELD={fname}", f"TO={old}"] + in_arg(c) + ["REPLACE=1"]
+        else:
+            fid = c["field_ids"].get(fname) or field_id(fname)
+            # make field can't clear a value; this raw edit is the plan's one named exception, for the undo only.
+            undo = ["gh", "project", "item-edit", "--project-id", c["project_id"], "--id", c["item"], "--field-id", fid, "--clear"]
+        return dict(card=c, what=f"field {fname}", old=old, new=val, noop=(old == val), write=[write], undo=undo, evidence=ev,
+                    check=lambda c2: c2["fields"].get(fname, "") == val, undo_check=lambda c2: c2["fields"].get(fname, "") == old,
+                    sentence=f"Set {fname} on {c['ref']} to {val} (was {old or 'blank'})")
+
+    if action == "lane":
+        usage = f"cos-run gh {job} lane data-org#712 Defining --evidence https://github.com/wisecodeai/data-org/pull/681"
+        c = card(need(0, usage)); lane = need(1, usage)
+        if lane in ("Completed No Delivery", "Completed", "Delivered", "Dropped") or lane.startswith(("Delivered", "Dropped")):
+            raise Refuse(f"{lane} is a finish or a drop: make complete is tier 1, a drop is tier 2. Never make promote.", tier=1 if lane.startswith("Completed") else 2)
+        if lane not in LANES:
+            raise Refuse(f"'{lane}' is not a board lane. Use one of: {', '.join(LANES)}.", code=64)
+        if not mine(c):
+            raise Refuse(f"{c['ref']} is {owner_words(c)}'s card. No bot moves another owner's card (tier 2); list the "
+                         f"evidence in their to-do instead.", tier=2)
+        if not ev or not re.search(r"https://github\.com/", ev):
+            raise Refuse(f"a lane move needs the evidence that earns it, as a GitHub link (a merged DRD PR, an accepted DADR, a merged ship PR). {usage}", code=64)
+        if not c["item"]:
+            raise Refuse(f"{c['ref']} isn't on the board. Board it first: cos-run gh <job> board-add {c['ref']} {lane}", code=65)
+        old = c["fields"].get("Status", "")
+        write = ["make", "set-pillar", f"CARD={c['n']}", f"TO={lane}"] + in_arg(c)
+        undo = (["make", "set-pillar", f"CARD={c['n']}", f"TO={old}"] + in_arg(c)) if old else \
+               ["gh", "project", "item-edit", "--project-id", c["project_id"], "--id", c["item"], "--field-id", c["field_ids"].get("Status") or field_id("Status"), "--clear"]
+        return dict(card=c, what="lane", old=old, new=lane, noop=(old == lane), write=[write], undo=undo,
+                    check=lambda c2: c2["fields"].get("Status") == lane, undo_check=lambda c2: c2["fields"].get("Status", "") == old,
+                    sentence=f"Moved {c['ref']} to {lane} (was {old or 'No Status'}), on evidence {ev}")
+
+    if action == "create":
+        usage = f'cos-run gh {job} create data-org --title "<title>" --body-file ~/cos/outbox/{job}/body.md --evidence "<when he dictated it>"'
+        repo = need(0, usage)
+        if not re.match(r"^[A-Za-z0-9._-]+$", repo):
+            raise Refuse(f"repo is a name in wisecodeai, such as data-org. {usage}", code=64)
+        title, body = opts.get("title"), opts.get("body-file")
+        if not title or not body or not ev:
+            raise Refuse(f"create needs --title, --body-file and --evidence. {usage}", code=64)
+        body_ok(job, body)
+        write = ["gh", "issue", "create", "--repo", f"{ORG}/{repo}", "--title", title, "--body-file", body, "--assignee", ME]
+        for l in opts.get("label", []):
+            write += ["--label", l]
+        if opts.get("milestone"):
+            write += ["--milestone", opts["milestone"]]
+        return dict(card={"ref": f"{repo}#new", "repo": repo, "n": 0, "title": title}, what="create", old="", new=title, noop=False,
+                    write=[write], undo=None, create=True, check=None, undo_check=None,
+                    sentence=f"Filed a new card in {repo}, assigned to Cassidy: {title}")
+
+    if action == "draft-pr":
+        usage = f'cos-run gh {job} draft-pr data-org cassidy/712-topic --title "<title>" --body-file ~/cos/outbox/{job}/pr.md'
+        repo = need(0, usage); branch = need(1, usage)
+        if not re.match(r"^cassidy/[A-Za-z0-9._/-]+$", branch) or ".." in branch:
+            raise Refuse(f"a tier-0 draft PR is only from one of Cassidy's branches (cassidy/...). {usage}", tier=1)
+        title, body = opts.get("title"), opts.get("body-file")
+        if not title or not body:
+            raise Refuse(f"draft-pr needs --title and --body-file. {usage}", code=64)
+        body_ok(job, body)
+        heads = run(["git", "ls-remote", "--heads", f"https://github.com/{ORG}/{repo}.git", branch], check=False).stdout.strip()
+        if not heads:
+            raise Refuse(f"{branch} isn't on GitHub. Push it first (cos-run gh <job> push <draft-job>).", code=65)
+        existing = gh_json(["pr", "list", "--repo", f"{ORG}/{repo}", "--head", branch, "--state", "open", "--json", "number,url"]) or []
+        write = ["gh", "pr", "create", "--draft", "--repo", f"{ORG}/{repo}", "--head", branch, "--title", title, "--body-file", body]
+        return dict(card={"ref": f"{repo}:{branch}", "repo": repo, "n": 0, "title": title}, what="draft-pr", old=(existing[0]["url"] if existing else "no PR"),
+                    new="draft PR", noop=bool(existing), write=[write], undo=None, create=True, check=None, undo_check=None,
+                    sentence=f"Opened a draft PR in {repo} from {branch}: {title}. Not marked ready, so nobody is asked to review.")
+
+    if action == "push":
+        usage = f"cos-run gh {job} push <draft-job>"
+        dj = need(0, usage)
+        if not JOB_RE.match(dj):
+            raise Refuse(f"bad draft job id. {usage}", code=64)
+        r = f"{COS}/outbox/{dj}/receipt.json"
+        try:
+            rec = json.load(open(r))
+        except Exception:
+            raise Refuse(f"no draft receipt for {dj}.", code=66)
+        base = ((rec.get("draft") or {}).get("base") or "").replace("origin/", "", 1)
+        sha = (rec.get("draft") or {}).get("sha256") or ""
+        if not base.startswith("cassidy/"):
+            raise Refuse(f"{dj}'s base is {base or 'unknown'}, not one of Cassidy's branches; a push there is never tier 0.", tier=2)
+        if (rec.get("checker") or {}).get("verdict") != "pass":
+            raise Refuse(f"{dj} didn't pass its checker, so it isn't pushed without Cassidy's yes (tier 1).", tier=1)
+        return dict(card={"ref": f"data-org:{base}", "repo": "data-org", "n": 0, "title": base}, what="push", old=(rec.get("draft") or {}).get("base_sha", ""),
+                    new=sha, noop=False, write=[["cos-push-draft", dj, sha]], undo=None, create=True, check=None, undo_check=None,
+                    sentence=f"Pushed draft {dj} onto {base} (fast-forward, the reviewed diff)")
+
+    refuse_tier(action)
+
+
+def body_ok(job, body):
+    real = os.path.realpath(os.path.expanduser(body))
+    if not real.startswith(os.path.realpath(f"{COS}/outbox/{job}") + "/") or not real.endswith(".md") or not os.path.isfile(real):
+        raise Refuse(f"--body-file must be an existing .md file in this job's folder, ~/cos/outbox/{job}/.", code=64)
+
+
+def others_evidence(c, fname, val, opts):
+    """Another owner's blank field: only the value from the card's Data Roadmap row, or a sub-item's parent's Pillar metric."""
+    if opts.get("parent"):
+        if fname != "Pillar metric":
+            raise Refuse("--parent proves a Pillar metric only (a sub-item takes its parent's).", tier=1)
+        p = card(opts["parent"])
+        if c["parent"] != p["ref"]:
+            raise Refuse(f"{p['ref']} isn't {c['ref']}'s parent (GitHub says {c['parent'] or 'none'}).", tier=1)
+        if p["fields"].get("Pillar metric") != val:
+            raise Refuse(f"the parent's Pillar metric is '{p['fields'].get('Pillar metric', '')}', not '{val}'.", tier=1)
+        return f"parent {p['ref']} Pillar metric '{val}', read live"
+    rowf = opts.get("row")
+    if not rowf:
+        raise Refuse("another owner's blank field needs --row <job folder>/row.json (the card's Data Roadmap row, read by a job) or --parent <card>.", tier=1)
+    if fname not in SHEET_COL:
+        raise Refuse(f"{fname} is never copied from the sheet onto another owner's card (roadmap skill: Target is the card's own date; ask the owner).", tier=1)
+    try:
+        row = json.load(open(os.path.expanduser(rowf)))
+    except Exception:
+        raise Refuse(f"can't read {rowf} as JSON.", code=64)
+    col = SHEET_COL[fname]
+    if row.get("tab") != "Data Roadmap" or not isinstance(row.get("row"), int) or not row.get("row_name") or not row.get("read_at"):
+        raise Refuse("row.json needs tab 'Data Roadmap', row (a number), row_name and read_at.", code=64)
+    pats = [f"{c['repo']}#{c['n']}"] + ([f"#{c['n']}"] if c["repo"] == "data-org" else [])
+    if not any(re.search(rf"(?<![\w/-]){re.escape(p)}(?!\d)", row.get("J", "")) for p in pats):
+        raise Refuse(f"the row's Github Reference (column J: '{row.get('J', '')}') doesn't name {c['ref']}.", tier=1)
+    if (row.get(col) or "").strip() != val:
+        raise Refuse(f"the row's column {col} reads '{row.get(col, '')}', not '{val}'. Only the row's exact value goes on the card.", tier=1)
+    return f"Data Roadmap row {row['row']} '{row['row_name'][:60]}' column {col} = '{val}', read {row['read_at']}"
+
+
+# ------------------------------------------------------------------ doing it
+def receipt(job, obj):
+    d = f"{COS}/outbox/{job}"
+    os.makedirs(d, exist_ok=True)
+    with open(f"{d}/receipt.json", "w") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+    out(obj)
+
+
+def do(job, action, args, opts):
+    line = " ".join([action] + args)
+    d = f"{COS}/outbox/{job}"
+    prior = f"{d}/receipt.json"
+    if os.path.exists(prior):
+        try:
+            p = json.load(open(prior))
+        except Exception:
+            p = {}
+        if p.get("lane") == "gh" and (p.get("tier0") or {}).get("action") == line:
+            out(p); return 0  # the same call again: report what happened, change nothing
+        raise Refuse(f"job {job} already exists for another action. Use a new job id.", code=64)
+    who = run(["gh", "api", "user", "--jq", ".login"]).stdout.strip()
+    if who != ME:
+        raise Refuse(f"gh is signed in as '{who}', not {ME}. Nothing ran.", code=77)
+    p = plan(job, action, args, opts)
+    c = p["card"]
+    ev = p.get("evidence") or opts.get("evidence") or ""
+    ref = "t0-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+    base = dict(job=job, ref=ref, action=line, card=c["ref"], mine=str(mine(c)).lower() if "author" in c else "true",
+                old=p["old"], new=p["new"], evidence=ev)
+    if p["noop"]:
+        rec = {"job": job, "lane": "gh", "receipt": {"status": "done", "verdict": "VERIFIED",
+               "summary": f"Already so, nothing written: {c['ref']} {p['what']} is '{p['new']}' (read live just now)."},
+               "tier0": dict(base, decision="noop")}
+        receipt(job, rec); return 0
+    if opts.get("dry-run"):
+        rec = {"job": job, "lane": "gh", "receipt": {"status": "dry-run", "summary": "Would do: " + p["sentence"] + ". Nothing written."},
+               "tier0": dict(base, decision="dry-run", write=[" ".join(q(a) for a in w) for w in p["write"]])}
+        out(rec); return 0
+    os.makedirs(d, exist_ok=True)
+    created = ""
+    for w in p["write"]:
+        if w[0] == "make":
+            make(w[1:])
+        else:
+            r = run(w, cwd=MAIN if os.path.isdir(MAIN) else None)
+            if p.get("create") and r.stdout.strip().startswith("https://github.com/"):
+                created = r.stdout.strip().splitlines()[-1]
+    undo = p["undo"]
+    if p.get("create"):
+        undo_words = ("not automatic: a new card is closed only through make complete or by Cassidy (tier 2)" if action == "create"
+                      else "not automatic: closing a draft PR is tier 2; ask Cassidy" if action == "draft-pr"
+                      else "not automatic: a revert is a new commit and push; ask Cassidy")
+        verdict = "VERIFIED" if (created or action == "push") else "INCONCLUSIVE"
+        row = dict(base, decision="done", new=created or p["new"], undo=undo_words, verdict=verdict)
+        ledger(**row)
+        rec = {"job": job, "lane": "gh", "receipt": {"status": "done", "verdict": verdict, "summary": p["sentence"] + (f": {created}" if created else "") + "."}, "tier0": row}
+        receipt(job, rec); return 0
+    c2 = card(c["ref"])
+    if action == "board-add" and not undo:
+        undo = ["gh", "project", "item-delete", str(PROJECT), "--owner", ORG, "--id", c2["item"] or ""] if not p.get("already_boarded") else \
+               (["make", "set-pillar", f"CARD={c['n']}", f"TO={c['fields'].get('Status')}"] + in_arg(c) if c["fields"].get("Status") else None)
+    ok = p["check"](c2)
+    verdict = "VERIFIED" if ok else "NOT VERIFIED"
+    row = dict(base, decision="done", verdict=verdict, undo=f"cos-run gh <job> undo {ref}", undo_argv=json.dumps(undo) if undo else "")
+    ledger(**row)
+    summary = p["sentence"] + (". Read back: matches." if ok else ". Read back: it does NOT match. Check the card.") + f" Undo: cos-run gh <job> undo {ref}"
+    rec = {"job": job, "lane": "gh", "receipt": {"status": "done" if ok else "partial", "verdict": verdict, "summary": summary}, "tier0": row}
+    receipt(job, rec)
+    return 0 if ok else 1
+
+
+def rows():
+    try:
+        with open(f"{LEDGER_DIR}/tier_zero.jsonl") as f:
+            return [json.loads(l) for l in f if l.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def undo(job, ref):
+    r = [x for x in rows() if x.get("ref") == ref and x.get("decision") == "done"]
+    if not r:
+        raise Refuse(f"no done tier-0 row {ref} in the ledger. See: cos-run gh <job> today", code=66)
+    r = r[-1]
+    if any(x.get("ref") == ref and x.get("decision") == "undone" for x in rows()):
+        raise Refuse(f"{ref} was already undone.", code=68)
+    argv = json.loads(r.get("undo_argv") or "null")
+    if not argv:
+        raise Refuse(f"{ref} has no automatic undo ({r.get('undo', '')}).", code=65)
+    if argv[0] not in ("gh", "make") or (argv[0] == "gh" and argv[1:3] not in (["issue", "edit"], ["pr", "edit"], ["project", "item-edit"], ["project", "item-delete"], ["api", "graphql"])):
+        raise Refuse("the recorded undo isn't one tier 0 can run.", code=65)
+    who = run(["gh", "api", "user", "--jq", ".login"]).stdout.strip()
+    if who != ME:
+        raise Refuse(f"gh is signed in as '{who}', not {ME}. Nothing ran.", code=77)
+    # Rebuild the decision from the row to know what "unchanged since" means, by re-reading the card.
+    p = replan_for_undo(r)
+    c = card(r["card"])
+    if not p["still"](c):
+        raise Refuse(f"{r['card']} changed since {ref} (it no longer reads '{r['new']}'). Nothing undone; someone else may own that change now.", code=65)
+    if argv[0] == "make":
+        make(argv[1:])
+    else:
+        run(argv)
+    c2 = card(r["card"])
+    ok = p["back"](c2)
+    verdict = "VERIFIED" if ok else "NOT VERIFIED"
+    row = dict(job=job, ref=ref, action="undo " + r["action"], card=r["card"], old=r["new"], new=r["old"], decision="undone", verdict=verdict)
+    ledger(**row)
+    rec = {"job": job, "lane": "gh", "receipt": {"status": "done" if ok else "partial", "verdict": verdict,
+           "summary": f"Undid {ref} on {r['card']}: back to '{r['old']}'." + ("" if ok else " Read back does NOT match; check the card.")}, "tier0": row}
+    receipt(job, rec)
+    return 0 if ok else 1
+
+
+def replan_for_undo(r):
+    act = r["action"].split()
+    a = act[0]
+    if a in ("label", "assignee"):
+        key = "labels" if a == "label" else "assignees"
+        val = " ".join(act[3:])
+        added = act[2] == "add"
+        return {"still": lambda c: (val in c[key]) == added, "back": lambda c: (val in c[key]) != added}
+    if a == "milestone":
+        return {"still": lambda c: c["milestone"] == r["new"], "back": lambda c: c["milestone"] == r["old"]}
+    if a == "field":
+        m = re.match(r'field \S+ (Pillar metric|Theme|Horizon|Target) ', r["action"])
+        f = m.group(1) if m else ""
+        return {"still": lambda c: c["fields"].get(f, "") == r["new"], "back": lambda c: c["fields"].get(f, "") == r["old"]}
+    if a == "lane":
+        return {"still": lambda c: c["fields"].get("Status", "") == r["new"], "back": lambda c: c["fields"].get("Status", "") == r["old"]}
+    if a == "board-add":
+        lane = r["new"].replace("on the board, ", "")
+        return {"still": lambda c: bool(c["item"]) and c["fields"].get("Status") == lane,
+                "back": lambda c: (not c["item"]) if r["old"] == "not on the board" else c["fields"].get("Status", "") == r["old"].replace("on the board, ", "")}
+    if a == "link":
+        kind, other = act[1], act[3]
+        listing = "subs" if kind == "sub" else "blocked_by"
+        orepo, on = ref_parts(other)
+        o = f"{orepo}#{on}"
+        return {"still": lambda c: o in c[listing], "back": lambda c: o not in c[listing]}
+    raise Refuse(f"{a} has no automatic undo.", code=65)
+
+
+def today():
+    now = dt.datetime.now().astimezone()
+    lines, refused = [], 0
+    for x in rows():
+        try:
+            t = dt.datetime.fromisoformat(x["ts"].replace("Z", "+00:00")).astimezone()
+        except Exception:
+            continue
+        if t.date() != now.date():
+            continue
+        if x.get("decision") == "refused":
+            refused += 1; continue
+        if x.get("decision") not in ("done", "undone"):
+            continue
+        verb = "Undid" if x["decision"] == "undone" else "Did"
+        tail = f" Undo: cos-run gh <job> undo {x['ref']}" if x["decision"] == "done" and x.get("undo_argv") else ""
+        why = f" Why: {x['evidence']}." if x.get("evidence") else ""
+        lines.append(f"- {t:%H:%M} {verb}: {x['action']} on {x['card']} ({x.get('old') or 'blank'} -> {x.get('new') or 'blank'}). {x.get('verdict', '')}.{why}{tail}")
+    head = f"Done without asking today ({len(lines)})" + (f"; {refused} refused and left for Cassidy" if refused else "")
+    print(head + (":" if lines else ": nothing."))
+    print("\n".join(lines))
+    return 0
+
+
+# ------------------------------------------------------------------ plain words for a staged batch (item 2: approve with "yes")
+PLAIN = [
+    (r"^make ragb .*CARD=(\S+).*TO=(\S+)", 1, "Set RAGB on #{0} to {1}"),
+    (r"^make field .*CARD=(\S+).*FIELD=(\"[^\"]*\"|\S+).*TO=(\"[^\"]*\"|\S+)", 0, "Set {1} on #{0} to {2}"),
+    (r"^make set-pillar .*CARD=(\S+).*TO=(\"[^\"]*\"|\S+)", 0, "Move #{0} to the {1} lane"),
+    (r"^make complete .*CARD=(\S+)", 1, "Finish #{0} in its lane (closes it as completed)"),
+    (r"^make promote .*CARD=(\S+)", 2, "Promote #{0} (closes the issue)"),
+    (r"^make board-add .*URL=(\S+)", 0, "Put {0} on the board"),
+    (r"^make ship-link .*TITLE=(\"[^\"]*\"|\S+)", 1, "File and board an effort: {0}"),
+    (r"^make context-request ", 1, "File a context request for the CDO"),
+    (r"^gh issue comment (\d+) --repo (\S+)", 1, "Comment on {1}#{0} (text in the job folder)"),
+    (r"^gh issue create --repo (\S+) --title (\"[^\"]*\")", 0, "File a new card in {0}: {1}"),
+    (r"^gh issue edit (\d+) --repo (\S+)(.*)", 0, "Edit labels, assignees or milestone on {1}#{0}:{2}"),
+    (r"^gh pr comment (\d+) --repo (\S+)", 1, "Comment on PR {1}#{0}"),
+    (r"^gh pr review (\d+) --repo (\S+) --approve", 2, "Approve PR {1}#{0}"),
+    (r"^gh pr review (\d+) --repo (\S+) --request-changes", 2, "Request changes on PR {1}#{0}"),
+    (r"^gh pr review (\d+) --repo (\S+) --comment", 1, "Post a review comment on PR {1}#{0}"),
+    (r"^gh pr merge (\d+) --repo (\S+) --(\w+)", 2, "Merge PR {1}#{0} ({2})"),
+    (r"^gh pr ready (\d+) --repo (\S+)", 1, "Mark PR {1}#{0} ready for review (this notifies reviewers)"),
+    (r"^gh pr edit (\d+) --repo (\S+) --add-reviewer (\S+)", 1, "Ask {2} to review PR {1}#{0}"),
+    (r"^gh pr create --draft --repo (\S+) --head (\S+)", 0, "Open a draft PR in {0} from {1}"),
+    (r"^cos-link sub (\S+) (\S+)", 0, "Make {1} a sub-issue of {0}"),
+    (r"^cos-link blocked-by (\S+) (\S+)", 0, "Mark {0} blocked by {1}"),
+    (r"^cos-push-draft (\S+) ", 0, "Push the reviewed draft from job {0} onto its branch"),
+    (r"^git -C \S+ push \S+ (\S+)", 0, "Push build branch {0}"),
+]
+
+
+def plain(path):
+    try:
+        lines = [l.strip() for l in open(os.path.expanduser(path)) if l.strip() and not l.strip().startswith("#")]
+    except FileNotFoundError:
+        raise Refuse(f"no batch at {path}", code=66)
+    items, top = [], 0
+    for l in lines:
+        for rx, tier, fmt in PLAIN:
+            m = re.match(rx, l)
+            if m:
+                g = [s.strip('"') for s in m.groups()]
+                items.append({"tier": tier, "says": fmt.format(*g).replace(" --", " ").rstrip(":")}); top = max(top, tier); break
+        else:
+            items.append({"tier": 2, "says": "Unrecognized line; show Cassidy the line itself: " + l}); top = 2
+    out({"batch": path, "writes": len(items), "highest_tier": top, "items": items,
+         "ask": "One yes covers all of it." if top <= 1 else "Includes tier 2: show Cassidy each tier-2 line and wait for his yes to those lines."})
+    return 0
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help") or "--help" in argv or "-h" in argv:
+        print(HELP); return 0
+    job = argv[0]
+    if not JOB_RE.match(job):
+        raise Refuse(f"bad job id '{job}': lowercase letters, digits, dot, dash or underscore, up to 61 characters. Example: cos-run gh t0-712-label label data-org#712 add type/discovery", code=64)
+    if len(argv) < 2:
+        raise Refuse("missing the action. Run: cos-run gh --help", code=64)
+    action, rest = argv[1], argv[2:]
+    args, opts = [], {"label": []}
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--dry-run":
+            opts["dry-run"] = True; i += 1
+        elif a in ("--evidence", "--title", "--body-file", "--milestone", "--row", "--parent", "--label"):
+            if i + 1 >= len(rest):
+                raise Refuse(f"{a} needs a value. Run: cos-run gh --help", code=64)
+            if a == "--label":
+                opts["label"].append(rest[i + 1])
+            else:
+                opts[a[2:]] = rest[i + 1]
+            i += 2
+        elif a.startswith("--"):
+            raise Refuse(f"unknown option {a}. Run: cos-run gh --help", code=64)
+        else:
+            args.append(a); i += 1
+    if action == "today":
+        return today()
+    if action == "plain":
+        return plain(args[0] if args else "")
+    if action == "undo":
+        if not args:
+            raise Refuse(f"which row? cos-run gh {job} undo <ref>   (refs are in: cos-run gh {job} today)", code=64)
+        return undo(job, args[0])
+    return do(job, action, args, opts)
+
+
+if __name__ == "__main__":
+    a = sys.argv[1:]
+    job = a[0] if a and JOB_RE.match(a[0]) else ""
+    try:
+        sys.exit(main(a))
+    except Refuse as e:
+        if e.tier is not None:
+            ledger(job=job, action=" ".join(a[1:])[:300], decision="refused", tier=str(e.tier), why=str(e))
+        tier = f" (tier {e.tier})" if e.tier is not None else ""
+        print(f"cos-run gh refused{tier}: {e}", file=sys.stderr)
+        sys.exit(e.code)

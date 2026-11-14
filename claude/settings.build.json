@@ -2,31 +2,100 @@
   "permissions": {
     "defaultMode": "dontAsk",
     "allow": [
-      "Read", "Grep", "Glob", "Skill", "Task", "WebSearch", "WebFetch",
-      "Write(~/builds/**)", "Edit(~/builds/**)", "Write(~/cos/outbox/**)", "Edit(~/cos/outbox/**)",
-      "Bash(uv *)", "Bash(make *)", "Bash(./verify *)", "Bash(lake-query *)", "Bash(board-pulse*)",
-      "Bash(git add *)", "Bash(git commit *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git show *)",
-      "Bash(git branch*)", "Bash(git switch *)", "Bash(git checkout -b *)", "Bash(git worktree add *)", "Bash(git stash*)",
-      "Bash(git rm *)", "Bash(git mv *)", "Bash(git init*)", "Bash(git fetch*)", "Bash(git clone --depth*)",
-      "Bash(npm ci*)", "Bash(npm install*)", "Bash(npm run *)", "Bash(npm test*)", "Bash(pnpm *)",
-      "Bash(mkdir *)", "Bash(touch *)", "Bash(cp *)", "Bash(chmod +x *)", "Bash(ls*)", "Bash(wc *)", "Bash(date*)",
-      "Bash(head *)", "Bash(tail *)", "Bash(jq *)", "Bash(duckdb *)", "Bash(sqlite3 *)",
-      "Bash(gh issue view *)", "Bash(gh issue list *)", "Bash(gh pr view *)", "Bash(gh pr list *)", "Bash(gh pr diff *)",
-      "Bash(gh repo view *)", "Bash(gh api repos/*/contents/*)", "Bash(gh search code *)",
-      "Bash(aws * describe*)", "Bash(aws * list*)", "Bash(aws * get-*)", "Bash(aws sts get-caller-identity*)",
-      "mcp__claude_ai_Google_Sheets__get_values", "mcp__claude_ai_Google_Sheets__get_spreadsheet",
-      "mcp__claude_ai_Slack__slack_read_thread", "mcp__claude_ai_Slack__slack_read_channel",
-      "mcp__claude_ai_Slack__slack_search_public_and_private", "mcp__claude_ai_Google_Drive__read_file_content"
+      "Read",
+      "Grep",
+      "Glob",
+      "Skill",
+      "Task",
+      "WebSearch",
+      "WebFetch",
+      "Write(~/builds/**)",
+      "Edit(~/builds/**)",
+      "Write(~/cos/outbox/**)",
+      "Edit(~/cos/outbox/**)",
+      "Bash(uv *)",
+      "Bash(make *)",
+      "Bash(./verify *)",
+      "Bash(board-pulse*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show *)",
+      "Bash(git branch*)",
+      "Bash(git switch *)",
+      "Bash(git checkout -b *)",
+      "Bash(git worktree add *)",
+      "Bash(git stash*)",
+      "Bash(git rm *)",
+      "Bash(git mv *)",
+      "Bash(git init*)",
+      "Bash(git fetch*)",
+      "Bash(git clone --depth*)",
+      "Bash(npm ci*)",
+      "Bash(npm install*)",
+      "Bash(npm run *)",
+      "Bash(npm test*)",
+      "Bash(pnpm *)",
+      "Bash(mkdir *)",
+      "Bash(touch *)",
+      "Bash(cp *)",
+      "Bash(chmod +x *)",
+      "Bash(ls*)",
+      "Bash(wc *)",
+      "Bash(date*)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(jq *)",
+      "Bash(duckdb *)",
+      "Bash(sqlite3 *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh repo view *)",
+      "Bash(gh api repos/*/contents/*)",
+      "Bash(gh search code *)",
+      "Bash(aws * describe*)",
+      "Bash(aws * list*)",
+      "Bash(aws * get-*)",
+      "Bash(aws sts get-caller-identity*)",
+      "mcp__claude_ai_Google_Sheets__get_values",
+      "mcp__claude_ai_Google_Sheets__get_spreadsheet",
+      "mcp__claude_ai_Slack__slack_read_thread",
+      "mcp__claude_ai_Slack__slack_read_channel",
+      "mcp__claude_ai_Slack__slack_search_public_and_private",
+      "mcp__claude_ai_Google_Drive__read_file_content"
     ],
     "deny": [
-      "Bash(git push*)", "Bash(rm *)", "Bash(*EXECUTE=1*)", "Bash(python *)", "Bash(python3 *)", "Bash(pip *)",
-      "Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(**/.env*)"
+      "Bash(*EXECUTE=1*)",
+      "Bash(git push*)",
+      "Bash(lake-query*)",
+      "Bash(pip *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(rm *)",
+      "Read(**/.env*)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)"
     ]
   },
-  "env": { "COS_GATE_MODE": "job" },
+  "env": {
+    "COS_GATE_MODE": "job"
+  },
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Bash|Read|Edit|Write|mcp__.*", "hooks": [ { "type": "command", "command": "~/cos/claude/gate.sh" } ] }
+      {
+        "matcher": "Bash|Read|Edit|Write|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/cos/claude/gate.sh"
+          }
+        ]
+      }
     ]
   }
 }

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": ["Read(**)", "Shell(lake-query)", "Shell(ls)"],
+    "deny": [
+      "Write(**)",
+      "Read(**/.env*)", "Read(~/.aws/**)", "Read(~/.ssh/**)", "Read(**/credentials*)",
+      "Shell(curl)", "Shell(wget)", "Shell(nc)", "Shell(ssh)", "Shell(scp)", "Shell(rsync)", "Shell(open)",
+      "Shell(git)", "Shell(gh)", "Shell(aws)", "Shell(psql)", "Shell(duckdb)",
+      "Shell(python)", "Shell(python3)", "Shell(uv)", "Shell(pip)", "Shell(node)", "Shell(bash)", "Shell(sh)", "Shell(zsh)",
+      "Shell(rm)", "Shell(mv)", "Shell(cp)", "Shell(tee)",
+      "Shell(agent)", "Shell(cursor-agent)", "Shell(claude)", "Shell(cos-run)",
+      "WebFetch(*)", "Mcp(*:*)"
+    ]
+  }
+}

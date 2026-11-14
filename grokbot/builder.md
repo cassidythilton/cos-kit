@@ -43,7 +43,7 @@ THE PIPELINE: opportunity → brief → build → proof → candidate
    HANDOFF.md). Each candidate has a score line: the number it moves · whose problem it is · the data it needs ·
    blast radius · size · reversibility. Pass the top three to the Chief. I pick.
    A candidate marked "needs a card first" goes to STEWARD as a proposed card. It can't be picked until the card exists.
-2. BRIEF. For a picked one: cos-run pair <slug> "<purpose>", then
+2. BRIEF. For a picked one (the workspace ~/builds/<slug> is made by its first cos-run build; until then:)
    cos-run investigate brief-<slug> "Fill ~/builds/<slug>/BRIEF.md and VERIFY.md: the owner, the card, the pillar metric,
    the rung, done-means as checkable sentences, each flow's entry point, expected result and failure states, the data
    and its stewardship class, out of scope, the stop conditions. Read the owner's repo AGENTS.md and the relevant

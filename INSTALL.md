@@ -28,11 +28,6 @@ Then three smoke tests, in order:
 
 The first costs cents (Cursor). The second costs about $1–3 (Claude). The third must come back `blocked`, with the comment staged in `needs_approval`. Check `receipt.json` in each job folder. The smoke test also confirms the one unverified detail: the `structured_output` field name.
 
-Then set a baseline for the eval suite (about $20; KEEPER compares every proposed change against it):
-
-```bash
-~/cos/bin/cos-run eval core current
-```
 
 ## 2. Grok Bot settings (once, for every Bot)
 
@@ -51,7 +46,7 @@ Do these in order, so the rules are in place before the per-command card goes aw
 | Week 1, day 1 | Chief (your existing bot) | send the REMEMBER block; "save PLAYBOOK as a skill called chief-playbook"; create its results webhook routine; test one request per lane |
 | Week 1, day 2 | OPS | REMEMBER; save `ops-playbook`; ask for the 06:30 routine and the webhook routine |
 | Week 1, day 3 | STEWARD | REMEMBER; save `steward-playbook`; ask for the webhook routine; approve one small batch by hash |
-| First build | BUILDER | REMEMBER; save `builder-playbook`; webhook routine; pick one opportunity, `cos-run pair` it, approve its BRIEF.md and VERIFY.md |
+| First build | BUILDER | REMEMBER; save `builder-playbook`; webhook routine; pick one opportunity; its first `cos-run build --slug <slug>` makes the workspace; approve its BRIEF.md and VERIFY.md |
 | After 2 weeks | KEEPER | REMEMBER; save `keeper-playbook`; save `handbook/system-map.md` as the `system-map` skill and enable it for KEEPER and the Chief; webhook routine. Its first Friday audit replaces the old receipt. |
 
 Every specialist (OPS, STEWARD, BUILDER, KEEPER) also gets the one-door rule as a lasting rule. It's in each file's REMEMBER block: the Chief is the only Bot that runs commands or writes anywhere, so every approval happens in the Chief's chat.
@@ -100,7 +95,7 @@ That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, eve
 
 ## Applying a KEEPER fix
 
-- **A lane prompt or brief:** `~/cos/bin/cos-run eval core ~/cos/outbox/<job>/<name>.proposed.md`. If the report passes, copy the file into `~/cos/kit/claude/…` and run `cd ~/cos/kit && git commit -am "<why>" && ./install.sh`.
+- **A lane prompt or brief:** read KEEPER's evidence (the jobs it would have changed), copy the file into `~/cos/kit/claude/…` and run `cd ~/cos/kit && git commit -am "<why>" && ./install.sh`.
 - **Kit code:** `cd ~/cos/kit && git apply ~/cos/outbox/<job>/proposal.patch && ./install.sh`, then commit.
 - **A Grok Bot:** paste the text KEEPER gives you into that Bot, or into its playbook skill.
 - **Undo:** `cd ~/cos/kit && git revert <commit> && ./install.sh`.
@@ -109,7 +104,9 @@ That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, eve
 
 | Kit path | Installs to | What it is |
 |---|---|---|
-| `claude/cos-run` | `~/cos/bin/` | the front desk: lanes `quick`, `investigate`, `draft`, `build`, `pair`, `apply`, `eval`, `note` |
+| `claude/cos-run` | `~/cos/bin/` | the front desk: every lane (`cos-run <lane> --help`) |
+| `claude/cos-gh` | `~/cos/bin/` | tier-0 GitHub writes (`cos-run gh`), ledgered in `~/cos/state/ledger/tier_zero.jsonl` with their undo |
+| `claude/cursor-lake-hook`, `claude/lake/cli.json` | `~/cos/claude/` | the lake lane's walls: Cursor's preToolUse hook (runs the gate) and its permission config |
 | `claude/cos-sched` | `~/cos/bin/` | the Mac's schedule (run by launchd): runs each scheduled job, skips if the Mac woke too late |
 | `claude/cos-push` | `~/cos/bin/` | hands a receipt to a Bot's webhook routine; key read from the Keychain, never printed |
 | `claude/cos-ledger` | `~/cos/bin/` | appends one redacted JSON line to `~/cos/state/ledger/<stream>.jsonl`. Always exits 0 |
@@ -118,10 +115,9 @@ That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, eve
 | `apps/flight-recorder/` | stays in the kit | the page and the read-only API |
 | `claude/briefs/*.md` | `~/cos/claude/briefs/` | the scheduled jobs' briefs: followups, capture, reconcile, week, opportunity, keeper |
 | `claude/verifier.md` | `~/cos/claude/` | the independent verifier's prompt (after every build job) |
-| `evals/core.json` | `~/cos/evals/` | the core eval suite: five real requests with rubrics and must-nots |
 | `claude-skills/cassidy-mode/` | `~/.claude/skills/`, `~/.cursor/skills/` | how you work: the restate-test-revise loop and your expectations; loaded via `~/.claude/CLAUDE.md` |
 | `claude/board-pulse` | `~/cos/bin/` | the board readout from `make stale`, `ship-check`, `roadmap-check`, `weed` on fresh `origin/main` |
-| `claude/lake-query` | `~/cos/bin/` | read-only data via data-org-notebook's `run_query.py`, with the canon, write and LIMIT guards |
+| `claude/lake-query` | `~/cos/bin/` | read-only data via data-org-notebook's `run_query.py`, with the canon, write and LIMIT guards; used only by the lake lane |
 | `claude/gate.sh` | `~/cos/claude/` | the wall: hard blocks always, outward actions blocked in jobs and asking in pair mode |
 | `claude/settings.investigate.json` | `~/cos/claude/` | `investigate` lane permissions |
 | `claude/settings.draft.json` | `~/cos/claude/` | `draft` lane permissions |
@@ -143,7 +139,7 @@ That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, eve
 | `install.sh` | — | installer and self-test |
 | `PLAN.md` | — | the design and the why |
 
-Created at runtime: `~/cos/kit` (this kit, as a git repo), `~/cos/state/corrections.jsonl`, `~/cos/state/sched.log`, `~/cos/evals/runs/`, `~/cos/outbox/<job>/` (one per job, moved to `~/cos/archive` after 30 days), `~/cos/state/board-health.csv`, `~/cos/data-org-main` (a detached copy of `origin/main` that jobs run in), and `~/builds/<slug>/` (one per build).
+Created at runtime: `~/cos/kit` (this kit, as a git repo), `~/cos/state/corrections.jsonl`, `~/cos/state/sched.log`, `~/cos/outbox/<job>/` (one per job, moved to `~/cos/archive` after 30 days), `~/cos/state/board-health.csv`, `~/cos/data-org-main` (a detached copy of `origin/main` that jobs run in), and `~/builds/<slug>/` (one per build).
 
 ## Changes from the last install
 

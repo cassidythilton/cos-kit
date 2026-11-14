@@ -77,7 +77,7 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 
 ## Who Does What
 
-**Grok** handles conversation, mail, Slack, calendar and routing. **Cursor Agent** answers one-command lookups for cents. **Claude Code** does anything multi-step on the repos, transcripts or data, plus every checker and verifier. **Codex** reviews Claude's builds and judges its evals, so a different model family checks the work.
+**Grok** handles conversation, mail, Slack, calendar and routing. **Cursor Agent** answers one-command lookups for cents. **Claude Code** does anything multi-step on the repos, transcripts or data, plus every checker and verifier. **Codex** reviews Claude's builds and fixes, so a different model family checks the work.
 
 <p align="center">
   <picture>
@@ -93,7 +93,7 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 | ![grok](https://img.shields.io/badge/Grok-15181e?style=flat-square) | Chat, Gmail and Slack drafts, calendar, routing, routines, the Bots' browser | It holds the connected apps and the conversation. It never touches the Mac unattended. |
 | ![cursor](https://img.shields.io/badge/Cursor_Agent-3d4452?style=flat-square) | `quick`: one read-only command, summarized | Cheapest. The script runs the command, and the model only reads the output. |
 | ![claude](https://img.shields.io/badge/Claude_Code-c96442?style=flat-square&logo=anthropic&logoColor=white) | `investigate`, `draft`, `build`, the checker, the verifier | Multi-step work with the repo's skills, under the gate, with a receipt |
-| ![codex](https://img.shields.io/badge/Codex-10a37f?style=flat-square) | Second-opinion review of builds, the blind eval judge | A different model family catches what Claude misses. Skipped for canon or label builds (decision 14). |
+| ![codex](https://img.shields.io/badge/Codex-10a37f?style=flat-square) | Second-opinion review of builds and fixes | A different model family catches what Claude misses. Skipped for canon or label builds (decision 14). |
 
 ---
 
@@ -132,17 +132,20 @@ The unchecked-box rule exists because the first version would have closed #423: 
 | ![gh-scan](https://img.shields.io/badge/gh--scan-3d4452?style=flat-square) | Everything in GitHub that may need Cassidy, in two GraphQL searches. Says "GitHub read failed" plainly, never an empty list. | none | free |
 | ![draft](https://img.shields.io/badge/draft-3d4452?style=flat-square) | Prepares a doc or repo change on its own branch from `--base` (fetched fresh), never pushed by the job. The receipt carries the diff's sha256; an approved `cos-push-draft` can push it to one of his `cassidy/*` PR branches. | Claude Code | up to $12 |
 | ![build](https://img.shields.io/badge/build-e79738?style=flat-square) | One build slice, then before-and-after checks, an independent verifier and a second model's review | Claude Code · Codex | up to $20, plus about $6 |
-| ![pair](https://img.shields.io/badge/pair-e79738?style=flat-square) | Scaffolds a build workspace Cassidy drives in Cursor | none | free |
-| ![apply](https://img.shields.io/badge/apply-eab308?style=flat-square) | Runs a write batch he approved by its sha256, once | none | free |
+| ![gh](https://img.shields.io/badge/gh-eab308?style=flat-square) | Tier 0: small GitHub writes on Cassidy's own cards (labels, assignee, milestone, links, board-add, roadmap fields, lane moves with evidence, a draft PR). Re-reads the card, writes through data-org's make targets, reads back, and ledgers old, new, evidence and the undo. Everything else is refused, naming its tier. | none ([claude/cos-gh](claude/cos-gh)) | free |
+| ![preview](https://img.shields.io/badge/preview-eab308?style=flat-square) | A staged batch in plain words with each line's tier, and the call to run on his "yes". He never sees a sha256. | none | free |
+| ![apply](https://img.shields.io/badge/apply-eab308?style=flat-square) | Runs a write batch he approved (by its sha256, which the Chief keeps), once | none | free |
 | ![apply-sheet](https://img.shields.io/badge/apply--sheet-eab308?style=flat-square) | Writes exactly the cells of a sheet.json he approved by its sha256. The gate allows no other cell. | Claude Code (sonnet) | cents |
+| ![lake](https://img.shields.io/badge/lake-3d4452?style=flat-square) | One data question after his yes. Cursor CLI on a Claude model, walled twice: Cursor's permission config and a preToolUse hook that runs the gate allow only reads and `lake-query`. Canon tables touched: the answer is held on the Mac. No VPN: "connect the VPN and sign in". | Cursor Agent (Claude) | cents to $1 |
 | ![fix](https://img.shields.io/badge/fix-c0392b?style=flat-square) | Fixes this kit in its own worktree, tested in a macOS sandbox, reviewed by Codex and a checker | Claude Code · Codex | about $3 to $4 |
 | ![land](https://img.shields.io/badge/land-c0392b?style=flat-square) | Lands an approved fix: fast-forward, install, roll back if a check fails, push. `revert` undoes it. | none | free |
-| ![eval](https://img.shields.io/badge/eval-757675?style=flat-square) | Tests a prompt change blind on the [core suite](evals/core.json) | Claude Code, judged by Codex | about $4 |
 | ![note](https://img.shields.io/badge/note-757675?style=flat-square) | Records a correction for KEEPER | none | free |
 | ![pause](https://img.shields.io/badge/pause-5B6C5D?style=flat-square) | Holds a scheduled slot for N days, `0` resumes | none | free |
-| ![receipt](https://img.shields.io/badge/receipt-5B6C5D?style=flat-square) | A job's result, or "running" or "failed" | none | free |
+| ![receipt](https://img.shields.io/badge/receipt-5B6C5D?style=flat-square) | A job's result, "running", or "didn't finish, rerun?" with the exact call | none | free |
 
-**Long jobs run with `--async`.** Grok's terminal call gives up before a 3-minute job ends, and the Chief used to re-ask until Cassidy had approved the same job ten times. Now `investigate`, `atlas`, `draft`, `build`, `eval`, `fix` and `land` return in under a second, run detached, and push their receipt to the Chief's results webhook when they finish. The Chief never re-runs a job because a reply didn't come back; it checks with `cos-run receipt`.
+**Long jobs run with `--async`.** Grok's terminal call gives up before a 3-minute job ends, and the Chief used to re-ask until Cassidy had approved the same job ten times. Now `investigate`, `atlas`, `draft`, `build`, `fix`, `land` and `lake` return in under a second, run detached, and push their receipt to the Chief's results webhook when they finish. The Chief never re-runs a job because a reply didn't come back; it checks with `cos-run receipt`.
+
+**Every lane explains itself.** `cos-run <lane> --help` prints its arguments and examples, and a refused call prints the call that would have worked. Receipts lead with a verdict: VERIFIED (an independent check passed), NOT VERIFIED (it failed) or INCONCLUSIVE (nothing checked it). Long jobs run under `caffeinate -i -s -w <pid>`; one that stops without a receipt reads "Didn't finish ... Rerun?" with the exact call.
 
 **Jobs fix their own misses once.** A Claude checker grades each receipt as blocking or notes. If something blocks, the job gets one revision round with the checker's findings. A receipt still blocked leads with "Needs you:" and one plain question; notes show as "Unverified:".
 
@@ -233,10 +236,11 @@ Allowed lines: the repo's own write targets (`make ragb`, `field`, `set-pillar`,
 | Wall | What it stops | Where |
 | --- | --- | --- |
 | ![door](https://img.shields.io/badge/One_door-3d80f1?style=flat-square) | Any specialist running a command or writing outside a draft | each bot's REMEMBER block |
-| ![rules](https://img.shields.io/badge/Permissions-3d80f1?style=flat-square) | Allowed without asking: `cos-run` quick, investigate, receipt, note, pause. Always asks: any other Mac command, `cos-run` draft, build, apply or eval, sends, posts, calendar, sheets, GitHub writes, purchases, Zoom sign-in | Grok: Settings, Permissions and Computer |
+| ![rules](https://img.shields.io/badge/Permissions-3d80f1?style=flat-square) | Allowed without asking: `cos-run` quick, investigate, receipt, note, pause. Always asks: any other Mac command, `cos-run` draft, build, apply or lake, sends, posts, calendar, sheets, GitHub writes, purchases, Zoom sign-in | Grok: Settings, Permissions and Computer |
 | ![gate](https://img.shields.io/badge/The_gate-c0392b?style=flat-square) | Secrets, production writes, infrastructure, force-push, canon values, `context/` edits, edits to this kit | [claude/gate.sh](claude/gate.sh) |
 | ![hash](https://img.shields.io/badge/Approval_by_hash-eab308?style=flat-square) | Any batch that differs from the one approved | [claude/cos-run](claude/cos-run) |
-| ![lake](https://img.shields.io/badge/lake--query-3d4452?style=flat-square) | Writes, non-aggregate canon reads, unbounded queries | [claude/lake-query](claude/lake-query) |
+| ![lake](https://img.shields.io/badge/lake--query-3d4452?style=flat-square) | Writes, non-aggregate canon reads, unbounded queries. Runs only inside the lake lane; the other lanes and the gate refuse it. | [claude/lake-query](claude/lake-query), [claude/lake/cli.json](claude/lake/cli.json), [claude/cursor-lake-hook](claude/cursor-lake-hook) |
+| ![tiers](https://img.shields.io/badge/GitHub_tiers-eab308?style=flat-square) | Tier 0 writes on anyone else's card (off until Cassidy switches it on), and anything above tier 0 without his yes | [claude/cos-gh](claude/cos-gh) |
 | ![merge](https://img.shields.io/badge/No_merges-5B6C5D?style=flat-square) | Any agent merging or deploying. The furthest it goes is a draft PR, after his yes. | [handbook/engineering-standard.md](handbook/engineering-standard.md) |
 
 ---
@@ -252,13 +256,14 @@ Allowed lines: the repo's own write targets (`make ragb`, `field`, `set-pillar`,
                            ▼
         strongest fix: setup ▶ a check ▶ a skill or prompt edit ▶ memory
                            │
-            prompt change? ── yes ──▶ cos-run eval core <proposed>  (blind, judged by Codex)
                            │
                            ▼
             Cassidy approves ──▶ commit in ~/cos/kit ──▶ ./install.sh
 ```
 
-The baseline eval on 2026-11-09 scored **3.0 of 5** across six real requests, with **0** hard-rule violations. Sources: [evals/core.json](evals/core.json), [claude/briefs/keeper.md](claude/briefs/keeper.md).
+The eval lane was removed on 2026-11-14 (plan item 6, subtract): it ran once, for the 2026-11-09 baseline (3.0 of 5, 0 violations). Prompt changes are now judged by the checker on real jobs and by KEEPER's weekly pass ([claude/briefs/keeper.md](claude/briefs/keeper.md)).
+
+**Why canon stays on the Mac.** The risk is chat content, not queries: a Claude or Cursor chat that read canon (a lake chat in Agent Atlas), a transcript or a doc. `lake-query` never ran a query in 373 jobs through 2026-11-14 (cos.db `commands` table); one eval job called `run_query.py` directly. So the walls that matter are on what leaves the Mac: lake chats give bots ids and counts only, the checker fails a receipt carrying canon terms, and the lake lane holds any answer that touched a canon table.
 
 ---
 
@@ -294,7 +299,8 @@ This folder is the only source. A change is an edit here, a commit with its reas
 ```
 cos-kit/
 ├── claude/                  the Mac side
-│   ├── cos-run              front desk: quick · investigate · atlas · gh-scan · draft · build · pair · apply · apply-sheet · fix · land · eval · note · pause
+│   ├── cos-run              front desk: quick · investigate · atlas · gh-scan · draft · build · gh · preview · apply · apply-sheet · lake · fix · land · note · pause · receipt
+│   ├── cos-gh               tier-0 GitHub writes, each ledgered with its undo; plain words for a staged batch
 │   ├── cos-launch.c         the launcher every launchd job starts through (Full Disk Access, ~/cos/bin only)
 │   ├── cos-gh-scan          the GitHub scan · cos-atlas, the Agent Atlas CLI · cos-link, cos-push-draft for approved batches
 │   ├── cos-sandbox-test     runs a fix's installer in a macOS sandbox · zoom-mirror.applescript builds ZoomMirror.app
@@ -302,14 +308,14 @@ cos-kit/
 │   ├── cos-obligations      what's waiting on Cassidy, owned to closure, with his standing approvals
 │   ├── cos-ledger           append-only ledger · cos-db loads it into cos.db · cos-dash opens the page
 │   ├── gate.sh              the wall in front of every job
-│   ├── lake-query           read-only data, canon aggregates only
+│   ├── lake-query           read-only data, canon aggregates only (the lake lane's one command)
+│   ├── lake/, cursor-lake-hook   the lake lane's Cursor permission config and its preToolUse hook
 │   ├── board-pulse          the board readout from the repo's make targets
 │   ├── briefs/              the scheduled jobs' briefs
 │   └── *.md, *.json         lane prompts, the verifier, settings, the receipt schema
 ├── grokbot/                 each bot's REMEMBER block and PLAYBOOK, the Custom Rules, the rules skill
 ├── handbook/                rules, the board and engineering standards, the system map, standing approvals
 ├── builds-template/         a build workspace: BRIEF.md · VERIFY.md · HANDOFF.md · verify
-├── evals/                   the core eval suite
 ├── claude-skills/           cassidy-mode, how Claude works with Cassidy
 ├── apps/flight-recorder/    the local page: what ran, what it cost, what got blocked
 ├── HANDOFF.md               the cold-start note for a new agent

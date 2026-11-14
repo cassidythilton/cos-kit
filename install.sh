@@ -30,7 +30,7 @@ if [[ $UNSCHEDULE -eq 1 ]]; then
 fi
 
 echo "1. Prerequisites"
-for c in claude agent gh jq git perl shasum shlock lsof uv openssl rsync bc curl security launchctl python3; do command -v $c >/dev/null && pass "$c" || fail "$c not on PATH"; done
+for c in claude agent gh jq git perl shasum shlock lsof uv openssl rsync bc curl security launchctl python3 caffeinate nc; do command -v $c >/dev/null && pass "$c" || fail "$c not on PATH"; done
 if [[ $SANDBOX -eq 0 ]]; then
 gh auth status >/dev/null 2>&1 && pass "gh signed in" || fail "gh not signed in (gh auth login)"
 [[ -d "$HOME/Documents/Data-Org-Repos/data-org/.git" ]] && pass "data-org repo" || fail "data-org repo missing at ~/Documents/Data-Org-Repos/data-org"
@@ -76,10 +76,14 @@ fi
 fi
 
 echo "3. Files"
-mkdir -p "$COS"/{bin,claude/briefs,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+mkdir -p "$COS"/{bin,claude/briefs,claude/lake,handbook,outbox,state,archive} "$HOME/builds"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+# Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
+for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
+bash -n "$KIT/claude/cursor-lake-hook" && install -m 755 "$KIT/claude/cursor-lake-hook" "$COS/claude/" || fail "claude/cursor-lake-hook has a syntax error; the installed hook was left as it was"
+install -m 644 "$KIT/claude/lake/cli.json" "$COS/claude/lake/"
 # cos-launch: the one program launchd starts for every job, so one Full Disk Access grant covers them all (see
 # claude/cos-launch.c). Rebuilt only when its source changes, because macOS ties the grant to the build.
 if [[ ! -x "$COS/bin/cos-launch" ]] || ! cmp -s "$KIT/claude/cos-launch.c" "$COS/claude/cos-launch.c"; then
@@ -102,7 +106,6 @@ if [[ $SANDBOX -eq 0 ]] && { [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirr
 fi
 install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,settings.fix.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
 install -m 644 "$KIT"/claude/briefs/*.md "$COS/claude/briefs/"
-install -m 644 "$KIT"/evals/*.json "$COS/evals/"
 rm -rf "$COS/builds-template.new" && cp -R "$KIT/builds-template" "$COS/builds-template.new" && rm -rf "$COS/builds-template" && mv "$COS/builds-template.new" "$COS/builds-template"
 backup_then_install() {  # kit-owned file: keep a backup if the installed copy was changed by hand
   local src="$1" dst="$2"; mkdir -p "$(dirname "$dst")"
@@ -126,12 +129,11 @@ elif grep -q 'cassidy-mode' "$HOME/.claude/CLAUDE.md"; then pass "~/.claude/CLAU
 else fail "~/.claude/CLAUDE.md exists and doesn't load cassidy-mode. Add this line to it yourself: @~/.claude/skills/cassidy-mode/SKILL.md"; fi
 
 echo "5. Scripts parse"
-is_bak() { [[ "$(basename "$1")" == *.bak-* ]]; }   # old copies (cos-run.bak-20261110), not installed scripts
-is_bak "$COS/bin/cos-run.bak-20261110" && ! is_bak "$COS/bin/cos-run" && pass "backup copies (.bak-) are skipped" || fail "backup copies are not skipped"
-for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/builds-template/verify"; do
-  [[ -d "$s" || "$(basename "$s")" == cos-launch ]] && continue; is_bak "$s" && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
+[[ -z "$(ls "$COS"/bin/*.bak* 2>/dev/null)" ]] && pass "no backup copies in ~/cos/bin (archived in ~/cos/archive/bin-bak)" || fail "backup copies still in ~/cos/bin"
+for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/claude/cursor-lake-hook" "$COS/builds-template/verify"; do
+  [[ -d "$s" || "$(basename "$s")" == cos-launch ]] && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
   else bash -n "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"; fi; done
-for j in "$COS"/claude/*.json "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
+for j in "$COS"/claude/*.json "$COS/claude/lake/cli.json" "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
 for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
 
 echo "6. The gate (job mode = blocked, pair mode = asks, hard walls = always blocked)"
@@ -237,10 +239,13 @@ gh pr review 720 --repo wisecodeai/data-org --approve --body-file $T/cos/outbox/
 gh pr comment 722 --repo wisecodeai/data-org --body-file $T/cos/outbox/t5/review.md
 gh pr merge 720 --repo wisecodeai/data-org --squash --delete-branch
 gh issue edit 652 --repo wisecodeai/data-org --add-label type/discovery --milestone "Nov 25 · November slice to Live"
+gh pr edit 720 --repo wisecodeai/data-org --add-reviewer someone-else
 AP
 S5="$(shasum -a 256 "$T/cos/outbox/t5/apply.sh" | cut -d' ' -f1)"
-HOME="$T" "$COS/bin/cos-run" apply t5 "$S5" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^\$ gh' "$T/cos/outbox/t5/applied.log" 2>/dev/null)" == 5 ]] \
-  && pass "apply runs approved PR reviews, comments, a merge and an issue edit" || fail "apply refused an approved PR write"
+HOME="$T" "$COS/bin/cos-run" apply t5 "$S5" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^\$ gh' "$T/cos/outbox/t5/applied.log" 2>/dev/null)" == 6 ]] \
+  && pass "apply runs approved PR reviews, comments, a merge, an issue edit and a review request" || fail "apply refused an approved PR write"
+mkdir -p "$T/cos/outbox/t7"; echo 'gh pr edit 720 --repo wisecodeai/data-org --add-reviewer x;rm' > "$T/cos/outbox/t7/apply.sh"; S7="$(shasum -a 256 "$T/cos/outbox/t7/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t7 "$S7" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t7/applied.log" ]] && pass "apply refuses a review request with anything after the logins" || fail "apply ran a bad review request"
 mkdir -p "$T/cos/outbox/t6"; echo 'gh pr review 746 --repo wisecodeai/data-org --approve --body "looks good"' > "$T/cos/outbox/t6/apply.sh"; S6="$(shasum -a 256 "$T/cos/outbox/t6/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t6 "$S6" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t6/applied.log" ]] && pass "apply refuses a review body that isn't a file in the job folder" || fail "apply ran an inline review body"
 mkdir -p "$T/cos/outbox/t4"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"K","old":"","new":"1 Relevance"}]}' > "$T/cos/outbox/t4/sheet.json"
@@ -277,7 +282,7 @@ HOME="$T" "$COS/bin/cos-run" land fx1 bbb >/dev/null 2>&1; [[ $? -eq 67 ]] && pa
 mkdir -p "$T/cos/fixes"; "$COS/bin/cos-sandbox-test" "$COS" >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-sandbox-test refuses anything outside ~/cos/fixes" || fail "cos-sandbox-test ran outside ~/cos/fixes"
 HOME="$T" "$COS/bin/cos-run" note steward "test note" >/dev/null 2>&1 && [[ "$(jq -r .bot "$T/cos/state/corrections.jsonl" 2>/dev/null)" == steward ]] && pass "note records a correction" || fail "note did not record"
 HOME="$T" "$COS/bin/cos-run" note nobody "x" >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "note refuses an unknown bot" || fail "note accepted an unknown bot"
-HOME="$T" "$COS/bin/cos-run" eval nosuchsuite current >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "eval refuses a missing suite" || fail "eval ran without a suite"
+for gone in eval pair; do HOME="$T" "$COS/bin/cos-run" $gone x y >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "the $gone lane is gone (refused as unknown)" || fail "the $gone lane still runs"; done
 "$COS/bin/cos-push" nobody pulse /dev/null >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-push refuses an unknown bot" || fail "cos-push accepted an unknown bot"
 "$COS/bin/cos-sched" list >/dev/null 2>&1 && pass "cos-sched lists the schedule" || fail "cos-sched list"
 HOME="$T" "$COS/bin/cos-obligations" --selftest >/dev/null 2>&1 && pass "standing review line: comment only, exact shape" || fail "cos-obligations selftest"
@@ -339,6 +344,7 @@ if [[ "$*" == *CHECKER* ]]; then
   exit 0
 fi
 [[ "$PWD" == */.worktrees/* ]] && echo added >> doc.md
+pgrep -f "caffeinate -i -s -w $PPID" >/dev/null 2>&1 && touch "$HOME/caffeinated"
 [[ "$PWD" == */data-org-main && "$*" == *STRAY* ]] && : > =2026-11-09
 [[ "$PWD" == */data-org-main && "$*" == *EDITDOC* ]] && echo edited >> doc.md
 if [[ "$*" == *"REVISION ROUND"* ]]; then echo '{"structured_output":{"status":"done","summary":"revised"},"session_id":"s1","total_cost_usd":0.5}'
@@ -386,13 +392,26 @@ HOME="$T" "$COS/bin/cos-run" investigate ive "EDITDOC test" >/dev/null 2>&1
 # Self-healing: the checker blocks the first try, the job revises once, and the second check passes.
 rm -f "$T/.chk"; echo 1 > "$T/.failchecks"
 HOME="$T" "$COS/bin/cos-run" investigate rv1 "x" >/dev/null 2>&1
-jq -e '.checker.verdict == "pass" and .revision.rounds == 1 and .revision.first_failures == ["claim X has no source"] and .receipt.summary == "revised" and .cost_usd == 1.5' "$T/cos/outbox/rv1/receipt.json" >/dev/null 2>&1 \
+jq -e '.checker.verdict == "pass" and .receipt.verdict == "VERIFIED" and .revision.rounds == 1 and .revision.first_failures == ["claim X has no source"] and .receipt.summary == "revised" and .cost_usd == 1.5' "$T/cos/outbox/rv1/receipt.json" >/dev/null 2>&1 \
   && [[ -f "$T/cos/outbox/rv1/receipt.round1.json" ]] && pass "self-healing: a blocked job revises once and passes the second check" || fail "self-healing round didn't run or didn't pass ($(jq -c '{v:.checker.verdict,r:.revision,s:.receipt.summary,c:.cost_usd}' "$T/cos/outbox/rv1/receipt.json" 2>/dev/null))"
 rm -f "$T/.chk"; echo 2 > "$T/.failchecks"
 HOME="$T" "$COS/bin/cos-run" investigate rv2 "x" >/dev/null 2>&1
-jq -e '.checker.verdict == "fail" and .revision.rounds == 1 and (.receipt.summary | startswith("Needs you: Keep or drop claim X?"))' "$T/cos/outbox/rv2/receipt.json" >/dev/null 2>&1 \
+jq -e '.checker.verdict == "fail" and .receipt.verdict == "NOT VERIFIED" and .revision.rounds == 1 and (.receipt.summary | startswith("Needs you: Keep or drop claim X?"))' "$T/cos/outbox/rv2/receipt.json" >/dev/null 2>&1 \
   && [[ "$(cat "$T/.chk")" == 2 ]] && pass "self-healing stops after one round and leads with one plain question" || fail "a twice-blocked job looped or didn't ask plainly"
 rm -f "$T/.chk" "$T/.failchecks"
+if [[ $SANDBOX -eq 1 ]]; then echo "  · sandbox: caffeinate check skipped"
+else [[ -f "$T/caffeinated" ]] && pass "long jobs run under caffeinate -i -s -w <cos-run's pid>" || fail "no caffeinate held the Mac awake during a job"; fi
+# The pair lane is gone: a build with a new slug scaffolds its workspace from the template first.
+cp -R "$COS/builds-template" "$T/cos/builds-template"; cp "$COS/claude/build-lane.md" "$COS/claude/verifier.md" "$COS/claude/agents.json" "$T/cos/claude/" 2>/dev/null
+HOME="$T" "$COS/bin/cos-run" build bd1 "Count the scans" --slug demo-scan >/dev/null 2>&1
+grep -q 'demo-scan' "$T/builds/demo-scan/BRIEF.md" 2>/dev/null && [[ "$(git -C "$T/builds/demo-scan" rev-parse --abbrev-ref HEAD 2>/dev/null)" == build/demo-scan ]] \
+  && pass "build scaffolds a new workspace from the template (replaces cos-run pair)" || fail "build didn't scaffold its workspace"
+HOME="$T" "$COS/bin/cos-run" build bd2 "x" --slug 'Bad Slug' >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "build refuses a bad slug" || fail "build accepted a bad slug"
+# A job that stopped without a receipt reads "didn't finish, rerun?", with the call to rerun.
+mkdir -p "$T/cos/outbox/ij"; (exit 0) & DP=$!; wait $DP; echo "$DP" > "$T/cos/outbox/ij/.running"
+printf '%s' "$COS/bin/cos-run investigate ij \"the brief\" --async" > "$T/cos/outbox/ij/.cmd"
+RI="$(HOME="$T" "$COS/bin/cos-run" receipt ij 2>/dev/null)"; jq -e '.status == "interrupted" and (.receipt.summary | test("Didn.t finish.*Rerun\\? cos-run investigate ij .the brief. --async$")) and .rerun != null' <<<"$RI" >/dev/null \
+  && pass "an interrupted job's receipt says didn't finish, rerun?, with the exact call" || fail "interrupted job not reported plainly ($(HOME="$T" "$COS/bin/cos-run" receipt ij 2>/dev/null | head -c 300))"
 # A draft on one of Cassidy's branches stages its push; the approved batch pushes exactly the reviewed diff.
 gt -C "$T/seed" checkout -qb cassidy/pr main; echo pr >> "$T/seed/doc.md"; gt -C "$T/seed" commit -qam pr; git -C "$T/seed" push -q "$T/origin.git" cassidy/pr 2>/dev/null
 cp "$COS/bin/cos-push-draft" "$T/cos/bin/"
@@ -418,6 +437,154 @@ T="$(mktemp -d)"; echo "select name from wisecode_gold.canon_ingredient limit 5"
 "$COS/bin/lake-query" "$T/b.sql" >/dev/null 2>&1; [[ $? -eq 2 ]] && pass "writes blocked" || fail "writes not blocked"
 "$COS/bin/lake-query" "$T/c.sql" >/dev/null 2>&1; [[ $? -eq 2 ]] && pass "unbounded query blocked" || fail "unbounded query not blocked"
 rm -rf "$T"
+
+echo "12. Tier 0 (cos-run gh), the lake lane, help, preview"
+# Stubs stand in for gh and make, keeping each card as a JSON file the stubs read and change. Nothing reaches GitHub.
+T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; mkdir -p "$T/cos/bin" "$T/cos/data-org-main" "$T/cards" "$T/cos/handbook"
+cp "$COS/bin/cos-ledger" "$COS/bin/cos-gh" "$COS/bin/cos-run" "$T/cos/bin/"
+cat > "$T/cos/bin/gh" <<'STUB'
+#!/bin/bash
+a="$*"; echo "gh ${a//$'\n'/ }" >> "$HOME/gh.log"
+if [[ "$1 $2" == "api user" ]]; then echo "${STUB_LOGIN:-cassidythilton}"; exit 0; fi
+if [[ "$1 $2" == "api graphql" ]]; then
+  r=""; n=""; for a in "$@"; do case "$a" in r=*) r="${a#r=}";; n=*) n="${a#n=}";; esac; done
+  [[ "$*" == *mutation* ]] && exit 0
+  cat "$HOME/cards/$r-$n.json"; exit 0
+fi
+if [[ "$1 $2" == "issue edit" || "$1 $2" == "pr edit" ]]; then
+  n="$3"; r="${5#wisecodeai/}"; f="$HOME/cards/$r-$n.json"; flag="$6"; v="$7"
+  case "$flag" in
+    --add-label) jq --arg v "$v" '.data.repository.issueOrPullRequest.labels.nodes += [{name:$v}]' "$f" > "$f.t" && mv "$f.t" "$f";;
+    --remove-label) jq --arg v "$v" '.data.repository.issueOrPullRequest.labels.nodes |= map(select(.name != $v))' "$f" > "$f.t" && mv "$f.t" "$f";;
+  esac; exit 0
+fi
+[[ "$1 $2" == "project field-list" ]] && { echo '{"fields":[{"name":"Theme","id":"F_THEME"},{"name":"Status","id":"F_STATUS"}]}'; exit 0; }
+exit 0
+STUB
+cat > "$T/cos/bin/make" <<'STUB'
+#!/bin/bash
+echo "make ${DRY_RUN:+DRY_RUN=1 }$*" >> "$HOME/make.log"
+[[ "${DRY_RUN:-}" == 1 ]] && exit 0
+card=""; field=""; to=""; for a in "$@"; do case "$a" in CARD=*) card="${a#CARD=}";; FIELD=*) field="${a#FIELD=}";; TO=*) to="${a#TO=}";; esac; done
+[[ " $* " == *" field "* ]] || exit 0
+f="$HOME/cards/data-org-$card.json"
+jq --arg f "$field" --arg v "$to" '.data.repository.issueOrPullRequest.projectItems.nodes[0].fieldValues.nodes |= (map(select(.field.name != $f)) + [{name:$v, field:{name:$f, id:"F_X"}}])' "$f" > "$f.t" && mv "$f.t" "$f"
+STUB
+chmod +x "$T/cos/bin/"{gh,make,cos-gh,cos-ledger,cos-run}
+mkcard() {  # mkcard <n> <author> <assignees json> <boarded 0|1> [fields json]
+  jq -n --argjson n "$1" --arg a "$2" --argjson as "$3" --argjson b "$4" --argjson fv "${5:-[]}" '{data:{repository:{issueOrPullRequest:{
+    __typename:"Issue", id:("I_\($n)"), number:$n, title:"card \($n)", state:"OPEN", url:"https://github.com/wisecodeai/data-org/issues/\($n)",
+    author:{login:$a}, assignees:{nodes:($as|map({login:.}))}, labels:{nodes:[]}, milestone:null, parent:null,
+    subIssues:{nodes:[]}, blockedBy:{nodes:[]},
+    projectItems:{nodes:(if $b == 1 then [{id:"PVTI_\($n)", project:{number:1, id:"PVT_1"}, fieldValues:{nodes:$fv}}] else [] end)}}}}}' > "$T/cards/data-org-$1.json"; }
+mkcard 712 cassidythilton '["cassidythilton"]' 1 '[{"name":"Shipping","field":{"name":"Status","id":"F_STATUS"}}]'
+mkcard 800 nicholas '["nicholas"]' 1 '[{"name":"Shipping","field":{"name":"Status","id":"F_STATUS"}}]'
+mkcard 801 cassidythilton '["melanie"]' 1
+gx() { HOME="$T" PATH="$T/cos/bin:$PATH" "$T/cos/bin/cos-run" gh "$@"; }
+t0rows() { jq -s "$@" "$T/cos/state/ledger/tier_zero.jsonl" 2>/dev/null; }
+# His card: a label added, read back, ledgered with its undo; then undone.
+gx t1 label data-org#712 add type/test --evidence "installer test" >/dev/null 2>&1; rc=$?
+REF="$(t0rows -r '[.[] | select(.decision=="done")][0].ref')"
+[[ $rc -eq 0 ]] && jq -e '.receipt.verdict == "VERIFIED"' "$T/cos/outbox/t1/receipt.json" >/dev/null 2>&1 && grep -q 'issue edit 712 --repo wisecodeai/data-org --add-label type/test' "$T/gh.log" \
+  && t0rows -e '.[0] | .decision=="done" and .old=="absent" and .new=="present" and .evidence=="installer test" and (.undo_argv|test("--remove-label"))' >/dev/null \
+  && pass "tier 0: a label on his card is re-read, written, read back VERIFIED, and ledgered with old, new, evidence and undo" || fail "tier 0 label write (rc $rc)"
+gx t1u undo "$REF" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 ]] && [[ "$(jq -r '.data.repository.issueOrPullRequest.labels.nodes|length' "$T/cards/data-org-712.json")" == 0 ]] && t0rows -e 'any(.[]; .decision=="undone" and .verdict=="VERIFIED")' >/dev/null \
+  && pass "tier 0: the undo puts it back and is ledgered" || fail "tier 0 undo (rc $rc)"
+gx t1u undo "$REF" >/dev/null 2>&1; [[ $? -eq 68 ]] && pass "tier 0: an undo runs once" || fail "tier 0 undid twice"
+n0="$(grep -c 'issue edit' "$T/gh.log")"; gx t1 label data-org#712 add type/test >/dev/null 2>&1
+[[ "$(grep -c 'issue edit' "$T/gh.log")" == "$n0" ]] && pass "tier 0: the same job again reports, and writes nothing" || fail "tier 0 repeated a write"
+gx t2 label data-org#712 add type/x >/dev/null 2>&1; jq '.data.repository.issueOrPullRequest.labels.nodes = []' "$T/cards/data-org-712.json" > "$T/c.t" && mv "$T/c.t" "$T/cards/data-org-712.json"
+gx t2u undo "$(t0rows -r '[.[] | select(.job=="t2")][0].ref')" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "tier 0: no undo when someone changed the value since" || fail "tier 0 undid over someone's change"
+gx t3 field data-org#712 Theme "Relevance" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 ]] && grep -q 'make DRY_RUN=1 -s field CARD=712 FIELD=Theme TO=Relevance' "$T/make.log" && grep -q '^make -s field CARD=712 FIELD=Theme TO=Relevance$' "$T/make.log" \
+  && t0rows -e 'any(.[]; .job=="t3" and .old=="" and (.undo_argv|test("--clear")))' >/dev/null \
+  && pass "tier 0: a roadmap field goes through make field, previewed first; its undo clears it" || fail "tier 0 field (rc $rc)"
+gx t3b field data-org#712 Theme "Relevance" >/dev/null 2>&1; jq -e '.tier0.decision == "noop"' "$T/cos/outbox/t3b/receipt.json" >/dev/null 2>&1 && pass "tier 0: a value already set is a no-op" || fail "tier 0 rewrote a set value"
+# Walls, each refused with its tier.
+t0ref() { local job="$1" want="$2"; shift 2; local before; before="$(cat "$T/gh.log" "$T/make.log" 2>/dev/null | grep -cv 'api \|field-list\|DRY_RUN' )"
+  gx "$job" "$@" >/dev/null 2>"$T/err"; local rc=$?
+  [[ $rc -eq "$want" && "$(cat "$T/gh.log" "$T/make.log" 2>/dev/null | grep -cv 'api \|field-list\|DRY_RUN')" == "$before" ]] && pass "tier 0 refuses: $* ($(head -c 90 "$T/err"))" || fail "tier 0 didn't refuse (rc $rc): $*"; }
+t0ref r1 65 label data-org#800 add type/x
+t0ref r2 65 label data-org#801 add type/x
+t0ref r3 65 field data-org#800 Theme Relevance --row /dev/null
+t0ref r4 65 field data-org#712 Initiative P002
+t0ref r5 65 comment data-org#712 hi
+t0ref r6 65 lane data-org#712 "Completed No Delivery" --evidence https://github.com/x
+t0ref r7 64 lane data-org#712 Defining
+t0ref r8 65 lane data-org#800 Defining --evidence https://github.com/wisecodeai/data-org/pull/1
+t0ref r9 65 board-add data-org#800
+t0ref r10 65 ragb data-org#712 GREEN
+t0ref r11 64 create data-org --title x --body-file /etc/hosts --evidence y
+t0ref r12 65 merge data-org#712
+STUB_LOGIN=someoneelse gx r13 label data-org#712 add type/x >/dev/null 2>&1; [[ $? -eq 77 ]] && pass "tier 0 refuses when gh is signed in as someone else" || fail "tier 0 ran as another login"
+t0rows -e '[.[] | select(.decision=="refused")] | length >= 9 and all(.[]; .tier != null)' >/dev/null && pass "tier 0: refusals are ledgered with their tier" || fail "tier 0 refusals not ledgered"
+# Other people's cards, switched on only for this test: a blank field, only the sheet row's exact value.
+echo '{"gh_tier0_others_cards": true}' > "$T/cos/handbook/standing-approvals.json"; mkdir -p "$T/cos/outbox/o1" "$T/cos/outbox/o2"
+mkcard 802 nicholas '["nicholas"]' 1 '[{"name":"Defining","field":{"name":"Status","id":"F_STATUS"}}]'
+echo '{"tab":"Data Roadmap","row":12,"row_name":"Label facts","read_at":"2026-11-14T10:00","J":"#802 food-enrichment#220","C":"Relevance","I":"Nutrients · N1 NFP15 coverage"}' > "$T/row.json"
+t0ref o0 65 field data-org#802 Theme "Quarantine" --row "$T/row.json"
+t0ref o0b 65 field data-org#802 Target 2026-12-31 --row "$T/row.json"
+t0ref o0c 65 board-add data-org#802 Discovery
+gx o1 field data-org#802 Theme "Relevance" --row "$T/row.json" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 ]] && t0rows -e 'any(.[]; .job=="o1" and (.evidence|test("Data Roadmap row 12")))' >/dev/null && pass "others' cards (when on): a blank field takes the row's exact value, citing the row" || fail "others' blank-field fill (rc $rc)"
+t0ref o2 65 field data-org#802 Theme "Other" --row "$T/row.json"
+rm -f "$T/cos/handbook/standing-approvals.json"
+t0ref o3 65 field data-org#802 "Pillar metric" "Nutrients · N1 NFP15 coverage" --row "$T/row.json"
+gx brief today 2>/dev/null | grep -q '^Done without asking today' && pass "tier 0: today's rows read as 'Done without asking'" || fail "tier 0 today"
+# Plain words for a staged batch, and the preview the Chief shows before a yes.
+mkdir -p "$T/cos/outbox/pv1"; printf 'make ragb CARD=712 TO=GREEN\ngh pr merge 720 --repo wisecodeai/data-org --squash\n' > "$T/cos/outbox/pv1/apply.sh"
+PV="$(HOME="$T" "$T/cos/bin/cos-run" preview pv1 2>/dev/null)"
+jq -e --arg s "$(shasum -a 256 "$T/cos/outbox/pv1/apply.sh" | cut -d' ' -f1)" '.preview.github.highest_tier == 2 and (.preview.github.items[0].says | test("RAGB on #712 to GREEN")) and .preview.github.on_yes == ("cos-run apply pv1 " + $s)' <<<"$PV" >/dev/null 2>&1 \
+  && pass "preview: a batch in plain words, each line's tier, and the call to run on his yes" || fail "preview ($PV)"
+HOME="$T" "$T/cos/bin/cos-run" preview nothing-here >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "preview refuses a job with nothing staged" || fail "preview of nothing"
+# --help for every lane, and refusals that print the correct call.
+nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake fix land note pause receipt; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
+[[ $nh -eq 16 ]] && pass "cos-run <lane> --help has examples for all 16 lanes" || fail "--help examples on $nh of 16 lanes"
+e="$(HOME="$T" "$T/cos/bin/cos-run" investigate 2>&1 >/dev/null)"; [[ $? -ne 0 && "$e" == *"Correct call:"*"cos-run investigate inv-"* ]] && pass "a call missing its job id prints the correct call" || fail "no correct call printed: $e"
+e="$(HOME="$T" "$T/cos/bin/cos-run" quick q1 "x" --wiht "ls" 2>&1 >/dev/null)"; [[ "$e" == *"unknown option: --wiht"*"Correct call:"*"--with"* ]] && pass "an unknown option prints the correct call" || fail "unknown option: $e"
+# The lake lane: never scheduled, Claude only, stops at once without VPN and sign-in.
+COS_CALLER=sched HOME="$T" "$T/cos/bin/cos-run" lake lk1 "How many foods?" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/lk1/run.json" ]] && pass "lake refuses to run on a schedule" || fail "lake ran from the schedule"
+COS_LAKE_MODEL=gpt-5 HOME="$T" "$T/cos/bin/cos-run" lake lk2 "How many foods?" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "lake refuses a non-Claude model" || fail "lake accepted a non-Claude model"
+printf '#!/bin/bash\necho "agent ran" >> "$HOME/agent.log"\n' > "$T/cos/bin/agent"; chmod +x "$T/cos/bin/agent"
+HOME="$T" DATA_ORG_NOTEBOOK="$T/nb" "$T/cos/bin/cos-run" lake lk3 "How many foods?" --in "$T" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 && ! -e "$T/agent.log" ]] && jq -e '.receipt.status == "waiting" and (.receipt.summary | startswith("Connect the VPN and sign in"))' "$T/cos/outbox/lk3/receipt.json" >/dev/null 2>&1 \
+  && pass "lake without the notebook, VPN or sign-in stops at once: 'Connect the VPN and sign in', not a failure" || fail "lake preflight (rc $rc)"
+rm -rf "$T"
+# The lake lane's walls. Cursor's permission config is the first; its preToolUse hook (which runs the gate) the second.
+LC="$COS/claude/lake/cli.json"
+jq -e '(.permissions.deny | index("Write(**)") and index("Shell(curl)") and index("Shell(git)") and index("Shell(gh)") and index("Shell(python)") and index("Shell(uv)") and index("Shell(agent)") and index("Read(**/.env*)"))
+       and (.permissions.allow | all(test("^(Read\\(|Shell\\((lake-query|ls)\\))")))' "$LC" >/dev/null 2>&1 \
+  && pass "lake cli.json: denies writes, network, git, gh, python, uv, other agents and .env; allows only reads, lake-query, ls" || fail "lake cli.json is missing a deny"
+lh() { local got; got="$(jq -nc --arg t "$1" --arg c "$2" --arg p "${3:-}" '{tool_name:$t, tool_input:{command:$c, file_path:$p}, workspace_roots:[]}' | COS_LEDGER_OFF=1 "$COS/claude/cursor-lake-hook" | jq -r .permission)"
+  [[ "$got" == "$4" ]] && pass "lake hook · $4 · $1 ${2:-$3}" || fail "lake hook · expected $4, got $got · $1 ${2:-$3}"; }
+lh Shell 'lake-query --sql "select count(*) from food where brand > 2"' "" allow
+lh Shell 'lake-query --sql "select count(*) from lake.mart.foods" --lake --env dev' "" allow
+lh Shell 'lake-query --sql "select name from wisecode_gold.canon_term limit 5"' "" deny
+lh Shell "lake-query --sql \"select count(*) from food where brand = 'Acme' limit 5\"" "" allow
+lh Shell 'curl -sI https://example.com' "" deny
+lh Shell 'git push origin HEAD' "" deny
+lh Shell 'gh api user' "" deny
+lh Shell 'lake-query --sql "select 1 limit 1"; rm -rf ~' "" deny
+lh Shell 'lake-query --sql "$(cat ~/.aws/credentials)"' "" deny
+lh Shell 'bash -c "lake-query --sql x"' "" deny
+lh Shell 'uv run python scripts/run_query.py q.sql' "" deny
+lh Write "" "$HOME/cos/outbox/x/a.md" deny
+lh Delete "" "/tmp/x" deny
+lh mcp__slack__send_message "" "" deny
+lh Read "" "$HOME/.aws/credentials" deny
+lh Read "" "$COS/notebook-main/AGENTS.md" allow
+lgate() { local got; got="$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$1" '$c')" | COS_LEDGER_OFF=1 COS_LANE="$2" COS_GATE_MODE=job "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?)"
+  [[ "$got" == "$3" ]] && pass "gate · lane $2 · exit $3 · $1" || fail "gate · lane $2 · expected exit $3, got $got · $1"; }
+lgate 'lake-query --sql "select count(*) from food"' investigate 2
+lgate 'uv run --project ~/cos/notebook-main python scripts/run_query.py q.sql' build 2
+lgate 'lake-query --sql "select count(*) from food"' lake 0
+lgate 'grep -n run_query scripts/x.py' investigate 0
+lgate 'cos-run gh j1 label data-org#1 add x' investigate 2
+lgate 'cos-run lake j1 "how many"' investigate 2
+lgate 'grep -n cos-gh README.md' investigate 0
+for f in investigate draft build; do jq -e '(.permissions.allow | map(select(test("lake-query"))) | length == 0) and (.permissions.deny | index("Bash(lake-query*)"))' "$COS/claude/settings.$f.json" >/dev/null 2>&1 \
+  && pass "settings.$f: lake-query is denied, not allowed" || fail "settings.$f still allows lake-query"; done
 
 echo "11. Flight recorder"
 T="$(mktemp -d)"
@@ -662,7 +829,6 @@ Next (manual, in order). Each step is described in INSTALL.md:
   a. ~/cos/bin/cos-run quick smoke-q "Which cards are stale?" --with "make stale"            (Cursor, cents)
   b. ~/cos/bin/cos-run investigate smoke "Run make doctor and make board. Five lines."         (Claude, ~$1-3)
   c. ~/cos/bin/cos-run investigate wall-test "Comment 'test' on issue 1 in data-org."          (must come back blocked)
-  d. ~/cos/bin/cos-run eval core current                                                       (baseline scores, ~$20)
-  e. Grok: Chief, OPS, STEWARD (week 1); BUILDER when you pick the first build; KEEPER after two weeks.
-  f. ./install.sh --schedule once the Bots' webhook keys are in the Keychain.
+  d. Grok: Chief, OPS, STEWARD (week 1); BUILDER when you pick the first build; KEEPER after two weeks.
+  e. ./install.sh --schedule once the Bots' webhook keys are in the Keychain.
 EOF

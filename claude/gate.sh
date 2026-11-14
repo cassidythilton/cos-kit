@@ -67,6 +67,8 @@ if [[ "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]] && [[ "$path" =~ $ctl_
 if [[ "$tool" == "Bash" ]]; then
   [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-push-draft|cos-sched|cos-obligations|cos-link)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
   [[ "$cmd" =~ (^|[;&|[:space:]/])cos-run[[:space:]]+(apply|apply-sheet|land)([[:space:]]|$) ]] && hard "running an approved batch or landing a fix: only the Chief, after Cassidy's yes"
+  t0_re='(^|[;&|(][[:space:]]*)([^[:space:];&|]*/)?(cos-run[[:space:]]+(gh|lake)|cos-gh)([[:space:]]|$)'   # the command itself, not a word in an argument
+  [[ "$cmd" =~ $t0_re ]] && hard "tier-0 GitHub writes and lake questions: only the Chief starts them (a job stages, it never writes)"
   # Writes into a control path only: a redirect or tee into it, an in-place edit of it, a copy or move onto it, or git in it.
   C='[^[:space:];&|]*/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|[^[:space:];&|]*\.claude/(skills|settings)|[^[:space:];&|]*LaunchAgents'
   w1=">>?[[:space:]]*[\"']?($C)"; w2="tee[[:space:]]+(-a[[:space:]]+)?[\"']?($C)"; w3="(sed|perl)[[:space:]]+-[a-zA-Z]*i[^;&|]*($C)"
@@ -135,6 +137,13 @@ fi
 [[ "$lc" =~ (docker[[:space:]]+push|(npm|pnpm|yarn|uv|twine|poetry|cargo|dotnet[[:space:]]+nuget)[[:space:]]+publish|prefect[[:space:]]+(deploy|deployment[[:space:]]+run)) ]] && hard "publishing or running a deployment"
 [[ "$lc" =~ git[[:space:]]+push.*(--force|-f([[:space:]]|$)|\+[a-z]) ]] && hard "force-push"
 [[ "$lc" =~ git[[:space:]]+push[[:space:]]+[^[:space:]]+[[:space:]]+(main|master|prod|production|release)([[:space:]]|$) ]] && hard "push to a protected branch"
+
+# ---- Data queries happen only in the lake lane (2026-11-14). lake-query, or run_query.py called directly (an eval job
+#      did that once, skipping lake-query's guards), as the command itself.
+lq_re='(^|[;&|(][[:space:]]*)([^[:space:];&|]*/)?lake-query([[:space:]]|$)'
+rq_re='(^|[;&|(][[:space:]]*)(uv[[:space:]]+run[[:space:]]+([^;&|]*[[:space:]])?)?python3?[[:space:]]+([^;&|]*[[:space:]])?[^[:space:];&|]*run_query\.py'
+[[ "$cmd" =~ $rq_re ]] && outward "run_query.py directly (data goes through lake-query, in the lake lane)"
+[[ "${COS_LANE:-}" != lake && "$cmd" =~ $lq_re ]] && outward "a data query outside the lake lane (ask the Chief for cos-run lake)"
 
 # ---- OUTWARD: leaves the Mac or changes shared state
 [[ "$lc" =~ git[[:space:]]+push ]]                                                   && outward "git push"

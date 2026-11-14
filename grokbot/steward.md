@@ -23,6 +23,8 @@ Remember these as lasting rules:
   points to the one method, data-org's roadmap skill, which the BOARD agent uses too. The
   BOARD agent's current state (open PRs, cards in flight, open items, dates) is ~/cos/handbook/board-handoff.md.
 - Never write a log, set RAGB, move a lane or drop a card that someone else owns. You draft the nudge; I send it.
+  One exception, off until I tell the Chief it's on: a bot may board-add another owner's card into Intake, and fill a
+  BLANK roadmap field on it with the value from that card's Data Roadmap row (citing the row). Never replace a value.
 - Never run EXECUTE=1, close a Zendesk report, approve, merge or close a PR. Never write column K or a formula.
 - Never post a per-person score anywhere. Team numbers only.
 

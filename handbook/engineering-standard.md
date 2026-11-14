@@ -39,7 +39,7 @@ was expected, what was observed, PASS / FAIL / NOT_RUN, the artifacts, and (for 
 | BEHAVIOR | always | the real journey was repeated (CLI, API, query, page) and checked against done-means, including the empty state and a failure path |
 | QUALITY | always | tests, types, lint, `./verify check`, and the owner repo's gate at the candidate rung |
 | PERFORMANCE | the work claims speed or cost | the same workload before and after, settings stated, both profiles kept |
-| SKILL | instructions changed | the instructions were run on defined tasks; conclusions limited to those tasks (`cos-run eval`) |
+| SKILL | instructions changed | the instructions were run on defined tasks; conclusions limited to those tasks |
 
 Decision rules: PASS, keep the evidence and continue. FAIL, find the cause, fix it, re-run what it affects. NOT_RUN,
 name the blocker. Stop when a required check can't run or the scope would have to grow; return what you have.
@@ -61,10 +61,8 @@ passes. Anything less is reported as what it is.
 
 - A failure seen twice becomes structure: a `./verify` assertion, a test, a golden-set row, a gate rule. Then confirm
   the new check catches the original failure. A note in chat is not a fix.
-- A change to a prompt, a skill or a lane is tested before it's promoted: `cos-run eval core <proposed file>` runs the
-  current and proposed versions on the same requests, blind, and a judge from a different model family scores both.
-  Promote only if it scores at least as well with no must-not violations.
-- When a pattern is fixed, add the eval case that would have caught it.
+- A change to a prompt, a skill or a lane cites the real jobs it would have changed, and the next week's jobs are
+  checked for the pattern. A pattern that comes back becomes a check, not another prompt edit.
 
 ## Proof attached to every result
 

@@ -34,7 +34,8 @@ PASS / FAIL / NOT_RUN, the artifact paths, and (for NOT_RUN) the blocker.
 6. Return the receipt with its proofs and needs_approval for anything outward.
 
 ## Rules
-- Data only through `lake-query <file.sql>` (read-only, canon aggregates only). SQL files go in `queries/`, numbered.
+- No live data queries. Data comes from a `cos-run lake` result (result.md: counts, rates, ids, each with its query),
+  which you request in needs_approval. Draft the SQL in `queries/`, numbered, so the lake job can reuse it.
 - Read repos/ but never commit there. At the candidate rung, prepare the change in a worktree of the owner's repo under
   repos/, follow its AGENTS.md, and stage "open a draft PR" in needs_approval with the exact title and body. Never open
   it yourself. Nothing is ever merged by an agent.

@@ -80,7 +80,6 @@
       "Bash(git -C * rev-parse *)",
       "Bash(git -C * status)",
       "Bash(make lint-writing *)",
-      "Bash(lake-query *)",
       "Bash(make -C * lint-writing *)",
       "Bash(make -C * board*)",
       "Bash(make -C * stale*)",
@@ -110,12 +109,13 @@
       "Bash(file *)"
     ],
     "deny": [
-      "Bash(git push *)",
-      "Bash(rm *)",
       "Bash(*EXECUTE=1*)",
-      "Read(~/.ssh/**)",
-      "Read(~/.aws/**)",
+      "Bash(git push *)",
+      "Bash(lake-query*)",
+      "Bash(rm *)",
       "Read(**/.env*)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
       "WebFetch",
       "WebSearch"
     ]

@@ -108,18 +108,19 @@
       "Bash(file *)"
     ],
     "deny": [
-      "Bash(git push *)",
-      "Bash(git checkout main*)",
-      "Bash(git switch main*)",
-      "Bash(git reset --hard*)",
-      "Bash(rm *)",
       "Bash(*EXECUTE=1*)",
+      "Bash(git checkout main*)",
+      "Bash(git push *)",
+      "Bash(git reset --hard*)",
+      "Bash(git switch main*)",
+      "Bash(lake-query*)",
+      "Bash(rm *)",
       "Edit(~/Documents/Data-Org-Repos/data-org/context/**)",
-      "Edit(~/cos/repos/data-org/context/**)",
       "Edit(~/cos/repos/data-org/.worktrees/*/context/**)",
-      "Read(~/.ssh/**)",
-      "Read(~/.aws/**)",
+      "Edit(~/cos/repos/data-org/context/**)",
       "Read(**/.env*)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
       "WebFetch",
       "WebSearch"
     ]

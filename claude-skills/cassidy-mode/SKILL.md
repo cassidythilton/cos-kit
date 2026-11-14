@@ -46,7 +46,8 @@ Quick questions skip the loop. Answer them.
 - **Design detail matters.** Spacing, hierarchy, a cohesive palette, padding on images, nothing cramped. Review your
   own screenshot before he does.
 - **Owners own their work.** "What David says goes." Nicholas's live pipeline is never touched. Others' cards get a
-  note, not an edit. Leave decisions that belong to someone else to them ("let Steve figure it out").
+  note, not an edit. One exception, off until he switches it on: board-add into Intake, and filling a blank roadmap
+  field with the value from the card's Data Roadmap row. Leave decisions that belong to someone else to them ("let Steve figure it out").
 - **Document, then proceed.** For anything multi-step, update the docs (HANDOFF.md, the project map) before the next
   phase, so he can review and approve the plan.
 - **Drafts, in his voice.** Slack and email go in as drafts, short, sounding like him (the voice skill). He sends.

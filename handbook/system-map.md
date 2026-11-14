@@ -33,7 +33,7 @@ Last checked: 2026-11-14 (sources table); data-org rules last checked 2026-11-09
 | Zoom web (Cassidy's account) | a call missing from both folders | no | last resort, see section 4 | one named meeting, transcript only, ask first |
 | Slack | asks, blockers, commitments, decisions in thread | Slack connector, read and search only | Slack app (posts as Cassidy: drafts only) | channel list in section 3 |
 | Zendesk intake | customer-reported issues | `make intake-holders`, `make intake-sweep` (dry run); `#customer-new-issues` | through cos-run | a close notifies the customer: never by an agent |
-| Warehouse (app Postgres) and The Pantry (DuckLake) | the data | `lake-query` only (VPN, `<env>-laker` SSO) | never | canon: aggregates and IDs only; read-only always |
+| Warehouse (app Postgres) and The Pantry (DuckLake) | the data | `cos-run lake` only, after Cassidy's yes: a Cursor agent runs `lake-query` (VPN, `<env>-laker` SSO) | never | canon: aggregates and IDs only; read-only always |
 | Gmail and Google Calendar | mail, schedule | not used | Gmail and Calendar apps | drafts only; no calendar change without a yes |
 | Google Drive and Docs | charters, decks, memos | Drive connector, read-only | Drive app | no edits to others' files |
 | Cassidy's Claude and Cursor transcripts | how he works | only a path he names, or the monthly cassidy-mode re-mine of his own projects | no | never glob across other people's or unrelated projects |
@@ -43,7 +43,6 @@ Last checked: 2026-11-14 (sources table); data-org rules last checked 2026-11-09
 | `~/cos/state/` | corrections, schedule log, board-health trend | direct read | no | team numbers only, never per person in public |
 | `~/cos/state/ledger/*.jsonl` | append-only record of jobs, gate blocks and asks, pushes, applies, the schedule, corrections, pauses | direct read | no | commands and paths only; secrets redacted; never file contents or canon values |
 | `~/cos/state/cos.db` | the flight recorder: jobs, costs, files touched, commands, gate events, schedule, corrections, evals, board health | `cos-db sql`, read-only | no | built by `cos-db load` from the ledger and the folders; writers never open it |
-| `~/cos/evals/` | eval suites and reports | direct read | through KEEPER's report | |
 | `~/cos/state/obligations.json`, `obligations-log.jsonl` | what's waiting on Cassidy, and every open, close, draft and submit | `cos-obligations` (scheduled), `cos-run receipt obligations-<date>` | through OPS's obligations webhook | closed only when the system of record says so |
 | `~/cos/handbook/standing-approvals.json` | the work the Mac may finish without a tap | read by `cos-obligations` only | no | Cassidy's file; the kit never overwrites it |
 | `~/cos/state/cos.db` and `ledger/` | every job, cost, file touched, gate block, push and schedule outcome | `cos-db sql`, the flight recorder page | no | read-only page on 127.0.0.1 |
@@ -75,7 +74,7 @@ A Mac job never logs into Zoom. When it needs a missing transcript, it returns s
 |---|---|---|
 | Lake or warehouse, to Claude on the Mac | rows except canon values; canon aggregates and IDs | canon names, terms, aliases, flag assignments |
 | Mac job, to the Grok Bots (receipts, webhooks) | summaries, IDs, counts, card numbers, draft text | canon terms, label text or images, credentials, raw data rows |
-| Mac job, to another model provider (Codex review, eval judge) | diffs and receipts of open builds | anything from a canon or label build (canon charter decision 14) |
+| Mac job, to another model provider (Codex review) | diffs and receipts of open builds | anything from a canon or label build (canon charter decision 14) |
 | Anything, to data-org or a team channel | what the writing standard and the boundary allow | personnel, compensation, individual performance, verbatim executive quotes, RAGB values in files, CDO ADR contents |
 | Anything, to a shared link | nothing | AI conversation links with WISEcode information; public Bot share links |
 
