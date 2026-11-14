@@ -34,7 +34,7 @@ Read before every job. These are written as principles. If a rule wouldn't make 
 - One-offs stay one-offs. The same mistake twice is a pattern, and it gets fixed in this order:
   1. Fix the setup: a missing tool or a wrong permission.
   2. Encode it in a check: gate.sh, the checker's checklist, `./verify`, `make gate`.
-  3. Edit the skill or lane prompt, citing the jobs it would have changed; check the next week's jobs for the pattern.
+  3. Edit the skill or lane prompt, and run `cos-run eval` before promoting it.
   4. A principle here.
   5. A remembered rule in one Bot, last, with a source.
 - KEEPER proposes; Cassidy approves and applies. No agent edits its own instructions or walls.

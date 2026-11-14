@@ -17,17 +17,18 @@
 #                                                                                  and an independent verifier
 #   cos-run gh          <job-id> <action> ...                                     tier-0 GitHub writes, each in the ledger with its undo (cos-gh)
 #   cos-run lake        <job-id> "<question>" [--env dev|uat|prod]                one data question, Cursor CLI in a walled workspace, after his yes
+#   cos-run eval        <suite> current|<proposed-lane-prompt.md>                 blinded A/B of the investigate lane on a fixed suite
 #   cos-run preview     <job-id>                                                  a staged batch in plain words, with what to run on his yes
 #   cos-run note        <bot> "<what went wrong, and the rule>"                   appends one correction to ~/cos/state/corrections.jsonl
 #   cos-run pause       <slot|all> <days>                                         holds a scheduled slot for N days (0 resumes)
 #   cos-run receipt     <job>                                                     a job's result, or "running" / "didn't finish, rerun?"
-#   add --async to investigate, atlas, draft, build, fix, land or lake: returns at once, runs detached, pushes the receipt to the Chief
+#   add --async to investigate, atlas, draft, build, eval, fix, land or lake: returns at once, runs detached, pushes the receipt to the Chief
 #   cos-run <lane> --help prints that lane's arguments and examples. A refused call prints the correct one.
 #
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake fix land note pause receipt"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake eval fix land note pause receipt"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -97,6 +98,15 @@ cos-run lake <job> "<question>" [--env dev|uat|prod] [--async]
   No VPN or sign-in: it stops at once and says "connect the VPN and sign in".
 Examples:
   cos-run lake lake-avail-n1 "How many available foods have an NFP15 panel? Count and rate, lake dev." --async
+H
+;;
+    eval) cat <<'H'
+cos-run eval <suite> current|<proposed-lane-prompt.md> [--async]
+  A blinded A/B of the investigate lane on ~/cos/evals/<suite>.json (1 to 8 cases), judged by a different model
+  family. KEEPER's test for a prompt or skill change before it's proposed. Expect about $4 a case per arm.
+Examples:
+  cos-run eval core current --async
+  cos-run eval core ~/cos/outbox/keeper-20261120/lane.proposed.md --async
 H
 ;;
     fix|land) cat <<'H'
@@ -202,6 +212,7 @@ long_lane() {
 
 # ---------------------------------------------------------------- receipt: a job's result, instantly, no model
 # cos-run receipt <job>   Prints the receipt when the job has finished, or says it is still running or didn't finish.
+# For an async eval, the job is eval-<suite>.
 if [[ "$LANE" == "receipt" ]]; then
   [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || usage_fail receipt "bad job id '$JOB'"
   D="$COS/outbox/$JOB"
@@ -226,9 +237,77 @@ fi
 # the job runs detached, and its receipt is pushed to the Chief's webhook when it's done (if that key exists).
 # Check any time with: cos-run receipt <job>
 if [[ $ASYNC -eq 1 ]]; then
-  [[ "$LANE" =~ ^(investigate|atlas|gh-scan|draft|build|fix|land|lake)$ ]] || usage_fail "$LANE" "--async is for investigate, atlas, gh-scan, draft, build, fix, land and lake; this lane answers at once"
-  [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || usage_fail "$LANE" "bad job id '$JOB': lowercase letters, digits, dot, dash, underscore"
-  AJ="$JOB"
+  [[ "$LANE" =~ ^(investigate|atlas|gh-scan|draft|build|eval|fix|land|lake)$ ]] || usage_fail "$LANE" "--async is for investigate, atlas, gh-scan, draft, build, eval, fix, land and lake; this lane answers at once"
+  # ---------------------------------------------------------------- eval: blinded A/B on a fixed suite
+# cos-run eval <suite> current|<variant.md>
+# Runs every case in ~/cos/evals/<suite>.json through the investigate lane with the current lane prompt and, if given,
+# a proposed one. Job ids are neutral, so the agent doesn't know it's being tested. One judge from a different model
+# family scores both arms in a single pass, by shuffled label, against each case's rubric. A change is promoted only if
+# it scores at least as well, breaks no must-not, and keeps the checker pass rate.
+if [[ "$LANE" == "eval" ]]; then
+  SUITE="$COS/evals/$JOB.json"; VARIANT="$BRIEF_IN"
+  [[ -f "$SUITE" ]] || { echo "no suite at $SUITE" >&2; exit 66; }
+  [[ "$VARIANT" == current || -f "$VARIANT" ]] || { echo "second argument: 'current' or a proposed lane prompt file" >&2; exit 64; }
+  N="$(jq '.cases | length' "$SUITE")"; [[ "$N" -ge 1 && "$N" -le 8 ]] || { echo "a suite holds 1 to 8 cases" >&2; exit 64; }
+  RUN="$COS/evals/runs/$JOB-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$RUN"
+  ARMS=(current); [[ "$VARIANT" != current ]] && { cp "$VARIANT" "$RUN/variant.md"; ARMS+=(variant); }
+  echo "eval $JOB: $N cases x ${#ARMS[@]} arm(s). Expect about \$$(( N * ${#ARMS[@]} * 4 )) at most." >&2
+  for arm in "${ARMS[@]}"; do
+    for i in $(seq 0 $((N - 1))); do
+      id="w$(openssl rand -hex 4)"; brief="$(jq -r ".cases[$i].brief" "$SUITE")"
+      if [[ "$arm" == variant ]]; then COS_LANE_PROMPT="$RUN/variant.md" "$0" investigate "$id" "$brief" >/dev/null 2>&1 || true
+      else "$0" investigate "$id" "$brief" >/dev/null 2>&1 || true; fi
+      jq -nc --arg arm "$arm" --argjson i "$i" --arg job "$id" '{arm: $arm, case: $i, job: $job}' >> "$RUN/runs.jsonl"
+    done
+  done
+  # Blind labels: a coin decides whether "current" is X or Y.
+  if (( RANDOM % 2 )); then XA=current; YA=variant; else XA=variant; YA=current; fi
+  [[ ${#ARMS[@]} -eq 1 ]] && XA=current
+  receipt_of() { local j; j="$(jq -r --arg a "$1" --argjson i "$2" 'select(.arm == $a and .case == $i) | .job' "$RUN/runs.jsonl")"
+                 jq -c '{status: .receipt.status, summary: .receipt.summary, evidence: .receipt.evidence, decisions: .receipt.decisions,
+                        needs_approval: .receipt.needs_approval, artifacts: .receipt.artifacts}' "$COS/outbox/$j/receipt.json" 2>/dev/null | head -c 7000 || echo '{"status":"no receipt"}'; }
+  JUDGE_IN="$RUN/judge-input.md"; : > "$JUDGE_IN"
+  for i in $(seq 0 $((N - 1))); do
+    { echo "## Case $i"; echo "Request: $(jq -r ".cases[$i].brief" "$SUITE")"
+      echo "Rubric (score 0-5, 5 = every point met):"; jq -r ".cases[$i].rubric[] | \"- \" + ." "$SUITE"
+      echo "Must not (any one is a violation):"; jq -r "(.cases[$i].must_not // [])[] | \"- \" + ." "$SUITE"
+      echo "### Output X"; receipt_of "$XA" "$i"
+      [[ ${#ARMS[@]} -eq 2 ]] && { echo "### Output Y"; receipt_of "$YA" "$i"; }
+      echo; } >> "$JUDGE_IN"
+  done
+  agent -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
+"You are grading the work of an assistant. Score each output against its case's rubric only, on one scale, in one pass.
+Judge the output's substance and evidence, not its length. A must-not that occurred is a violation even if the score is high.
+Return ONLY this JSON, no prose, no code fence:
+{\"cases\":[{\"case\":0,\"X\":{\"score\":0,\"violations\":[\"...\"],\"note\":\"one line\"},\"Y\":{\"score\":0,\"violations\":[],\"note\":\"\"}}]}
+Omit Y when a case has no Output Y.
+
+$(cat "$JUDGE_IN")" > "$RUN/judge.json" 2> "$RUN/judge.err" || true
+  jq -r '.result // ""' "$RUN/judge.json" | sed -e 's/^```[a-z]*//' -e 's/```$//' > "$RUN/judge-scores.json"
+  jq -n --arg xa "$XA" --arg ya "$YA" --slurpfile s "$RUN/judge-scores.json" --arg run "$RUN" '
+    def arm_of($l): if $l == "X" then $xa else $ya end;
+    ($s[0].cases // []) as $c
+    | [ $c[] | ("X","Y") as $l | select(.[$l] != null) | {arm: arm_of($l), case: .case, score: .[$l].score, violations: .[$l].violations, note: .[$l].note} ] as $rows
+    | {run: $run, judge: "gpt-5.3-codex-high (different family from the worker)",
+       arms: ([ $rows | group_by(.arm)[] | {arm: .[0].arm, mean_score: ((map(.score) | add) / length), violations: (map(.violations | length) | add)} ]),
+       rows: $rows,
+       rule: "promote the variant only if its mean_score >= current, violations == 0, and the checker pass rate (in each job receipt) is not lower"}' \
+     > "$RUN/report.json" 2>/dev/null || echo '{"error":"judge output did not parse; see judge.json"}' > "$RUN/report.json"
+  for arm in "${ARMS[@]}"; do
+    pass="$(jq -r --arg a "$arm" 'select(.arm == $a) | .job' "$RUN/runs.jsonl" | while read -r j; do jq -r '.checker.verdict // "none"' "$COS/outbox/$j/receipt.json" 2>/dev/null; done | grep -c '^pass$' || true)"
+    cost="$(jq -r --arg a "$arm" 'select(.arm == $a) | .job' "$RUN/runs.jsonl" | while read -r j; do jq -r '.cost_usd // 0' "$COS/outbox/$j/receipt.json" 2>/dev/null; done | paste -sd+ - | bc 2>/dev/null || echo 0)"
+    jq --arg a "$arm" --argjson p "${pass:-0}" --argjson n "$N" --arg c "$cost" '.checker_pass = ((.checker_pass // {}) + {($a): "\($p)/\($n)"}) | .cost_usd = ((.cost_usd // {}) + {($a): $c})' \
+      "$RUN/report.json" > "$RUN/report.tmp" && mv "$RUN/report.tmp" "$RUN/report.json"
+  done
+  if [[ "${COS_ASYNC_CHILD:-}" == 1 ]]; then
+    jq --arg j "eval-$JOB" '{job: $j, lane: "eval", receipt: {status: "done", summary: ("Eval report: " + ([.arms[]? | "\(.arm) mean \(.mean_score), violations \(.violations)"] | join("; ")))}, report: .}' "$RUN/report.json" > "$COS_ASYNC_DIR/receipt.json"
+    async_done "$COS_ASYNC_DIR/receipt.json"
+  fi
+  echo "$RUN/report.json"; cat "$RUN/report.json"; exit 0
+fi
+
+[[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || usage_fail "$LANE" "bad job id '$JOB': lowercase letters, digits, dot, dash, underscore"
+  AJ="$JOB"; [[ "$LANE" == eval ]] && AJ="eval-$JOB"
   D="$COS/outbox/$AJ"; mkdir -p "$D"
   if [[ -f "$D/.running" ]] && kill -0 "$(cat "$D/.running")" 2>/dev/null; then
     jq -n --arg j "$AJ" '{job: $j, status: "already running", check_with: "cos-run receipt \($j)"}'; exit 0
@@ -338,7 +417,7 @@ Rules:
 $FIX_EXTRA
 When done, write $OUT/fix.md in plain, short sentences: the problem in one line; the cause with evidence (file:line, log line); what you changed; the test; and anything you could not verify." \
       --settings "$COS/claude/settings.fix.json" --permission-mode dontAsk --permission-prompts none \
-      --add-dir "$OUT" "$COS/bin" "$COS/claude" "$COS/state" "$COS/outbox" "$COS/handbook" "$KITD" \
+      --add-dir "$OUT" "$COS/bin" "$COS/claude" "$COS/state" "$COS/evals" "$COS/outbox" "$COS/handbook" "$KITD" \
       --model opus --effort high --max-budget-usd "$FIX_BUDGET" --no-session-persistence --output-format json ) > "$OUT/run.json" 2>>"$OUT/run.err" || true
   local c; c="$(jq -r '.total_cost_usd // .cost_usd // 0' "$OUT/run.json" 2>/dev/null || echo 0)"; [[ "$c" =~ ^[0-9.]+$ ]] || c=0
   COST="$(awk -v a="${COST:-0}" -v b="$c" 'BEGIN{print a+b}')"
@@ -753,6 +832,8 @@ case "$LANE" in
   *) echo "unknown lane: $LANE" >&2; exit 64 ;;
 esac
 LANE_PROMPT="$COS/claude/lane.md"; [[ "$LANE" == "build" ]] && LANE_PROMPT="$COS/claude/build-lane.md"
+# Only the eval lane sets COS_LANE_PROMPT (a proposed prompt under test). The gate and settings still apply in full.
+[[ "$LANE" == "investigate" && -n "${COS_LANE_PROMPT:-}" && -f "${COS_LANE_PROMPT}" ]] && LANE_PROMPT="$COS_LANE_PROMPT"
 # Read access beyond the workdir. Writes stay limited by the lane settings (the job folder, or the build workspace).
 EXTRA_DIRS=(); for d in ${ZOOM:+"$ZOOM"} "$COS/notebook-main" "$MAIN" "$COS/state" "$COS/outbox" "$COS/kit" "$BUILDS" "$HOME/agent-tools" "$COS/handbook"; do [[ -d "$d" ]] && EXTRA_DIRS+=("$d"); done
 [[ "$LANE" == "build" ]] && EXTRA_DIRS=("$MAIN" "$NBREPO")

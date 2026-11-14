@@ -76,7 +76,7 @@ fi
 fi
 
 echo "3. Files"
-mkdir -p "$COS"/{bin,claude/briefs,claude/lake,handbook,outbox,state,archive} "$HOME/builds"
+mkdir -p "$COS"/{bin,claude/briefs,claude/lake,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
 install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
@@ -106,6 +106,7 @@ if [[ $SANDBOX -eq 0 ]] && { [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirr
 fi
 install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,settings.fix.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
 install -m 644 "$KIT"/claude/briefs/*.md "$COS/claude/briefs/"
+install -m 644 "$KIT"/evals/*.json "$COS/evals/"
 rm -rf "$COS/builds-template.new" && cp -R "$KIT/builds-template" "$COS/builds-template.new" && rm -rf "$COS/builds-template" && mv "$COS/builds-template.new" "$COS/builds-template"
 backup_then_install() {  # kit-owned file: keep a backup if the installed copy was changed by hand
   local src="$1" dst="$2"; mkdir -p "$(dirname "$dst")"
@@ -133,7 +134,7 @@ echo "5. Scripts parse"
 for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/claude/cursor-lake-hook" "$COS/builds-template/verify"; do
   [[ -d "$s" || "$(basename "$s")" == cos-launch ]] && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
   else bash -n "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"; fi; done
-for j in "$COS"/claude/*.json "$COS/claude/lake/cli.json" "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
+for j in "$COS"/claude/*.json "$COS/claude/lake/cli.json" "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
 for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
 
 echo "6. The gate (job mode = blocked, pair mode = asks, hard walls = always blocked)"
@@ -282,7 +283,8 @@ HOME="$T" "$COS/bin/cos-run" land fx1 bbb >/dev/null 2>&1; [[ $? -eq 67 ]] && pa
 mkdir -p "$T/cos/fixes"; "$COS/bin/cos-sandbox-test" "$COS" >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-sandbox-test refuses anything outside ~/cos/fixes" || fail "cos-sandbox-test ran outside ~/cos/fixes"
 HOME="$T" "$COS/bin/cos-run" note steward "test note" >/dev/null 2>&1 && [[ "$(jq -r .bot "$T/cos/state/corrections.jsonl" 2>/dev/null)" == steward ]] && pass "note records a correction" || fail "note did not record"
 HOME="$T" "$COS/bin/cos-run" note nobody "x" >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "note refuses an unknown bot" || fail "note accepted an unknown bot"
-for gone in eval pair; do HOME="$T" "$COS/bin/cos-run" $gone x y >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "the $gone lane is gone (refused as unknown)" || fail "the $gone lane still runs"; done
+HOME="$T" "$COS/bin/cos-run" eval nosuchsuite current >/dev/null 2>&1; [[ $? -ne 0 ]] && pass "eval refuses a missing suite" || fail "eval ran without a suite"
+HOME="$T" "$COS/bin/cos-run" pair x y >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "the pair lane is gone (refused as unknown)" || fail "the pair lane still runs"
 "$COS/bin/cos-push" nobody pulse /dev/null >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-push refuses an unknown bot" || fail "cos-push accepted an unknown bot"
 "$COS/bin/cos-sched" list >/dev/null 2>&1 && pass "cos-sched lists the schedule" || fail "cos-sched list"
 HOME="$T" "$COS/bin/cos-obligations" --selftest >/dev/null 2>&1 && pass "standing review line: comment only, exact shape" || fail "cos-obligations selftest"
@@ -539,8 +541,8 @@ jq -e --arg s "$(shasum -a 256 "$T/cos/outbox/pv1/apply.sh" | cut -d' ' -f1)" '.
   && pass "preview: a batch in plain words, each line's tier, and the call to run on his yes" || fail "preview ($PV)"
 HOME="$T" "$T/cos/bin/cos-run" preview nothing-here >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "preview refuses a job with nothing staged" || fail "preview of nothing"
 # --help for every lane, and refusals that print the correct call.
-nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake fix land note pause receipt; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
-[[ $nh -eq 16 ]] && pass "cos-run <lane> --help has examples for all 16 lanes" || fail "--help examples on $nh of 16 lanes"
+nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake eval fix land note pause receipt; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
+[[ $nh -eq 17 ]] && pass "cos-run <lane> --help has examples for all 17 lanes" || fail "--help examples on $nh of 17 lanes"
 e="$(HOME="$T" "$T/cos/bin/cos-run" investigate 2>&1 >/dev/null)"; [[ $? -ne 0 && "$e" == *"Correct call:"*"cos-run investigate inv-"* ]] && pass "a call missing its job id prints the correct call" || fail "no correct call printed: $e"
 e="$(HOME="$T" "$T/cos/bin/cos-run" quick q1 "x" --wiht "ls" 2>&1 >/dev/null)"; [[ "$e" == *"unknown option: --wiht"*"Correct call:"*"--with"* ]] && pass "an unknown option prints the correct call" || fail "unknown option: $e"
 # The lake lane: never scheduled, Claude only, stops at once without VPN and sign-in.

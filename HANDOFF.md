@@ -3,7 +3,7 @@
 Read this first if you're a new agent (Claude Code, Cursor, or anything else) picking up this kit with no history.
 It takes about ten minutes. Then read the files it points to before you change anything.
 
-Last updated: 2026-11-14 (Build A). `./install.sh` runs 270 checks; all pass on a committed tree (one check fails on
+Last updated: 2026-11-14 (Build A). `./install.sh` runs 271 checks; all pass on a committed, pushed tree (one check fails on
 purpose while there are uncommitted changes). A fresh agent read this file cold and fact-checked it against the files.
 
 ## 1. What this is, in one paragraph
@@ -103,6 +103,7 @@ yourself. If one stops working, Cassidy regenerates it in Grok and stores it (IN
 | `gh` | a Python script (`cos-gh`), no model | tier 0: labels, assignee, milestone, links, board-add, roadmap fields, his lane moves with evidence, a dictated issue, a draft PR, a draft push, on his own cards only. Re-read, write through make targets, read back, ledger (`state/ledger/tier_zero.jsonl`) with undo. Others' cards: off (`gh_tier0_others_cards` in standing-approvals.json). | GitHub |
 | `preview` | none | a staged batch in plain words with each line's tier, and the call to run on his yes | nothing |
 | `lake` | Cursor Agent on a Claude model | one data question after his yes, in `~/cos/outbox/<job>/ws` walled by `claude/lake/cli.json` and `claude/cursor-lake-hook` (which runs the gate); only reads and `lake-query`. Never scheduled. | `result.md` in the job folder |
+| `eval` | Claude, judged by Codex | blind A/B of a prompt change on `evals/core.json`; KEEPER's test before proposing (kept by Cassidy, 2026-11-14) | the job folder |
 | `note`, `pause`, `receipt` | none | record a correction; hold a scheduled slot; read a result | `state/` |
 
 The usage block at the top of `claude/cos-run` is the authority. Read it, or run `cos-run <lane> --help`.
@@ -162,7 +163,8 @@ minutes, so the fix lane is for the Chief, not for you.
 
 ## 9. Open items (as of 2026-11-14, after Build A)
 
-- Build A of `docs/plan-2026-11-14-smoother.md` is in (items 1, 2, 4, 6). Next: Build B (items 8 and 9), then the
+- Build A of `docs/plan-2026-11-14-smoother.md` is in (items 1, 2, 4, 6), with the eval lane kept (Cassidy's decision
+  after the Grok export). Next: Build B (items 8 and 9), then the
   Grok pastes for items 3 and 5. Every pending paste, with where it goes, is in `grokbot/pending-pastes.md`. Part A
   (the Chief's tiers and "yes" approvals, STEWARD's exception, BUILDER, KEEPER, cassidy-mode) is ready now; until he
   pastes it, the Chief still asks for sha256 approvals and doesn't know `cos-run gh`, `preview` or `lake`.

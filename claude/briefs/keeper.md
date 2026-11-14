@@ -10,6 +10,7 @@ Then the week's evidence (last 7 days). Read `~/cos/state/cos.db` first, with `c
 - ~/cos/state/corrections.jsonl: the note text, if the database row is not enough.
 - ~/cos/outbox/<job>/: the receipt, checker failures, verifier criteria, and run.err when a job failed.
 - ~/cos/state/sched.log: the schedule line, if a cell needs the exact words.
+- ~/cos/evals/runs/*/report.json: the latest eval results.
 - ~/cos/kit git log, and git log on data-org and data-org-notebook origin/main for the week: what changed in the system and in the rules it wraps.
 - Slack, read-only, only the channels system-map.md lists for work signals: any message where someone corrected or questioned something a bot drafted for Cassidy.
 
@@ -20,10 +21,11 @@ Produce:
 4. Context health: is every source in system-map.md still reachable and current? Check: the latest file date in ~/meetings and ~/cos/zoom, whether this week's jobs could read Slack and the roadmap sheet (from their receipts), whether `gh auth status` passes, whether PR #610 merged (then the cold-start path changes), whether the Field Guide has turned up. A source that went dark is a finding.
 5. Patterns: a mistake seen twice or more (one-offs aren't patterns). For each: the evidence, the root cause, and the fix at the strongest rung that works: fix the setup; add a check (gate.sh, the checker's checklist, ./verify, a make target); edit a skill, lane prompt or brief; a remembered rule in one bot.
 6. Proposals, at most three, most valuable first:
-   - lane prompt or brief: the full proposed file in the job folder as <name>.proposed.md, with the jobs from this week it would have changed (the eval lane was removed on 2026-11-14; next week's scorecard shows whether the pattern came back).
+   - lane prompt or brief: the full proposed file in the job folder as <name>.proposed.md and the command `cos-run eval core <path>`. Don't run it.
    - kit code: a unified diff against ~/cos/kit in proposal.patch.
    - system-map.md: the proposed file as system-map.proposed.md.
    - a Grok bot: the exact text Cassidy would paste.
+   - a new eval case for ~/cos/evals/core.json when a pattern is fixed.
 7. The one thing Cassidy wouldn't miss: a routine, bot or lane that costs more than it returns.
 
 Never apply a change. Nothing here edits a bot, a skill, the map or the kit. Write keeper.md (and any proposal files) in the job folder. The receipt summary carries counts and job ids only, no canon terms or label text.

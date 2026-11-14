@@ -28,6 +28,12 @@ Then three smoke tests, in order:
 
 The first costs cents (Cursor). The second costs about $1–3 (Claude). The third must come back `blocked`, with the comment staged in `needs_approval`. Check `receipt.json` in each job folder. The smoke test also confirms the one unverified detail: the `structured_output` field name.
 
+Then set a baseline for the eval suite (about $20; KEEPER compares every proposed change against it):
+
+```bash
+~/cos/bin/cos-run eval core current
+```
+
 
 ## 2. Grok Bot settings (once, for every Bot)
 
@@ -95,7 +101,7 @@ That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, eve
 
 ## Applying a KEEPER fix
 
-- **A lane prompt or brief:** read KEEPER's evidence (the jobs it would have changed), copy the file into `~/cos/kit/claude/…` and run `cd ~/cos/kit && git commit -am "<why>" && ./install.sh`.
+- **A lane prompt or brief:** `~/cos/bin/cos-run eval core ~/cos/outbox/<job>/<name>.proposed.md`. If the report passes, copy the file into `~/cos/kit/claude/…` and run `cd ~/cos/kit && git commit -am "<why>" && ./install.sh`.
 - **Kit code:** `cd ~/cos/kit && git apply ~/cos/outbox/<job>/proposal.patch && ./install.sh`, then commit.
 - **A Grok Bot:** paste the text KEEPER gives you into that Bot, or into its playbook skill.
 - **Undo:** `cd ~/cos/kit && git revert <commit> && ./install.sh`.
@@ -105,6 +111,7 @@ That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, eve
 | Kit path | Installs to | What it is |
 |---|---|---|
 | `claude/cos-run` | `~/cos/bin/` | the front desk: every lane (`cos-run <lane> --help`) |
+| `evals/core.json` | `~/cos/evals/` | the core eval suite: five real requests with rubrics and must-nots |
 | `claude/cos-gh` | `~/cos/bin/` | tier-0 GitHub writes (`cos-run gh`), ledgered in `~/cos/state/ledger/tier_zero.jsonl` with their undo |
 | `claude/cursor-lake-hook`, `claude/lake/cli.json` | `~/cos/claude/` | the lake lane's walls: Cursor's preToolUse hook (runs the gate) and its permission config |
 | `claude/cos-sched` | `~/cos/bin/` | the Mac's schedule (run by launchd): runs each scheduled job, skips if the Mac woke too late |
@@ -139,7 +146,7 @@ That writes `~/Library/LaunchAgents/com.cos.dashboard.plist` (`cos-db load`, eve
 | `install.sh` | — | installer and self-test |
 | `PLAN.md` | — | the design and the why |
 
-Created at runtime: `~/cos/kit` (this kit, as a git repo), `~/cos/state/corrections.jsonl`, `~/cos/state/sched.log`, `~/cos/outbox/<job>/` (one per job, moved to `~/cos/archive` after 30 days), `~/cos/state/board-health.csv`, `~/cos/data-org-main` (a detached copy of `origin/main` that jobs run in), and `~/builds/<slug>/` (one per build).
+Created at runtime: `~/cos/kit` (this kit, as a git repo), `~/cos/state/corrections.jsonl`, `~/cos/state/sched.log`, `~/cos/evals/runs/`, `~/cos/outbox/<job>/` (one per job, moved to `~/cos/archive` after 30 days), `~/cos/state/board-health.csv`, `~/cos/data-org-main` (a detached copy of `origin/main` that jobs run in), and `~/builds/<slug>/` (one per build).
 
 ## Changes from the last install
 
