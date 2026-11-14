@@ -1,13 +1,18 @@
 #!/bin/bash
-# lake-query: the one way a build reads data. Read-only, through data-org-notebook's run_query.py
-# (wcx refuses non-read-only SQL), with the canon tripwire and token hygiene built in.
+# lake-query: the one way an agent reads data, used only by the lake lane (cos-run lake) since 2026-11-14. Read-only,
+# through data-org-notebook's run_query.py (wcx refuses non-read-only SQL), with the canon tripwire and token hygiene.
 #
 #   lake-query <file.sql>                       app warehouse (Postgres replica)
+#   lake-query --sql "<one SELECT>" [flags]     the same, from a string (the lake agent can't write files)
 #   lake-query <file.sql> --lake --env dev      The Pantry (DuckLake), dev
 #   lake-query <file.sql> --save ...            full result to Parquet; read it with code, never cat it
 set -euo pipefail
-SQL="${1:?usage: lake-query <file.sql> [run_query.py flags]}"; shift
+SQL="${1:?usage: lake-query <file.sql> [run_query.py flags]   or   lake-query --sql \"<SELECT ...>\" [--lake] [--env dev]}"; shift
 NB="${DATA_ORG_NOTEBOOK:-$HOME/Documents/Data-Org-Repos/data-org-notebook}"
+if [[ "$SQL" == --sql ]]; then
+  TXT="${1:?usage: lake-query --sql \"<SELECT ...>\" [--lake] [--env dev]}"; shift
+  QD="$(mktemp -d)"; SQL="$QD/q.sql"; printf '%s\n' "$TXT" > "$SQL"
+fi
 [[ -f "$SQL" ]] || { echo "no such file: $SQL" >&2; exit 64; }
 SQL="$(cd "$(dirname "$SQL")" && pwd)/$(basename "$SQL")"
 body="$(tr '[:upper:]' '[:lower:]' < "$SQL")"

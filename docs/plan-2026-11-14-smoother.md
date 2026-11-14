@@ -178,3 +178,29 @@ never see the lake; a Cursor agent on his Mac does, and only an aggregates-only 
   file before anything reaches Grok; a hit holds the result on the Mac and says so.
 - Logging: the ledger records the job, the Cursor agent id, the queries run and the tripwire result. Agent Atlas
   indexes the chat (it will be a lake chat), so it can be found again; its content stays on the Mac.
+
+## Grok-side state must survive (2026-11-14)
+
+Cassidy has refined bots, skills and routines inside Grok, and the Chief holds about 94 memory facts he asked it to
+remember. The new system must keep them. Nothing in this plan deletes Grok memory or routines, but a paste can
+contradict a memory, and a bot reset would lose it.
+
+1. Export first: each bot writes its memory, playbook, skills, routines and the Custom Rules verbatim to
+   `~/cos/grok-live/` (the Chief's test run started 2026-11-14 10:01). Check the count (the Chief reported 94 facts).
+2. Reconcile: compare with `kit/grokbot/`; Cassidy's live versions win; conflicts with this plan go to him.
+3. Sort every memory fact into one of three:
+   - a lasting rule: copy it into the kit (`grokbot/<bot>.md` or `handbook/rules.md`), so it survives a reset and
+     every pasted version carries it;
+   - a fact that changes (owners, dates, status, RAGB): flag it, since the system map says those are fetched, not
+     remembered; Cassidy decides whether it stays;
+   - a one-off reminder: should be a routine, not a memory.
+4. Keep the live export out of git unless Cassidy says otherwise: memory may hold notes about people.
+5. Every later paste is written against the live export, and the Chief confirms afterwards that no memory fact was
+   contradicted.
+
+The Chief's routines on 2026-11-14 (from Cassidy's screenshot): Morning brief (weekdays ~6:30), GitHub asks watch
+(hourly on weekdays, 8:00 to 18:00), SPINS outreach reminder (#630, once Nov 16 9:00), Bird-dog Nicholas items
+(fixture, V1 label; weekdays ~9:00), Agent Atlas daily pull (weekdays ~15:45), Daily call action items (pre-sweep,
+weekdays ~15:50), End-of-day sweep and reconciliation (weekdays ~16:30), cos-run results webhook. To check in the
+reconcile: the Morning brief may duplicate OPS's 06:15 follow-ups and brief; the hourly GitHub watch overlaps OPS's
+obligations script (every two hours) and should use one `gh-scan` per run, not several reads.
