@@ -3,7 +3,7 @@
 Read this first if you're a new agent (Claude Code, Cursor, or anything else) picking up this kit with no history.
 It takes about ten minutes. Then read the files it points to before you change anything.
 
-Last updated: 2026-11-14. `./install.sh` runs 197 checks; all pass on a committed tree (one check fails on purpose
+Last updated: 2026-11-14. `./install.sh` runs 196 checks; all pass on a committed tree (one check fails on purpose
 while there are uncommitted changes). A fresh agent read this file cold and fact-checked it against the files.
 
 ## 1. What this is, in one paragraph
