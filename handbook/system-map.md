@@ -37,6 +37,7 @@ Last checked: 2026-11-14 (sources table); data-org rules last checked 2026-11-09
 | Google Drive and Docs | charters, decks, memos | Drive connector, read-only | Drive app | no edits to others' files |
 | Cassidy's Claude and Cursor transcripts | how he works | only a path he names, or the monthly cassidy-mode re-mine of his own projects | no | never glob across other people's or unrelated projects |
 | Agent Atlas `~/Documents/Cursor Projects/agent-atlas` (Cassidy's project) | every past Claude Code, Cursor and bot chat: titles, repos, branches, overviews, messages | `cos-atlas` (his `atlas_cli.py`, read-only) in the atlas lane; `sqlite3 -readonly` as a fallback | through `cos-run atlas` | `[lake chat]` rows: ids, titles, counts and card numbers only; refreshes only while the app runs |
+| `~/cos/evals/` | eval suites and reports | direct read | through KEEPER's report | |
 | GitHub, for "what needs him" | review requests, mentions, threads on his PRs, assigned issues | `cos-gh-scan` (two GraphQL searches, no model) | through `cos-run gh-scan` | read-only; a failed read says so, never an empty list |
 | `~/cos/outbox/*/receipt.json` | what every job did, cost, checker and verifier results | direct read | webhook bodies | receipts summarize; read artifacts for detail |
 | `~/cos/state/` | corrections, schedule log, board-health trend | direct read | no | team numbers only, never per person in public |
@@ -82,7 +83,7 @@ transcript: <meeting, date, start time>", and the Chief takes step 2 (or 3).
 |---|---|---|
 | Lake or warehouse, to Claude on the Mac | rows except canon values; canon aggregates and IDs | canon names, terms, aliases, flag assignments |
 | Mac job, to the Grok Bots (receipts, webhooks) | summaries, IDs, counts, card numbers, draft text | canon terms, label text or images, credentials, raw data rows |
-| Mac job, to another model provider (Codex review) | diffs and receipts of open builds | anything from a canon or label build (canon charter decision 14) |
+| Mac job, to another model provider (Codex review, eval judge) | diffs and receipts of open builds | anything from a canon or label build (canon charter decision 14) |
 | Anything, to data-org or a team channel | what the writing standard and the boundary allow | personnel, compensation, individual performance, verbatim executive quotes, RAGB values in files, CDO ADR contents |
 | Anything, to a shared link | nothing | AI conversation links with WISEcode information; public Bot share links |
 

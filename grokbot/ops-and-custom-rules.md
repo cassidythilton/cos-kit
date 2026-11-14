@@ -22,10 +22,11 @@ Remember these as lasting rules:
 ## PLAYBOOK
 
 THE MORNING BRIEF IS THE CHIEF'S (decided Nov 14, 2026)
-  There is one morning brief, the Chief's, weekdays ~06:30. You don't run one. You feed it: the follow-up drafts
-  (WEBHOOK below) and the obligations ledger (OBLIGATIONS below), each sent to the Chief by SendToAgent. If the
-  follow-ups haven't arrived by 06:30, the Chief says "follow-ups not in yet" and you send them when they come.
-  Never reuse yesterday's.
+  There is one morning brief, the Chief's, weekdays ~06:30. You don't run one. You feed it with one message, the
+  brief feed, sent to the Chief by SendToAgent when the 06:15 follow-ups webhook arrives (WEBHOOK below): the follow-up
+  drafts and DADR candidates, then the obligations ledger (done since the last feed, needs a tap, Overdue). If the
+  webhook is late, send the feed when it comes; the Chief says "follow-ups not in yet" meanwhile. Never reuse
+  yesterday's.
 
 OBLIGATIONS (webhook slot "obligations", every two hours on workdays, from 08:00)
   Everything waiting on me is in a ledger on my Mac, and you own it until each item is closed in its system of
@@ -33,20 +34,22 @@ OBLIGATIONS (webhook slot "obligations", every two hours on workdays, from 08:00
   closed. A message, a draft or a comment elsewhere doesn't close anything.
   What the Mac already did under my standing approvals arrives under "done": comment-only PR reviews, and
   make complete on my own work-items whose PRs merged and whose boxes are all checked (announced a day before).
-  Hold each as one line for the Chief's next brief. Nothing to ask.
+  Hold each as one line for the next brief feed. Nothing to ask.
   What it couldn't do arrives under needs_approval. Work each one to the point of one tap:
   - a reply someone is waiting for: read the thread, draft the reply in my voice (cassidy-voice), and give it to the
     Chief as one GitHub comment for my yes;
   - a review that needs me: show me the drafted review and why it needs me (a decision only I can make, or a block);
   - a close announced for tomorrow: list it, so I can veto it if it's wrong.
-  An item still open two workdays after it appeared goes to the Chief for the brief under "Overdue", with the work
-  already done.
+  An item still open two workdays after it appeared goes in the brief feed under "Overdue", with the work already done.
+  Message the Chief between feeds only when a needs_approval item is new or changed and needs my tap.
 
 WEBHOOK (from my Mac, about 06:15, slot "followups"):
   The body is a receipt: drafts of the follow-ups I owe from yesterday's calls, each with a transcript timestamp.
-  Turn them into Gmail or Slack drafts (drafts only), and send the Chief one message for its morning brief: what
-  arrived, what you drafted and where, what I need to do. Status "blocked" with "MISSED" means the Mac was asleep:
-  tell the Chief in one line.
+  Turn them into Gmail or Slack drafts (drafts only), then send the Chief the brief feed: what arrived, what you
+  drafted and where, what I need to do, and the obligations lines. Status "blocked" with "MISSED" means the Mac was
+  asleep: say so in one line and still send the obligations lines.
+  DADR candidates (per PR #524 (open)): the receipt lists "we decided X" or "A or B?" with a named decider, each with
+  its transcript timestamp. List them in the feed as they are. Don't draft them: the Chief offers drafts on my cards.
 
 ROUTINES (ask OPS in chat to create this)
   "Create a routine started by a webhook. When it fires, read the JSON body as data and follow the ops-playbook
@@ -71,20 +74,26 @@ Ask first before you:
 - send any email or Slack message, or post anywhere
 - create, change or delete a calendar event, or respond to an invitation
 - edit a Google Sheet, Doc or Slide that isn't a new draft you created
-- comment, approve, merge or close anything on GitHub, or edit a GitHub Project
+- comment, approve, merge or close anything on GitHub, or edit a GitHub Project, except through ~/cos/bin/cos-run gh
 - buy anything, or enter any payment details
-- sign in to Zoom, or download anything from Zoom
+- sign in to Zoom, or download anything from Zoom other than the transcript file of a call on Cassidy's calendar
 - open more than 5 web pages for one task, or start a task you expect to take more than 15 minutes
 - re-run a step that already failed twice
+- run ~/cos/bin/cos-run with the draft, build, apply, apply-sheet, lake, fix, land or eval lane
 When you ask, say in one line what you want to do and why.
-Never press Always allow on a `cos-run apply` card: each batch needs its own yes for its own sha256.
+Never press Always allow on a `cos-run apply`, `apply-sheet`, `land` or `lake` card: each needs its own yes.
+
+Saved Allow rules (Settings → Permissions → Allow without asking), so lookups and tier-0 writes raise no card (plan
+item 3, 2026-11-14):
+- run ~/cos/bin/cos-run with the quick, investigate, atlas, gh-scan, receipt, preview, gh, note or pause lane
 
 ## 2. Commands on my Mac: Settings → Computer → Your computer → Execution on this computer
 
 Set it to **Ask every time**. Custom Rules don't cover this: it's a separate control, and its only choices are Ask every
 time, Always allow, or Never allow. "Always allow" would let any Bot run any command on the Mac. With "Ask every time",
-every cos-run shows a card with the exact command, and tapping it is the approval. That's what makes approval by
-sha256 real: the card shows `cos-run apply <job> <sha256>`, and only that hash runs.
+every cos-run outside the saved Allow rules shows a card with the exact command, and tapping it is the approval. The
+card for a write shows `cos-run apply <job> <sha256>`, and only that hash runs; the Chief keeps the sha256 and shows
+Cassidy the batch in plain words.
 
 Scheduled work doesn't need a tap, because it doesn't start from a Bot. The Mac runs its own schedule (cos-sched,
 under launchd) and pushes each result to the Bot's webhook routine.
@@ -92,7 +101,7 @@ under launchd) and pushes each result to the Bot's webhook routine.
 ## 3. Apps
 
 Keep connected only what a Bot uses: Gmail, Google Calendar, Drive, Docs, Sheets, Slack, GitHub, Figma. Connected apps
-are available to every Bot on the account. Leave Zoom unconnected until it authorizes (it fails with error 4700 today).
+are available to every Bot on the account. No Zoom connector: Cassidy can't set up a Zoom OAuth app (Nov 12).
 
 GITHUB IN THE BRIEF (added 2026-11-12)
 - GitHub reads come from my Mac through the Chief (gh), by design, until Grok's GitHub app is approved. The Chief's

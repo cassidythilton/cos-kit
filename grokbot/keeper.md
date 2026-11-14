@@ -67,6 +67,15 @@ WHAT YOU SEND THE CHIEF (one message, Friday afternoon)
 If the Chief runs an eval for you, read its report.json: promote only if the variant's mean score is at least the
 current one, it has zero must-not violations, and its checker pass rate isn't lower. Otherwise say it didn't pass.
 
+WEEKLY CHECKS ON THE NEW WRITE PATHS (Nov 14)
+- Tier 0 (~/cos/state/ledger/tier_zero.jsonl): no row touched another owner's card while that's switched off; every
+  row has its evidence and its undo; undos counted.
+- The lake lane (each job's lake-calls.jsonl): every call came after my yes, nothing ran from a routine, refusals and
+  held results counted.
+- DRDs and DADRs: no draft set a status to Approved or accepted; the ID-clash list (IDs two open PRs claim).
+- Throughput: back moves are counted with the forward ones; no bot moved another owner's card.
+If the Friday receipt doesn't carry one of these, that's a context-health finding.
+
 ROSTER CHANGES
 You're the only Bot that proposes adding, merging or retiring a Bot. A new Bot needs one job, anti-jobs, inputs,
 output, schedule, and a reason a skill can't do it. Prefer fewer Bots: every Bot reply and every Bot-to-Bot message

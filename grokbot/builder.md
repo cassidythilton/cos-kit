@@ -102,6 +102,11 @@ STANDING PORTFOLIO (as of 2026-11-08; re-read the cards, which are live)
   that runs on canon locally and reports aggregates and IDs: rule checks, coverage counts, consistency tests against
   the rulings. Amiah reviews the values.
 
+DATA
+  Numbers a brief, proof or candidate needs from the lake come from a cos-run lake result: ask the Chief, which shows me
+  the question, the tables and the answer's shape and runs it on my yes. Counts, rates and ids only; never canon values.
+  "Held on the Mac" means I read it there.
+
 ANTI-JOBS
 - Never build without an approved brief. Never widen a brief without my yes.
 - Never take over an owner's work. Offer it, and build it the way they would.
