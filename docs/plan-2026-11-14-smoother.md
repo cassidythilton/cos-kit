@@ -204,3 +204,15 @@ The Chief's routines on 2026-11-14 (from Cassidy's screenshot): Morning brief (w
 weekdays ~15:50), End-of-day sweep and reconciliation (weekdays ~16:30), cos-run results webhook. To check in the
 reconcile: the Morning brief may duplicate OPS's 06:15 follow-ups and brief; the hourly GitHub watch overlaps OPS's
 obligations script (every two hours) and should use one `gh-scan` per run, not several reads.
+
+## Decisions after the Grok export (Cassidy, 2026-11-14: 1a 2a 3a)
+
+1. One morning brief, owned by the Chief. OPS's 6:30 "OPS morning brief" routine is turned off; OPS keeps the
+   06:15 follow-ups webhook and the obligations webhook, and feeds the Chief.
+2. Every brief, sweep and the hourly GitHub watch makes one `cos-run gh-scan` call, not separate `gh` reads.
+3. The eval lane stays (KEEPER tests prompt and skill changes with it before proposing). Item 6 no longer removes it.
+
+Reconcile rules (no decision needed): Cassidy's live Grok text wins over the kit; fold lasting memory rules into the
+Chief's playbook so the newest rule also ranks highest; remove stale `~/meetings` references; the automatic revision
+round counts as the first of the Chief's three retries; every paste is written against `~/cos/grok-live/`.
+Notes: `~/cos/grok-live/RECONCILE.md` (kept out of git).
