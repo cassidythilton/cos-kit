@@ -339,7 +339,8 @@ jq -e '[.records[] | {(.id): .outcome}] | add | .["651"]=="survives" and .["778"
 jq -e '.consensus_order == ["651","778"] and (.records[] | select(.id=="778") | .disputes[0].attacker=="codex" and (.disputes[0].defense|test("v0 is the set")))' "$V" >/dev/null 2>&1 \
   && grep -q '\[CONTESTED\]' "$H/cos/outbox/opp1/builder.md" && grep -q "Claude's score: A-claude" "$H/cos/outbox/opp1/builder.md" && grep -q "Codex's score: A-codex" "$H/cos/outbox/opp1/builder.md" \
   && jq -e '(.receipt.summary|startswith("Two-model diligence")) and (.diligence.outcomes["651"]=="survives") and (.receipt.summary|test("pass 1"))' "$H/cos/outbox/opp1/receipt.json" >/dev/null \
-  && pass "diligence receipt: labeled survivors and contested ideas, both score lines, consensus order as advice, merged ahead of pass 1" || fail "diligence receipt for BUILDER"
+  && jq -e '.receipt.summary | test("Claude.s single pass, before cross-examination \\(superseded by the verdict above") and (index("superseded") < index("pass 1"))' "$H/cos/outbox/opp1/receipt.json" >/dev/null \
+  && pass "diligence receipt: labeled survivors and contested ideas, both score lines, consensus order as advice; Claude's own pass labeled superseded" || fail "diligence receipt for BUILDER"
 jq -e '.records[] | select(.id=="651") | .cross_exam | length == 2' "$V" >/dev/null 2>&1 && jq -e '.steps["codex-pass"].status=="ran"' "$V" >/dev/null 2>&1 \
   && pass "diligence: reads Codex replies with prose and a code fence around the JSON" || fail "diligence lost a Codex reply wrapped in prose"
 ! grep -q "you're on that" "$DG/stub/codex-attack.prompt" && grep -q "held on the Mac" "$DG/stub/codex-attack.prompt" && grep -q "docs/g.md:282" "$DG/stub/codex-attack.prompt" \

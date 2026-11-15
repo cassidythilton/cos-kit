@@ -572,7 +572,11 @@ def merge(out, block, summary):
     rc = r.setdefault("receipt", {})
     if "pass1_summary" not in r:   # Claude's own summary, kept once so a rerun of the verdict doesn't stack summaries
         r["pass1_summary"] = rc.get("summary") or ""
-    rc["summary"] = summary + "\n\n" + r["pass1_summary"]
+    # Claude's own summary ranks ideas before Codex and the cross-examination saw them. It stays for the record, labeled
+    # as superseded, so neither BUILDER nor the Chief reads its "Ranked:" line as the verdict.
+    p1 = r["pass1_summary"].strip()
+    rc["summary"] = summary + ("\n\nClaude's single pass, before cross-examination (superseded by the verdict above; "
+                               "its ranking is not BUILDER's):\n" + p1 if p1 else "")
     arts = rc.setdefault("artifacts", [])
     for f in ("builder.md", "diligence-verdict.json", "compare.json", "slack-digest.md"):
         p = os.path.join(out, f)
