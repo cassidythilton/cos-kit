@@ -4,7 +4,13 @@ All five Bots applied their files from `~/cos/grok-live/apply/` (the file method
 self-checked its memory against its playbook until "none", and re-exported to `~/cos/grok-live/after/`). Claude
 compared every export with the files: skills word for word, routines (one gh-scan with --state brief or watch; OPS
 morning brief paused), and memory (only rules changed; no fact about a person, date or project removed). Cassidy set
-the Permissions by hand. Next time, regenerate the apply files from `grokbot/` and use the same method.
+the Permissions by hand.
+
+Nov 15, Cassidy in Grok: the Chief's hourly "GitHub asks watch" and the 3:45 "Agent Atlas daily pull" routines are
+PAUSED (not deleted). GitHub asks are read in the 6:30 brief and the 4:30 sweep (`gh-scan --state brief`); OPS's
+obligations script still checks review requests and mentions every two hours. The Atlas pull runs inside the 4:30 sweep
+and goes to STEWARD. STEWARD's 16:00 capture still sees agent-worked cards: cos-flow reads Agent Atlas itself. Don't
+re-enable the paused routines when regenerating pastes. Next time, regenerate the apply files from `grokbot/` and use the same method.
 
 # Grok pastes, in the order to do them (one sitting)
 
