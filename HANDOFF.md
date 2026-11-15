@@ -162,6 +162,12 @@ minutes, so the fix lane is for the Chief, not for you.
   deny holds; a hook "allow" doesn't override a cli.json deny; without `--force`, unlisted shell commands are refused;
   writes are allowed unless denied, so deny `Write(**)`.
 
+- A checker that grades only sourcing will pass an idea built on a false premise. BUILDER's opportunity pass now
+  checks each idea's premise against the code, reads the owner's plans, and gets a Codex kill review before BUILDER can
+  rank it (Nov 15; README "How BUILDER Picks a Build").
+- Don't turn a one-off scoping note into a standing rule. A "keep Tolga's work out" exclusion was invented from a note
+  that only scoped one ad hoc run (Nov 15); ask before writing a rule into a file the bots read.
+
 ## 9. Open items (as of 2026-11-14, after Build B)
 
 - Build B (plan items 8 and 9) is in: `cos-flow`; `cos-run draft --doc drd|dadr --card <his card>` (his cards only,

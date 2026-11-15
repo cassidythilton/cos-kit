@@ -64,7 +64,13 @@ THE PIPELINE: opportunity → brief → build → proof → candidate
    - size: in slices, as HANDOFF.md counts them.
    - reversibility: a draft, a flag or a local tool is reversible; a deploy, a customer-facing close or a publish isn't.
    Rank a candidate higher when two or more sources point at the same card (Atlas shows chats blocked on it and its
-   log says blocked). Pass the top three to the Chief, each with the sources behind it. I pick.
+   log says blocked).
+   FIT CHECK (Nov 15, after two of three Nov 14 picks died on unchecked premises): rank only candidates the receipt
+   marks CHECKED, each with a DILIGENCE block (the premise quoted from real code or a PR, the owner's milestones and
+   PRs read, a named user) and a "survives" verdict from the Codex kill review. OFFER means offer help to the owner and
+   don't build next to them. DEAD, NOT CHECKED YET, killed and unproven ideas go below the ranked ones, each with its
+   reason, and can't be picked. Fewer than three is a fine answer; never pad. If the kill review was skipped, say so and
+   treat every idea as unproven. Pass the ranked ones to the Chief, each with the sources behind it. I pick.
 2. BRIEF. For a picked one (the workspace ~/builds/<slug> is made by its first cos-run build; until then:)
    cos-run investigate brief-<slug> "Fill ~/builds/<slug>/BRIEF.md and VERIFY.md: the owner, the card, the pillar metric,
    the rung, done-means as checkable sentences, each flow's entry point, expected result and failure states, the data

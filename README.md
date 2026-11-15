@@ -33,12 +33,13 @@
 5. [The Mac](#the-mac)
 6. [The Flight Recorder](#the-flight-recorder)
 7. [The Week](#the-week)
-8. [How a Write Gets Approved](#how-a-write-gets-approved)
-9. [The Walls](#the-walls)
-10. [How It Learns](#how-it-learns)
-11. [Rules That Come First](#rules-that-come-first)
-12. [Install and Change](#install-and-change)
-13. [Project Structure](#project-structure)
+8. [How BUILDER Picks a Build](#how-builder-picks-a-build)
+9. [How a Write Gets Approved](#how-a-write-gets-approved)
+10. [The Walls](#the-walls)
+11. [How It Learns](#how-it-learns)
+12. [Rules That Come First](#rules-that-come-first)
+13. [Install and Change](#install-and-change)
+14. [Project Structure](#project-structure)
 
 ---
 
@@ -201,13 +202,45 @@ Source: [claude/cos-ledger](claude/cos-ledger), [claude/cos-db](claude/cos-db), 
 | ![capture](https://img.shields.io/badge/capture-e66f30?style=flat-square) | Weekdays 16:00 | STEWARD | A write batch for his cards, by sha256 |
 | ![reconcile](https://img.shields.io/badge/reconcile-e66f30?style=flat-square) | Tue, Thu 10:00 | STEWARD | Drift, which side should move, sheet paste text |
 | ![week](https://img.shields.io/badge/week-e66f30?style=flat-square) | Fri 10:00 | STEWARD | The weekly packet for him and Melanie |
-| ![opportunity](https://img.shields.io/badge/opportunity-e79738?style=flat-square) | Mon 08:30 | BUILDER | Up to three build ideas, each tied to a card |
+| ![opportunity](https://img.shields.io/badge/opportunity-e79738?style=flat-square) | Mon 08:30 | BUILDER | Up to three build ideas, each premise-checked against the code and kill-reviewed by Codex |
 | ![keeper](https://img.shields.io/badge/keeper-757675?style=flat-square) | Fri 13:00 | KEEPER | A scorecard and up to three fixes |
 | ![obligations](https://img.shields.io/badge/obligations-e54796?style=flat-square) | Weekdays 08, 10, 12, 14, 16 | OPS | What the Mac finished under standing approval, and what needs one tap |
 
 Scheduled jobs run with an explicit PATH (`~/.local/bin`, `/opt/homebrew/bin`), because launchd's bare PATH hid the Claude CLI on the first day. A dry run records nothing.
 
 Sources: [claude/cos-sched](claude/cos-sched), [claude/briefs/](claude/briefs/).
+
+---
+
+## How BUILDER Picks a Build
+
+**BUILDER only shows Cassidy ideas that were proven and survived a challenge.** On Nov 14, two of three ranked ideas died
+on premises nobody had checked (#651 assumed an IQA confidence score that doesn't exist, and overlapped its owner's own
+milestone). Since Nov 15, the research happens on the Mac, where the code and cards are, and every idea must pass three
+gates before BUILDER can rank it. Fewer than three ideas is a normal, honest result.
+
+```mermaid
+flowchart TD
+  T["Trigger<br/>Monday 08:30, or on request"] --> P1["Pass 1: candidates<br/>Claude on the Mac: board, calls, Slack, builds; up to six"]
+  P1 --> P2["Pass 2: diligence<br/>premise in the code, owner overlap, user, data"]
+  P2 -->|DEAD, OFFER, NOT CHECKED YET| S1["Listed with the reason<br/>never ranked"]
+  P2 -->|CHECKED| C["Independent checker<br/>opens the cited lines; one revision round"]
+  C --> K["Kill review<br/>Codex tries to refute each idea"]
+  K -->|killed or unproven| S2["Shown with the reason"]
+  K -->|survives| B["BUILDER ranks survivors<br/>through the Chief's chat"]
+  B --> Y["Cassidy picks one<br/>yes to its brief, then a build"]
+```
+
+| Status | Means | What happens |
+| --- | --- | --- |
+| CHECKED | Premise quoted from the real code or PR, owner's plans read, a named user, data reachable | Goes to the checker and the kill review |
+| OFFER | The owner already planned this work (a milestone, PR, DRD or DADR) | Offer help to the owner; never build next to them |
+| DEAD | The premise is false, or the idea is on `~/cos/handbook/build-exclusions.md` | Listed with the reason |
+| NOT CHECKED YET | Something couldn't be read | Listed with what's missing; can't be picked |
+
+Canon text never goes to Codex: if the ideas file names canon tables, the kill review is skipped and says so. Sources:
+[claude/briefs/opportunity.md](claude/briefs/opportunity.md), [claude/cos-killreview](claude/cos-killreview),
+[grokbot/builder.md](grokbot/builder.md).
 
 ---
 
