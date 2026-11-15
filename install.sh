@@ -31,6 +31,9 @@ fi
 
 echo "1. Prerequisites"
 for c in claude agent gh jq git perl shasum shlock lsof uv openssl rsync bc curl security launchctl python3 caffeinate nc; do command -v $c >/dev/null && pass "$c" || fail "$c not on PATH"; done
+# cos-run's preflight checks gh with --active (only the account gh uses). Say which this gh does; neither is a failure.
+gh auth status --help 2>&1 | grep -q -- '--active' && pass "gh has auth status --active (preflight checks the active account)" \
+  || pass "gh has no auth status --active: preflight falls back to gh auth status, which a stale second account fails"
 if [[ $SANDBOX -eq 0 ]]; then
 gh auth status >/dev/null 2>&1 && pass "gh signed in" || fail "gh not signed in (gh auth login)"
 [[ -d "$HOME/Documents/Data-Org-Repos/data-org/.git" ]] && pass "data-org repo" || fail "data-org repo missing at ~/Documents/Data-Org-Repos/data-org"
@@ -329,6 +332,10 @@ rm -rf "$T"
 # to doc.md in the draft worktree, and makes a stray file in data-org-main when the brief says STRAY). Nothing leaves the Mac.
 T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; mkdir -p "$T/cos/bin" "$T/cos/claude" "$T/cos/repos"
 cp "$COS/claude/receipt.schema.json" "$COS/claude/lane.md" "$T/cos/claude/"
+# The preflight reads each lane's settings and gh: the real settings, and a stub gh that is signed in with calls to spare.
+cp "$COS"/claude/settings.{investigate,draft,build}.json "$T/cos/claude/"
+printf '#!/bin/bash\n[[ "$1 $2" == "auth status" ]] && exit 0\n[[ "$1 $2" == "api rate_limit" ]] && { echo %s; exit 0; }\nexit 1\n' \
+  "'{\"resources\":{\"core\":{\"limit\":5000,\"remaining\":4999,\"reset\":0},\"graphql\":{\"limit\":5000,\"remaining\":4999,\"reset\":0}}}'" > "$T/cos/bin/gh"; chmod +x "$T/cos/bin/gh"
 gt() { git -c user.name=t -c user.email=t@t "$@"; }
 git init -q --bare "$T/origin.git"; git init -q -b main "$T/seed"; echo a > "$T/seed/doc.md"
 gt -C "$T/seed" add -A; gt -C "$T/seed" commit -qm a; gt -C "$T/seed" checkout -qb feat; echo b >> "$T/seed/doc.md"; gt -C "$T/seed" commit -qam b
@@ -474,6 +481,75 @@ HOME="$T" "$COS/bin/cos-push-draft" dp3 "$(jq -r .draft.sha256 "$T/cos/outbox/dp
 echo 'feat;rm -rf x' > "$T/cos/outbox/dr1/.draft-base"
 HOME="$T" "$COS/bin/cos-run" draft dr1 "x" >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "draft refuses a tampered saved base on resume" || fail "draft trusted a tampered saved base"
 rm -rf "$T"
+# Preflight (Nov 14): a lane that can't run stops before the model, with a blocked_preflight receipt and one plain reason.
+# Stubs stand in for gh (sign-in and rate limit set by files) and claude (logs every model call; answers mcp list).
+T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; mkdir -p "$T/cos/bin" "$T/cos/claude" "$T/cos/zoom"
+cp "$COS"/claude/settings.{investigate,sheet}.json "$COS/claude/receipt.schema.json" "$COS/claude/lane.md" "$T/cos/claude/"; cp "$COS/bin/cos-ledger" "$T/cos/bin/"
+cat > "$T/cos/bin/gh" <<'STUB'
+#!/bin/bash
+[[ "$1 $2" == "auth status" ]] && { echo "Token: ghp_preflightSECRET42"; exit "$(cat "$HOME/.gh-auth" 2>/dev/null || echo 0)"; }
+[[ "$1 $2" == "api rate_limit" ]] && { cat "$HOME/.gh-rate"; exit 0; }
+exit 1
+STUB
+cat > "$T/cos/bin/claude" <<'STUB'
+#!/bin/bash
+[[ "$1 $2" == "mcp list" ]] && { cat "$HOME/.mcp" 2>/dev/null; exit 0; }
+echo x >> "$HOME/claude.calls"; echo '{"structured_output":{"status":"done","summary":"stub"},"total_cost_usd":1}'
+STUB
+chmod +x "$T/cos/bin/"{gh,claude}
+rate() { printf '{"resources":{"core":{"limit":5000,"remaining":%s,"reset":1700000000},"graphql":{"limit":5000,"remaining":%s,"reset":1700000000}}}' "$1" "$2" > "$T/.gh-rate"; }
+pfr() { HOME="$T" "$COS/bin/cos-run" "$@" 2>/dev/null; }
+rate 4000 4000; o="$(pfr preflight investigate)"; rc=$?
+[[ $rc -eq 0 ]] && jq -e '.preflight == "ok"' <<<"$o" >/dev/null 2>&1 && pass "preflight: investigate is ok with gh signed in and calls to spare" || fail "preflight investigate on a healthy Mac (rc $rc: $o)"
+rate 4000 3; pfr investigate pf1 "Which PRs wait on me?" --in "$T" >/dev/null; rc=$?
+[[ $rc -eq 0 && ! -e "$T/claude.calls" ]] && jq -e '.receipt.status == "blocked_preflight" and .cost_usd == 0 and (.receipt.summary | test("GraphQL rate limit is nearly spent: 3 of 5000"))' "$T/cos/outbox/pf1/receipt.json" >/dev/null 2>&1 \
+  && pass "preflight: a spent GraphQL rate limit stops the job before the model, with the reason" || fail "preflight let a rate-limited job run (rc $rc: $(jq -c .receipt "$T/cos/outbox/pf1/receipt.json" 2>/dev/null))"
+rate 40 4000; o="$(pfr preflight investigate)"; [[ $? -eq 1 ]] && jq -e '.reason | test("REST rate limit")' <<<"$o" >/dev/null 2>&1 && pass "preflight: a spent REST rate limit is a reason too" || fail "preflight missed the REST rate limit ($o)"
+rate 4000 4000; ZD="$T/cos/zoom/2020-01-01 10.00.00 Sync"; mkdir -p "$ZD"; echo x > "$ZD/meeting_saved_closed_caption.txt"; touch -t 202001011100 "$ZD/meeting_saved_closed_caption.txt"
+pfr investigate calls-20200102 "Action items from today's calls" --in "$T" >/dev/null; rc=$?
+[[ $rc -eq 0 && ! -e "$T/claude.calls" ]] && jq -e '.receipt.status == "blocked_preflight" and (.receipt.summary | test("no Zoom transcript for 2020-01-02 in ~/cos/zoom"))' "$T/cos/outbox/calls-20200102/receipt.json" >/dev/null 2>&1 \
+  && pass "preflight: a calls job with no transcript for its day in ~/cos/zoom stops before the model" || fail "preflight let a calls job run without its transcript (rc $rc: $(jq -c .receipt "$T/cos/outbox/calls-20200102/receipt.json" 2>/dev/null))"
+ZD="$T/cos/zoom/2020-01-02 09.00.00 Standup"; mkdir -p "$ZD"; echo x > "$ZD/meeting_saved_closed_caption.txt"
+o="$(pfr preflight investigate calls-20200102)"; [[ $? -eq 0 ]] && pass "preflight: that day's transcript in ~/cos/zoom lets the calls job run" || fail "preflight blocked a calls job that has its transcript ($o)"
+echo 1 > "$T/.gh-auth"; o="$(pfr preflight investigate)"; rc=$?
+[[ $rc -eq 1 ]] && jq -e '.reason | test("gh is not signed in")' <<<"$o" >/dev/null 2>&1 && pass "preflight: gh signed out is the reason, in plain words" || fail "preflight missed gh signed out (rc $rc: $o)"
+pfr investigate pf2 "x" --in "$T" >/dev/null
+jq -e '.receipt.status == "blocked_preflight"' "$T/cos/outbox/pf2/receipt.json" >/dev/null 2>&1 && jq -e 'select(.stream == "preflight" and .job == "pf2")' "$T/cos/state/ledger/preflight.jsonl" >/dev/null 2>&1 \
+  && ! grep -rq 'ghp_preflight' "$T/cos/outbox" "$T/cos/state" && pass "preflight: the block is ledgered, and no token reaches the receipt or the ledger" || fail "preflight: no ledger row, or a token leaked"
+rm -f "$T/.gh-auth"
+jq '.permissions.allow -= ["Bash(cos-atlas *)"]' "$COS/claude/settings.investigate.json" > "$T/cos/claude/settings.investigate.json"
+o="$(pfr preflight atlas)"; [[ $? -eq 1 ]] && jq -e '.reason | test("doesn.t allow Bash\\(cos-atlas \\*\\)")' <<<"$o" >/dev/null 2>&1 && pass "preflight: an atlas lane whose settings don't allow cos-atlas is stopped" || fail "preflight missed atlas's missing Bash rule ($o)"
+cp "$COS/claude/settings.investigate.json" "$T/cos/claude/"
+# The Sheets connector only warns (KEEPER, Nov 14): no real `claude mcp list` from this Mac has shown its format yet.
+echo 'claude.ai Slack: https://mcp.slack.com/mcp - ✓ Connected' > "$T/.mcp"
+o="$(pfr preflight apply-sheet)"; [[ $? -eq 0 ]] && jq -e '.preflight == "ok" and (.warning | test("Google Sheets connector may not be attached"))' <<<"$o" >/dev/null 2>&1 \
+  && pass "preflight: apply-sheet without the Sheets connector is a warning, not a block" || fail "preflight blocked apply-sheet on the Sheets connector, or gave no warning ($o)"
+pfr investigate sheet-20200102-r1 "x" --in "$T" >/dev/null; rc=$?
+[[ $rc -eq 0 && -e "$T/claude.calls" ]] && jq -e '.receipt.status != "blocked_preflight" and .preflight.status == "warn" and (.preflight.note | test("Google Sheets connector"))' "$T/cos/outbox/sheet-20200102-r1/receipt.json" >/dev/null 2>&1 \
+  && jq -e 'select(.stream == "preflight" and .job == "sheet-20200102-r1" and .status == "warn")' "$T/cos/state/ledger/preflight.jsonl" >/dev/null 2>&1 \
+  && pass "preflight: a sheet-* job without the Sheets connector runs, with a ledger row and a note in its receipt" || fail "preflight: the Sheets warning blocked the job, or left no ledger row or receipt note (rc $rc: $(jq -c '{receipt, preflight}' "$T/cos/outbox/sheet-20200102-r1/receipt.json" 2>/dev/null))"
+rm -f "$T/claude.calls"
+echo 'claude.ai Google Sheets: https://sheets.example/mcp - ✓ Connected' >> "$T/.mcp"
+o="$(pfr preflight investigate sheet-20200102-r1)"; [[ $? -eq 0 ]] && jq -e 'has("warning") | not' <<<"$o" >/dev/null 2>&1 && pass "preflight: a sheet-* job with the Sheets connector connected is ok, with no warning" || fail "preflight warned on a sheet job with Sheets connected ($o)"
+pfr preflight nosuchlane >/dev/null; [[ $? -eq 64 ]] && pass "preflight refuses an unknown lane" || fail "preflight took an unknown lane"
+pfr preflight fix >/dev/null; [[ $? -eq 64 ]] && pass "preflight: the fix lane has none (its block can't change from a fix job)" || fail "preflight took the fix lane"
+# eval and quick (the second opinion, Nov 14): eval runs it too, and quick runs it before its --with reads.
+printf '#!/bin/bash\necho x >> "$HOME/claude.calls"; echo %s\n' "'{\"result\":\"stub\"}'" > "$T/cos/bin/agent"; chmod +x "$T/cos/bin/agent"
+echo 1 > "$T/.gh-auth"; mkdir -p "$T/cos/evals"; echo '{"cases":[{"brief":"x","rubric":["y"]}]}' > "$T/cos/evals/pfe.json"
+pfr eval pfe current --async >/dev/null
+[[ ! -e "$T/claude.calls" && ! -d "$T/cos/evals/runs" ]] && jq -e '.receipt.status == "blocked_preflight" and (.receipt.summary | test("gh is not signed in"))' "$T/cos/outbox/eval-pfe/receipt.json" >/dev/null 2>&1 \
+  && pass "preflight: eval stops before its cases and its judge, with the reason in eval-<suite>" || fail "preflight let an eval run with gh signed out ($(jq -c .receipt "$T/cos/outbox/eval-pfe/receipt.json" 2>/dev/null))"
+pfr quick pfq "Which PRs are open?" --with "gh pr list --repo a/b" --in "$T" >/dev/null
+[[ ! -e "$T/claude.calls" && ! -e "$T/cos/outbox/pfq/context.txt" ]] && jq -e '.receipt.status == "blocked_preflight"' "$T/cos/outbox/pfq/receipt.json" >/dev/null 2>&1 \
+  && pass "preflight: quick stops before its --with reads run" || fail "preflight let quick run its reads or the model with gh signed out"
+rm -f "$T/.gh-auth"
+# A passing eval keeps its job name: the receipt of the detached run is eval-<suite>, never eval-eval-<suite>. Its one case
+# finds data-org-main locked by this shell and stops in a second (COS_LOCK_WAIT=1); the stub judge's output doesn't parse.
+mkdir -p "$T/cos/state" "$T/cos/outbox/eval-pfe2"; echo $$ > "$T/cos/state/data-org-main.lock"; cp "$T/cos/evals/pfe.json" "$T/cos/evals/pfe2.json"
+COS_ASYNC_CHILD=1 COS_ASYNC_DIR="$T/cos/outbox/eval-pfe2" COS_LOCK_WAIT=1 pfr eval pfe2 current --async >/dev/null
+jq -e '.job == "eval-pfe2" and .lane == "eval" and .receipt.status == "done"' "$T/cos/outbox/eval-pfe2/receipt.json" >/dev/null 2>&1 && ! ls "$T/cos/evals/runs" | grep -q '^eval-' \
+  && pass "preflight: a passing async eval's receipt is job eval-<suite>, exactly" || fail "a passing eval's receipt job is $(jq -c .job "$T/cos/outbox/eval-pfe2/receipt.json" 2>/dev/null), not eval-pfe2"
+rm -rf "$T"
 
 echo "8. lake-query refuses what it should"
 T="$(mktemp -d)"; echo "select name from wisecode_gold.canon_ingredient limit 5" > "$T/a.sql"; echo "delete from food" > "$T/b.sql"; echo "select * from food" > "$T/c.sql"
@@ -585,8 +661,8 @@ jq -e --arg s "$(shasum -a 256 "$T/cos/outbox/pv1/apply.sh" | cut -d' ' -f1)" '.
   && pass "preview: a batch in plain words, each line's tier, and the call to run on his yes" || fail "preview ($PV)"
 HOME="$T" "$T/cos/bin/cos-run" preview nothing-here >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "preview refuses a job with nothing staged" || fail "preview of nothing"
 # --help for every lane, and refusals that print the correct call.
-nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake eval fix land note pause receipt; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
-[[ $nh -eq 17 ]] && pass "cos-run <lane> --help has examples for all 17 lanes" || fail "--help examples on $nh of 17 lanes"
+nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake eval fix land note pause receipt preflight; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
+[[ $nh -eq 18 ]] && pass "cos-run <lane> --help has examples for all 18 lanes" || fail "--help examples on $nh of 18 lanes"
 e="$(HOME="$T" "$T/cos/bin/cos-run" investigate 2>&1 >/dev/null)"; [[ $? -ne 0 && "$e" == *"Correct call:"*"cos-run investigate inv-"* ]] && pass "a call missing its job id prints the correct call" || fail "no correct call printed: $e"
 e="$(HOME="$T" "$T/cos/bin/cos-run" quick q1 "x" --wiht "ls" 2>&1 >/dev/null)"; [[ "$e" == *"unknown option: --wiht"*"Correct call:"*"--with"* ]] && pass "an unknown option prints the correct call" || fail "unknown option: $e"
 # The lake lane: never scheduled, Claude only, stops at once without VPN and sign-in.
