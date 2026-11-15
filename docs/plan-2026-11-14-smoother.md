@@ -216,3 +216,19 @@ Reconcile rules (no decision needed): Cassidy's live Grok text wins over the kit
 Chief's playbook so the newest rule also ranks highest; remove stale `~/meetings` references; the automatic revision
 round counts as the first of the Chief's three retries; every paste is written against `~/cos/grok-live/`.
 Notes: `~/cos/grok-live/RECONCILE.md` (kept out of git).
+
+## BUILDER, two-model diligence (Cassidy, Nov 15: 1b 2c 3a)
+
+After the Nov 15 test (diligence caught #651 on its own; the kill review lost Codex's answer to a parsing bug, fixed in
+e5e896a), Cassidy asked for more sophistication on both reasoning and diligence:
+1. Claude and Codex (GPT-5.3-codex-high via the Cursor CLI) each run their own blind diligence pass on the candidates.
+2. A script compares the two passes card by card (agree CHECKED, agree DEAD, disagree).
+3. Cross-examination, one round each: Claude attacks Codex's CHECKED ideas and Codex attacks Claude's; each may concede
+   or defend once, with citations.
+4. Verdict by script: survives only if both end CHECKED and unrefuted; "contested" goes to Cassidy with both arguments;
+   the rest are out, each with its reason.
+5. Grok (BUILDER) ranks loosely, as today (decision 2c), over survivors and contested ideas, each labeled; the models'
+   consensus order and score lines go with them as advice. BUILDER can't promote an idea that's out.
+Decisions: (1b) Codex reads code, PRs, the board, receipts AND Slack, but Slack only as a digest Claude writes and
+screens for canon first (the canon tripwire checks it before Codex sees it); transcripts never go to Codex. (2c) Grok
+ranks loosely. (3a) Up to $30 per run, all models together.
