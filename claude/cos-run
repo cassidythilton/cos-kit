@@ -970,7 +970,9 @@ fi
 
 # ---------------------------------------------------------------- investigate / draft: Claude Code
 case "$LANE" in
-  investigate) SETTINGS="$COS/claude/settings.investigate.json"; BUDGET=3;  EFFORT=medium; WORKDIR="$IN" ;;
+  investigate) SETTINGS="$COS/claude/settings.investigate.json"; BUDGET=3;  EFFORT=medium; WORKDIR="$IN"
+               # An opportunity pass reads every source and then proves each idea in the code; $3 made it skip sources (Nov 15).
+               grep -q "Task: find this week's build opportunities" "$OUT/brief.md" 2>/dev/null && BUDGET=8 ;;
   draft)       SETTINGS="$COS/claude/settings.draft.json";       BUDGET=12; EFFORT=high
                WORKDIR="$REPO/.worktrees/cos-$JOB"
                # The base is fetched here, outside the model: the draft gate denies fetch and shasum (Nov 12,

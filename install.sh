@@ -293,6 +293,14 @@ jq -e '.kill_review.status=="done" and (.receipt.summary|test("1 survive, 1 kill
 HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o2" >/dev/null 2>&1
 [[ ! -f "$KR/bin/agent.ran" ]] && jq -e '.kill_review.status=="skipped" and (.kill_review.why|test("canon"))' "$KR/o2/receipt.json" >/dev/null \
   && pass "kill review: a file naming canon tables never goes to Codex" || fail "kill review sent canon text to Codex"
+printf '#!/bin/bash\necho %s\n' "'{\"result\":\"Checking first. {\\\"candidates\\\":[{\\\"name\\\":\\\"x\\\",\\\"verdict\\\":\\\"killed\\\",\\\"reason\\\":\\\"overlap\\\"}]}\"}'" > "$KR/bin/agent"; chmod +x "$KR/bin/agent"
+mkdir -p "$KR/o3" "$KR/o4"; for o in o3 o4; do echo '{"receipt":{"summary":"s"}}' > "$KR/$o/receipt.json"; done
+echo "### x CHECKED" > "$KR/o3/opportunities.md"; printf '### y NOT CHECKED YET\n### z DEAD\n' > "$KR/o4/opportunities.md"
+HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o3" >/dev/null 2>&1
+jq -e '.kill_review.status=="done" and (.receipt.summary|test("1 killed"))' "$KR/o3/receipt.json" >/dev/null && pass "kill review: reads verdicts even when Codex adds a sentence first" || fail "kill review lost verdicts after prose"
+rm -f "$KR/bin/agent.ran"; printf '#!/bin/bash\ntouch %s\n' "$KR/bin/agent.ran" > "$KR/bin/agent"
+HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o4" >/dev/null 2>&1
+[[ ! -f "$KR/bin/agent.ran" ]] && jq -e '.receipt.summary|test("nothing to review")' "$KR/o4/receipt.json" >/dev/null && pass "kill review: no CHECKED idea means nothing to review, and Codex isn't called" || fail "kill review with nothing checked"
 rm -rf "$KR"
 grep -q '"Bash(cos-atlas \*)"' "$COS/claude/settings.investigate.json" && grep -q 'cos-atlas find' "$COS/claude/briefs/atlas.md" && pass "atlas jobs use cos-atlas" || fail "atlas jobs can't run cos-atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"

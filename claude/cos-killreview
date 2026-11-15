@@ -19,7 +19,8 @@ merge() {  # $1 = kill_review JSON object
     | ([$c[] | select(.verdict == "killed")]) as $dead
     | ([$c[] | select(.verdict == "unproven")]) as $unp
     | .receipt.summary = (
-        (if $k.status == "done" then
+        (if $k.status == "done" and ($c | length) == 0 and $k.why then "Kill review: nothing to review (\($k.why))."
+         elif $k.status == "done" then
            "Kill review (Codex): \($s) survive, \($dead|length) killed, \($unp|length) unproven. Only survivors go to BUILDER."
            + (if ($dead|length) > 0 then " Killed: " + ([$dead[] | "\(.name) (\(.reason))"] | join("; ")) + "." else "" end)
            + (if ($unp|length) > 0 then " Unproven: " + ([$unp[] | "\(.name) (\(.reason))"] | join("; ")) + "." else "" end)
@@ -29,6 +30,8 @@ merge() {  # $1 = kill_review JSON object
 
 if [[ ! -f "$F" ]]; then merge '{"status":"skipped","why":"no opportunities.md"}'; exit 0; fi
 if grep -Eqi "$CANON_RE" "$F"; then merge '{"status":"skipped","why":"the file names canon tables, which stay with Claude"}'; exit 0; fi
+if ! sed 's/NOT CHECKED YET//g' "$F" | grep -Eq "(^|[^A-Z_])CHECKED([^A-Z_]|$)"; then
+  merge '{"status":"done","why":"no idea was marked CHECKED, so there was nothing to review","candidates":[]}'; exit 0; fi
 
 PROMPT="You are a skeptical reviewer. Another model proposed the build ideas below for a data team and wrote a DILIGENCE
 block for each. Your job is to try to kill each RANKED idea (the ones marked CHECKED). For each one:
@@ -45,7 +48,14 @@ Return ONLY this JSON, no prose, no code fence:
 $(cat "$F")"
 (cd "$COS/repos" && agent -p --mode ask --trust --model gpt-5.3-codex-high --output-format json "$PROMPT") \
   > "$OUT/kill-review.raw.json" 2> "$OUT/kill-review.err" || true
-J="$(jq -r '.result // ""' "$OUT/kill-review.raw.json" 2>/dev/null | sed -e 's/^```[a-z]*//' -e 's/```$//')"
+# Codex sometimes puts a sentence before the JSON: take the last {"candidates": ...} object in its reply.
+J="$(jq -r '.result // ""' "$OUT/kill-review.raw.json" 2>/dev/null | python3 -I -c '
+import sys, json
+t = sys.stdin.read(); i = t.rfind("{\"candidates\"")
+try:
+    print(json.dumps(json.JSONDecoder().raw_decode(t[i:])[0]) if i >= 0 else "")
+except Exception:
+    print("")')"
 if jq -e '.candidates | type == "array"' <<<"$J" >/dev/null 2>&1; then
   jq '{status: "done", model: "gpt-5.3-codex-high"} + .' <<<"$J" > "$OUT/kill-review.json"
   merge "$(cat "$OUT/kill-review.json")"
