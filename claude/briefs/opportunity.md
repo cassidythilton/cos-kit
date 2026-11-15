@@ -10,7 +10,11 @@ PASS 1: CANDIDATES. Read, in this order:
    have no owner.
 2. Last week's call transcripts in ~/cos/zoom: stated pain, "someone should build…", manual workarounds (hand loads,
    copy-paste), each with its timestamp. Use the meeting-analyst agent, one per meeting.
-3. Data-team Slack threads from the last 7 days (read-only search): repeated asks and blockers.
+3. Data-team Slack threads from the last 7 days (read-only search, the work-signal channels in the system map):
+   repeated asks and blockers. Write slack-digest.md in the job folder as you go: one line per relevant thread,
+   "- <channel> <date>: <what was asked or blocked, in your words> (<permalink>)". Your words only: no quotes of food,
+   label or canon text, no canon table names, no personnel content. Codex reads this file (after a canon tripwire) and
+   cites it as slack-digest.md:<line>; it never sees Slack itself or any transcript.
 4. Zendesk intake: make intake-holders counts if the target exists (dry run only); otherwise say it wasn't read.
 5. ~/builds/*/HANDOFF.md: what the active builds still need.
 6. ~/cos/handbook/build-exclusions.md (Cassidy's file): work he has ruled out. Drop any candidate it covers, and list
@@ -32,6 +36,15 @@ block for each, with every line cited (file:line, PR or issue number with what y
 Mark each candidate CHECKED (every line backed), DEAD (premise false, or excluded), OFFER (overlaps an owner's planned
 work) or NOT CHECKED YET (something couldn't be read; say what). Only CHECKED candidates can be ranked.
 
+Also write diligence.json in the job folder, the same content for the scripts that run after you:
+{"window": "YYYY-MM-DD to YYYY-MM-DD", "excluded": ["<idea>: <why>"], "candidates": [{"id": "<card number, or a slug
+if no card>", "card": "wisecodeai/<repo>#<n>" or null, "idea": "<one line, your words: no quotes, no canon, nothing
+from a call>", "status": "CHECKED|OFFER|DEAD|NOT CHECKED YET", "reason": "<one sentence>", "score_line": "<CHECKED
+only>", "rank": <1.. among CHECKED, else null>, "evidence": [{"field": "premise|owner|user|data|smallest", "claim":
+"...", "cite": "...", "kind": "code|pr|issue|board|receipt|slack|doc|transcript"}]}]}
+Every line of a DILIGENCE block is one evidence item. Anything from a call is kind "transcript"; a script holds those
+on the Mac before Codex sees your work, so a premise backed only by a call won't convince Codex.
+
 RANK the CHECKED ones on one line each: the number it moves · whose problem it is · the data it needs · blast radius ·
 size · reversibility. Prefer a named owner's explicit ask and the Nov 25 milestone.
 
@@ -40,5 +53,7 @@ and DILIGENCE blocks; then OFFER, NOT CHECKED YET, DEAD and excluded, one line e
 summary names how many candidates each status got. If nothing new since last week's opportunity receipt, set summary
 to exactly: NO CHANGE
 
-After you finish, a different model (Codex) reviews every ranked candidate and tries to kill it. Write each DILIGENCE
-block so a skeptic can check it without redoing your work.
+After you finish, a different model (Codex) does its own blind pass over the same candidates (it sees only the card
+and your one-line idea), then each of you attacks the other's CHECKED ideas once, and a script decides: an idea
+survives only if both of you end at CHECKED and neither refutation stands. Write each DILIGENCE block so a skeptic
+can check it without redoing your work.

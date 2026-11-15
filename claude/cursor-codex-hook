@@ -1,0 +1,68 @@
+#!/bin/bash
+# cursor-codex-hook: Cursor's preToolUse hook for Codex in BUILDER's two-model diligence (cos-diligence). Deny by default.
+#   Read-type tools: only inside the job's Codex workspace (<job>/codex/ws, which holds what cos-diligence screened and
+#     copied in) and ~/cos/data-org-main. Paths are resolved first (no ../ or symlink escapes). A file that names a
+#     canon table is held on the Mac (canon charter decision 14). Transcripts, ~/meetings, Agent Atlas, ~/cos/state,
+#     the rest of the outbox and the notebook (rendered outputs may hold canon values) are outside, so they're refused.
+#   Shell: only GitHub reads (gh issue|pr view|list|diff|checks, gh search, gh repo view, gh api GET without fields or
+#     a mutation) and ls, then gate.sh. No chaining, redirects or substitution.
+#   Anything else (Write, Edit, Delete, MCP, web, a tool Cursor adds later): denied.
+# claude/codex/cli.json is the first wall (it denies writes, network tools, git, interpreters, and the transcript and
+# notebook folders by path); this hook is the second. Every decision is logged to <job>/codex/calls.jsonl.
+input="$(cat)"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
+path="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.target_file // .tool_input.target_directory // .tool_input.directory // ""')"
+root="$(printf '%s' "$input" | jq -r '.workspace_roots[0] // ""')"
+WS=""; [[ "$root" == "$HOME"/cos/outbox/*/codex/ws ]] && WS="$root"
+LOGD="${WS%/ws}"
+CANON_RE='canon_ingredient|canon_term|canon_assets\.|food_expression_ingredients|mirror\.canon_|history\.canon_|mart\.canon_'
+log() { [[ -n "$WS" && -d "$LOGD" ]] || return 0
+  jq -nc --arg t "$(date -u +%FT%TZ)" --arg d "$1" --arg tool "$tool" --arg c "${cmd:0:600}" --arg p "${path:0:300}" --arg why "$2" \
+    '{ts: $t, decision: $d, tool: $tool, cmd: $c, path: $p, why: $why}' >> "$LOGD/calls.jsonl" 2>/dev/null || true; }
+deny() { log deny "$1"; jq -nc --arg m "$1" '{permission: "deny", userMessage: ("codex diligence: " + $m), agentMessage: ("BLOCKED: " + $m + ". This is final; work with what you can read, or mark the idea NOT CHECKED YET.")}'; exit 0; }
+allow() { log allow ""; echo '{"permission":"allow"}'; exit 0; }
+gate() {
+  local msg
+  [[ -x "$HOME/cos/claude/gate.sh" ]] || deny "the gate (~/cos/claude/gate.sh) is missing, so nothing runs"
+  msg="$(jq -nc --arg t "$1" --arg c "$cmd" --arg p "$path" '{tool_name: $t, tool_input: {command: $c, file_path: $p}}' \
+    | COS_GATE_MODE=job COS_LANE=codex "$HOME/cos/claude/gate.sh" 2>&1 >/dev/null)"
+  [[ $? -eq 2 ]] && deny "${msg:-the gate refused it}"
+  return 0
+}
+resolve() { python3 -I -c 'import os,sys; p=os.path.expanduser(sys.argv[1]); print(os.path.realpath(p if os.path.isabs(p) else os.path.join(sys.argv[2], p)))' "$1" "${WS:-/nonexistent}"; }
+inside() {  # the resolved path is the workspace or data-org-main, or under one of them
+  local r="$1" a
+  for a in "$(resolve "$WS")" "$(resolve "$HOME/cos/data-org-main")"; do [[ -n "$a" && ( "$r" == "$a" || "$r" == "$a"/* ) ]] && return 0; done
+  return 1
+}
+[[ -n "$WS" ]] || deny "this hook runs only in a cos-diligence Codex workspace"
+case "$tool" in
+  Read|ReadFile|Grep|Glob|LS|List|ListDir|Search|SemanticSearch|FileSearch|Codebase)
+    if [[ -n "$path" ]]; then
+      r="$(resolve "$path")"
+      inside "$r" || deny "only the diligence workspace and data-org main can be read here, not $path"
+      [[ -f "$r" ]] && grep -Eqi "$CANON_RE" "$r" 2>/dev/null && deny "held on the Mac: $path names a canon table (canon charter decision 14)"
+    fi
+    gate Read; allow ;;
+  Shell|Terminal|Bash)
+    dq="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g" | grep -oE '"[^"]*"' || true)"
+    [[ "$dq" == *'$'* || "$dq" == *'`'* ]] && deny "no \$ or backtick"
+    bare="$(printf '%s' "$cmd" | sed -E "s/'[^']*'/Q/g; s/\"[^\"]*\"/Q/g")"
+    [[ "$bare" =~ [\;\&\|\`\$\<\>] ]] && deny "no chaining, redirects or substitution"
+    [[ "$bare" =~ ^ls(\ [A-Za-z0-9._/~-]+)*$ ]] && { for a in ${bare#ls}; do [[ "$a" == -* ]] || inside "$(resolve "$a")" || deny "ls only inside the workspace"; done; gate Bash; allow; }
+    l="$(tr '[:upper:]' '[:lower:]' <<<"$cmd")"
+    [[ "$l" =~ (^|[[:space:]])--web([[:space:]=]|$) ]] && deny "no --web"
+    if [[ "$bare" =~ ^gh\ (issue|pr)\ (view|list|diff|checks)(\ .*)?$ || "$bare" =~ ^gh\ search\ (issues|prs|code|commits)(\ .*)?$ || "$bare" =~ ^gh\ repo\ view(\ .*)?$ ]]; then
+      gate Bash; allow
+    fi
+    if [[ "$bare" =~ ^gh\ api\  ]]; then
+      [[ "$l" =~ mutation ]] && deny "gh api: no GraphQL mutation"
+      [[ "$l" =~ (-x|--method)[[:space:]=]*(post|patch|put|delete) ]] && deny "gh api: GET only"
+      [[ "$l" =~ [[:space:]](--input)([[:space:]=]|$) ]] && deny "gh api: no --input"
+      if [[ ! "$l" =~ ^gh\ api\ graphql ]] && [[ "$l" =~ [[:space:]](-f|--field|--raw-field)([[:space:]=]|$) ]] && [[ ! "$l" =~ (-x|--method)[[:space:]=]*get ]]; then deny "gh api: fields send a write unless -X GET"; fi
+      gate Bash; allow
+    fi
+    deny "only GitHub reads (gh issue|pr view|list|diff|checks, gh search, gh repo view, gh api GET) and ls run here" ;;
+  *) deny "only reads and GitHub reads run here (not $tool)" ;;
+esac

@@ -79,14 +79,18 @@ fi
 fi
 
 echo "3. Files"
-mkdir -p "$COS"/{bin,claude/briefs,claude/lake,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-killreview,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+mkdir -p "$COS"/{bin,claude/briefs,claude/lake,claude/codex,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
 install -m 755 "$KIT/claude/gate.sh" "$COS/claude/"
 bash -n "$KIT/claude/cursor-lake-hook" && install -m 755 "$KIT/claude/cursor-lake-hook" "$COS/claude/" || fail "claude/cursor-lake-hook has a syntax error; the installed hook was left as it was"
 install -m 644 "$KIT/claude/lake/cli.json" "$COS/claude/lake/"
+bash -n "$KIT/claude/cursor-codex-hook" && install -m 755 "$KIT/claude/cursor-codex-hook" "$COS/claude/" || fail "claude/cursor-codex-hook has a syntax error; the installed hook was left as it was"
+install -m 644 "$KIT/claude/codex/cli.json" "$COS/claude/codex/"
+# Retired (Nov 15): the one-shot Codex kill review, replaced by cos-diligence. Archived, never deleted.
+[[ -e "$COS/bin/cos-killreview" ]] && { mkdir -p "$COS/archive/bin-retired"; mv -f "$COS/bin/cos-killreview" "$COS/archive/bin-retired/"; }
 # cos-launch: the one program launchd starts for every job, so one Full Disk Access grant covers them all (see
 # claude/cos-launch.c). Rebuilt only when its source changes, because macOS ties the grant to the build.
 if [[ ! -x "$COS/bin/cos-launch" ]] || ! cmp -s "$KIT/claude/cos-launch.c" "$COS/claude/cos-launch.c"; then
@@ -134,10 +138,10 @@ else fail "~/.claude/CLAUDE.md exists and doesn't load cassidy-mode. Add this li
 
 echo "5. Scripts parse"
 [[ -z "$(ls "$COS"/bin/*.bak* 2>/dev/null)" ]] && pass "no backup copies in ~/cos/bin (archived in ~/cos/archive/bin-bak)" || fail "backup copies still in ~/cos/bin"
-for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/claude/cursor-lake-hook" "$COS/builds-template/verify"; do
+for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/claude/cursor-lake-hook" "$COS/claude/cursor-codex-hook" "$COS/builds-template/verify"; do
   [[ -d "$s" || "$(basename "$s")" == cos-launch ]] && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
   else bash -n "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"; fi; done
-for j in "$COS"/claude/*.json "$COS/claude/lake/cli.json" "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
+for j in "$COS"/claude/*.json "$COS/claude/lake/cli.json" "$COS/claude/codex/cli.json" "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
 for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
 
 echo "6. The gate (job mode = blocked, pair mode = asks, hard walls = always blocked)"
@@ -278,30 +282,110 @@ done
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
 HOME="$T" "$COS/bin/cos-atlas" find x >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "cos-atlas refuses when Agent Atlas isn't there" || fail "cos-atlas ran without Agent Atlas"
 "$COS/bin/cos-atlas" sql 'x' >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-atlas takes only find|show|search|messages|recent" || fail "cos-atlas took another command"
-# BUILDER diligence (Nov 15): the opportunity brief demands a premise check, and Codex tries to kill each ranked idea.
+# BUILDER two-model diligence (Nov 15, decisions 1b 2c 3a): Claude's pass, Codex's blind pass, a comparison, one round of
+# cross-examination each way, a verdict by script, a $30 cap. Codex and Claude are stubs here; the walls are tested live
+# in the README's proof and by the hook tests below.
 grep -q "PASS 2: DILIGENCE" "$COS/claude/briefs/opportunity.md" && grep -q "Only CHECKED candidates can be ranked" "$COS/claude/briefs/opportunity.md" && ! grep -q "~/meetings" "$COS/claude/briefs/opportunity.md" \
-  && pass "opportunity brief: premise, owner overlap and user checked before ranking" || fail "opportunity brief lacks the diligence pass"
-grep -q "build-opportunity pass" "$COS/bin/cos-run" && grep -q "cos-killreview" "$COS/bin/cos-run" && pass "opportunity passes get the checker's premise rule and a Codex kill review" || fail "kill review not wired"
-KR="$(mktemp -d)"; mkdir -p "$KR/home/cos/repos" "$KR/bin" "$KR/o1" "$KR/o2"
-printf '#!/bin/bash\necho %s\n' "'{\"result\":\"{\\\"candidates\\\":[{\\\"name\\\":\\\"harness\\\",\\\"verdict\\\":\\\"survives\\\",\\\"reason\\\":\\\"premise checked\\\"},{\\\"name\\\":\\\"confidence flag\\\",\\\"verdict\\\":\\\"killed\\\",\\\"reason\\\":\\\"no IQA score exists\\\"}]}\"}'" > "$KR/bin/agent"; chmod +x "$KR/bin/agent"
-for o in o1 o2; do echo '{"receipt":{"summary":"ranked 2"}}' > "$KR/$o/receipt.json"; done
-echo "### harness CHECKED" > "$KR/o1/opportunities.md"; echo "select count(*) from mart.canon_term" > "$KR/o2/opportunities.md"
-HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o1" >/dev/null 2>&1
-jq -e '.kill_review.status=="done" and (.receipt.summary|test("1 survive, 1 killed")) and (.receipt.summary|test("no IQA score"))' "$KR/o1/receipt.json" >/dev/null \
-  && pass "kill review: verdicts merged; the summary leads with survivors and why the rest died" || fail "kill review merge ($(jq -c .kill_review "$KR/o1/receipt.json" 2>/dev/null))"
-: > "$KR/bin/agent.called"; printf '#!/bin/bash\ntouch %s\n' "$KR/bin/agent.ran" > "$KR/bin/agent"; chmod +x "$KR/bin/agent"
-HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o2" >/dev/null 2>&1
-[[ ! -f "$KR/bin/agent.ran" ]] && jq -e '.kill_review.status=="skipped" and (.kill_review.why|test("canon"))' "$KR/o2/receipt.json" >/dev/null \
-  && pass "kill review: a file naming canon tables never goes to Codex" || fail "kill review sent canon text to Codex"
-printf '#!/bin/bash\necho %s\n' "'{\"result\":\"Checking first. {\\\"candidates\\\":[{\\\"name\\\":\\\"x\\\",\\\"verdict\\\":\\\"killed\\\",\\\"reason\\\":\\\"overlap\\\"}]}\"}'" > "$KR/bin/agent"; chmod +x "$KR/bin/agent"
-mkdir -p "$KR/o3" "$KR/o4"; for o in o3 o4; do echo '{"receipt":{"summary":"s"}}' > "$KR/$o/receipt.json"; done
-echo "### x CHECKED" > "$KR/o3/opportunities.md"; printf '### y NOT CHECKED YET\n### z DEAD\n' > "$KR/o4/opportunities.md"
-HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o3" >/dev/null 2>&1
-jq -e '.kill_review.status=="done" and (.receipt.summary|test("1 killed"))' "$KR/o3/receipt.json" >/dev/null && pass "kill review: reads verdicts even when Codex adds a sentence first" || fail "kill review lost verdicts after prose"
-rm -f "$KR/bin/agent.ran"; printf '#!/bin/bash\ntouch %s\n' "$KR/bin/agent.ran" > "$KR/bin/agent"
-HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o4" >/dev/null 2>&1
-[[ ! -f "$KR/bin/agent.ran" ]] && jq -e '.receipt.summary|test("nothing to review")' "$KR/o4/receipt.json" >/dev/null && pass "kill review: no CHECKED idea means nothing to review, and Codex isn't called" || fail "kill review with nothing checked"
-rm -rf "$KR"
+  && grep -q "slack-digest.md" "$COS/claude/briefs/opportunity.md" && grep -q '"kind": "code|pr|issue|board|receipt|slack|doc|transcript"' "$COS/claude/briefs/opportunity.md" \
+  && pass "opportunity brief: premise, owner overlap and user checked; writes slack-digest.md and diligence.json with call evidence tagged" || fail "opportunity brief lacks the diligence pass, the digest or diligence.json"
+grep -q "build-opportunity pass" "$COS/bin/cos-run" && grep -q '"$COS/bin/cos-diligence" "$OUT"' "$COS/bin/cos-run" && ! grep -q "cos-killreview" "$COS/bin/cos-run" && [[ ! -e "$COS/bin/cos-killreview" ]] \
+  && pass "opportunity passes get the checker's premise rule and two-model diligence (the one-shot kill review is retired)" || fail "two-model diligence not wired"
+grep -q "diligence.json is missing" "$COS/bin/cos-run" && pass "checker: diligence.json must match opportunities.md; slack-digest.md canon-free with links" || fail "checker lacks the diligence.json and digest rules"
+DG="$(mktemp -d)"; DG="$(cd "$DG" && pwd -P)"; H="$DG/home"; mkdir -p "$H/cos/claude/codex" "$H/cos/outbox" "$H/cos/data-org-main/drd" "$DG/bin" "$DG/stub"
+cp "$COS/claude/codex/cli.json" "$H/cos/claude/codex/"; cp "$COS/claude/gate.sh" "$H/cos/claude/"
+# Stubs: each answers by the step marker in its prompt, from $DG/stub/<step>.txt (Codex: prose around the JSON) or
+# .json (Claude: structured output), and keeps the prompt it got so the test can read what crossed.
+cat > "$DG/bin/agent" <<'S'
+#!/bin/bash
+p="${@: -1}"; m="$(grep -oE '\[cos-diligence:[a-z-]+\]' <<<"$p" | head -1 | tr -d '[]' | cut -d: -f2)"
+printf '%s' "$p" > "$STUB/$m.prompt"; touch "$STUB/agent.ran"
+jq -n --rawfile r "$STUB/$m.txt" '{result: $r, session_id: "s1", usage: {inputTokens: 100000, outputTokens: 10000, cacheReadTokens: 0}}'
+S
+cat > "$DG/bin/claude" <<'S'
+#!/bin/bash
+m="$(grep -oE '\[cos-diligence:[a-z-]+\]' <<<"$2" | head -1 | tr -d '[]' | cut -d: -f2)"
+printf '%s' "$2" > "$STUB/$m.prompt"
+jq -n --slurpfile o "$STUB/$m.json" '{structured_output: $o[0], total_cost_usd: 0.5}'
+S
+chmod +x "$DG/bin/agent" "$DG/bin/claude"
+# Five candidates: A both CHECKED; B both DEAD; C Claude CHECKED (one line from a call), Codex DEAD; D Codex CHECKED,
+# Claude OFFER; E no card.
+mkjob() { mkdir -p "$H/cos/outbox/$1"; echo "{\"checker\":{\"verdict\":\"${3:-pass}\"},\"cost_usd\":${2:-2},\"receipt\":{\"summary\":\"pass 1\"}}" > "$H/cos/outbox/$1/receipt.json"
+  cat > "$H/cos/outbox/$1/diligence.json" <<'J'
+{"window":"2026-11-07 to 2026-11-14","candidates":[
+ {"id":"651","card":"wisecodeai/data-org#651","idea":"flag low-confidence results","status":"CHECKED","rank":1,"score_line":"A-claude","reason":"premise in code",
+  "evidence":[{"field":"premise","claim":"score emitted","cite":"src/x.py:3","kind":"code"}]},
+ {"id":"374","card":"wisecodeai/data-org#374","idea":"turn on triage","status":"DEAD","reason":"already live"},
+ {"id":"778","card":"wisecodeai/data-org#778","idea":"golden set harness","status":"CHECKED","rank":2,"score_line":"C-claude","reason":"owner asked",
+  "evidence":[{"field":"owner","claim":"David says Matt, you're on that","cite":"Team check-in.txt 12:13:40","kind":"transcript"},
+              {"field":"premise","claim":"golden v0 exists","cite":"docs/g.md:282","kind":"doc"}]},
+ {"id":"650","card":"wisecodeai/data-org#650","idea":"pantry publish","status":"OFFER","reason":"Nicholas planned it"},
+ {"id":"kit-x","card":null,"idea":"a kit idea","status":"NOT CHECKED YET","reason":"needs a card first"}]}
+J
+  printf -- '- #data-team 2026-11-12: ask for a golden-set runner (https://wisecode.slack.com/archives/C0BMLSDDNDT/p1)\n' > "$H/cos/outbox/$1/slack-digest.md"; }
+printf 'Here is my assessment of each candidate.\n```json\n{"candidates":[{"id":"651","status":"CHECKED","rank":2,"score_line":"A-codex","reason":"ok","evidence":[]},{"id":"374","status":"DEAD","reason":"live"},{"id":"778","status":"DEAD","reason":"no golden set"},{"id":"650","status":"CHECKED","rank":1,"score_line":"D-codex","reason":"publish job exists"}]}\n```\nDone.' > "$DG/stub/codex-pass.txt"
+printf 'Checked.\n{"attacks":[{"id":"651","verdict":"stands","reason":"line holds","cite":"src/x.py:3"},{"id":"778","verdict":"refuted","proposed_status":"DEAD","reason":"gating checklist says not released","cite":"docs/g.md:282"}]}' > "$DG/stub/codex-attack.txt"
+printf '{"responses":[{"id":"650","response":"concede","reason":"PR 407 is his","cite":"food-enrichment#407"}]}' > "$DG/stub/codex-respond.txt"
+echo '{"attacks":[{"id":"651","verdict":"stands","reason":"agree","cite":"src/x.py:3"},{"id":"650","verdict":"refuted","proposed_status":"OFFER","reason":"owner has PR 407 open","cite":"food-enrichment#407"}]}' > "$DG/stub/claude-attack.json"
+echo '{"responses":[{"id":"778","response":"defend","reason":"v0 is the set the harness runs","cite":"docs/g.md:280"}]}' > "$DG/stub/claude-respond.json"
+dil() { HOME="$H" STUB="$DG/stub" PATH="$DG/bin:$PATH" "$@" "$COS/bin/cos-diligence" "$H/cos/outbox/$J" >/dev/null 2>&1; }
+J=opp1; mkjob opp1; dil env
+V="$H/cos/outbox/opp1/diligence-verdict.json"; C="$H/cos/outbox/opp1/compare.json"
+jq -e '[.rows[] | {(.id): .category}] | add | .["651"]=="agree CHECKED" and .["374"]=="agree DEAD" and .["778"]=="disagree" and .["650"]=="disagree" and .["kit-x"]=="agree out"' "$C" >/dev/null 2>&1 \
+  && pass "diligence compare: agree CHECKED, agree DEAD, disagree, card by card" || fail "diligence compare ($(jq -c '.rows' "$C" 2>/dev/null))"
+jq -e '[.records[] | {(.id): .outcome}] | add | .["651"]=="survives" and .["778"]=="contested" and .["650"]=="out" and .["374"]=="out" and .["kit-x"]=="out"' "$V" >/dev/null 2>&1 \
+  && pass "diligence verdict: both CHECKED and unrefuted survives; a defended refutation is contested; a conceded one is out" || fail "diligence verdict ($(jq -c '[.records[]|{id,outcome}]' "$V" 2>/dev/null))"
+jq -e '.consensus_order == ["651","778"] and (.records[] | select(.id=="778") | .disputes[0].attacker=="codex" and (.disputes[0].defense|test("v0 is the set")))' "$V" >/dev/null 2>&1 \
+  && grep -q '\[CONTESTED\]' "$H/cos/outbox/opp1/builder.md" && grep -q "Claude's score: A-claude" "$H/cos/outbox/opp1/builder.md" && grep -q "Codex's score: A-codex" "$H/cos/outbox/opp1/builder.md" \
+  && jq -e '(.receipt.summary|startswith("Two-model diligence")) and (.diligence.outcomes["651"]=="survives") and (.receipt.summary|test("pass 1"))' "$H/cos/outbox/opp1/receipt.json" >/dev/null \
+  && pass "diligence receipt: labeled survivors and contested ideas, both score lines, consensus order as advice, merged ahead of pass 1" || fail "diligence receipt for BUILDER"
+jq -e '.records[] | select(.id=="651") | .cross_exam | length == 2' "$V" >/dev/null 2>&1 && jq -e '.steps["codex-pass"].status=="ran"' "$V" >/dev/null 2>&1 \
+  && pass "diligence: reads Codex replies with prose and a code fence around the JSON" || fail "diligence lost a Codex reply wrapped in prose"
+! grep -q "you're on that" "$DG/stub/codex-attack.prompt" && grep -q "held on the Mac" "$DG/stub/codex-attack.prompt" && grep -q "docs/g.md:282" "$DG/stub/codex-attack.prompt" \
+  && ! grep -qE "CHECKED|DEAD|OFFER|premise in code" <(grep -A40 '^Candidates:' "$DG/stub/codex-pass.prompt" | sed '/^For each candidate/,$d') \
+  && pass "diligence: Codex's pass is blind (card and idea only), and call evidence is held before Codex sees Claude's case" || fail "diligence sent Codex a transcript line or Claude's statuses"
+[[ -f "$H/cos/outbox/opp1/codex/ws/slack-digest.md" && -f "$H/cos/outbox/opp1/codex/ws/.cursor/cli.json" && -f "$H/cos/outbox/opp1/codex/ws/.cursor/hooks.json" ]] \
+  && pass "diligence: Codex's workspace has the screened digest, the permission file and the hook" || fail "diligence workspace incomplete"
+# Canon hold: a digest that names a canon table stays on the Mac, and the receipt says so.
+J=opp2; mkjob opp2; echo "- #data-team: counts from mart.canon_term (https://x)" > "$H/cos/outbox/opp2/slack-digest.md"; dil env
+[[ ! -e "$H/cos/outbox/opp2/codex/ws/slack-digest.md" ]] && jq -e '(.diligence.held | map(.what) | index("slack-digest.md")) and (.receipt.summary|test("Held on the Mac: slack-digest.md"))' "$H/cos/outbox/opp2/receipt.json" >/dev/null 2>&1 \
+  && pass "diligence: canon tripwire holds a file on the Mac and says so" || fail "diligence canon hold"
+# Cap: $29 already spent of $30, so Codex's pass ($4 reserve) doesn't start, nor anything after; it says which.
+J=opp3; mkjob opp3 29; rm -f "$DG/stub/agent.ran"; dil env
+[[ ! -f "$DG/stub/agent.ran" ]] && jq -e '.diligence.steps["codex-pass"].status=="not run" and .diligence.steps["codex-attack"].status=="not run" and (.receipt.summary|test("Didn.t run: codex-pass")) and .diligence.outcomes["651"]=="out"' "$H/cos/outbox/opp3/receipt.json" >/dev/null 2>&1 \
+  && pass "diligence: stops cleanly at the \$30 cap and names the steps that didn't run" || fail "diligence cap ($(jq -c '.diligence.steps' "$H/cos/outbox/opp3/receipt.json" 2>/dev/null))"
+J=opp4; mkjob opp4 2 fail; rm -f "$DG/stub/agent.ran"; dil env
+[[ ! -f "$DG/stub/agent.ran" ]] && jq -e '.diligence.status=="skipped" and (.receipt.summary|test("checker blocked"))' "$H/cos/outbox/opp4/receipt.json" >/dev/null 2>&1 \
+  && pass "diligence: a pass the checker blocked goes no further, and says so" || fail "diligence ran on a blocked pass"
+# The Codex walls: the hook (second wall after claude/codex/cli.json). Proved live on 2026-11-15 too (HANDOFF lessons).
+CX="$COS/claude/codex/cli.json"
+jq -e '(.permissions.deny | index("Write(**)") and index("Shell(curl)") and index("Shell(git)") and index("Read(~/cos/zoom/**)") and index("Read(~/meetings/**)") and index("Read(~/.claude/**)") and index("Mcp(*:*)") and index("WebFetch(*)"))
+       and (.permissions.allow | all(test("^(Read\\(|Shell\\((gh|ls)\\))")))' "$CX" >/dev/null 2>&1 \
+  && pass "codex cli.json: denies writes, network tools, git, transcripts, ~/meetings, chats; allows reads, gh, ls" || fail "codex cli.json is missing a deny"
+WSD="$H/cos/outbox/opp1/codex/ws"; echo "plain" > "$H/cos/data-org-main/README.md"; echo "from mart.canon_term" > "$H/cos/data-org-main/drd/c.md"; mkdir -p "$H/cos/zoom"; echo t > "$H/cos/zoom/call.md"
+ch() { local got; got="$(jq -nc --arg t "$1" --arg c "$2" --arg p "${3:-}" --arg w "$WSD" '{tool_name:$t, tool_input:{command:$c, file_path:$p}, workspace_roots:[$w]}' | HOME="$H" COS_LEDGER_OFF=1 "$COS/claude/cursor-codex-hook" | jq -r .permission)"
+  [[ "$got" == "$4" ]] && pass "codex hook · $4 · $1 ${2:-$3}" || fail "codex hook · expected $4, got $got · $1 ${2:-$3}"; }
+ch Read "" "$WSD/slack-digest.md" allow
+ch Read "" "$H/cos/data-org-main/README.md" allow
+ch Read "" "$H/cos/data-org-main/drd/c.md" deny
+ch Read "" "$H/cos/zoom/call.md" deny
+ch Read "" "../../diligence.json" deny
+ch Grep "" "$H/meetings" deny
+ch Write "" "$WSD/x.md" deny
+ch Shell 'gh issue view 651 --repo wisecodeai/data-org --json title,body' "" allow
+ch Shell 'gh pr diff 37 --repo wisecodeai/nutrient-estimator' "" allow
+ch Shell 'gh api repos/wisecodeai/data-org/issues/651/comments' "" allow
+ch Shell 'gh issue comment 651 --repo wisecodeai/data-org --body x' "" deny
+ch Shell 'gh api -X POST repos/wisecodeai/data-org/issues -f title=x' "" deny
+ch Shell "gh api graphql -f query='mutation{x}'" "" deny
+ch Shell 'gh issue view 651 --web' "" deny
+ch Shell 'gh issue view 651 > out.txt' "" deny
+ch Shell 'curl -s https://example.com' "" deny
+ch Shell 'cat ~/cos/zoom/call.md' "" deny
+ch Shell 'ls ~/meetings' "" deny
+got="$(jq -nc --arg w "$WSD" '{tool_name:"Read", tool_input:{file_path:"x"}, workspace_roots:[$w]}' | HOME="$DG/nogate" "$COS/claude/cursor-codex-hook" | jq -r .permission)"
+[[ "$got" == deny ]] && pass "codex hook fails closed when the gate is missing" || fail "codex hook ran without the gate"
+rm -rf "$DG"
 grep -q '"Bash(cos-atlas \*)"' "$COS/claude/settings.investigate.json" && grep -q 'cos-atlas find' "$COS/claude/briefs/atlas.md" && pass "atlas jobs use cos-atlas" || fail "atlas jobs can't run cos-atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"
 HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"

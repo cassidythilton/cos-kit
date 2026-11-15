@@ -1,0 +1,727 @@
+#!/usr/bin/env -S python3 -I
+"""cos-diligence: BUILDER's two-model diligence (plan 2026-11-14, last section; Cassidy's decisions 1b, 2c, 3a, Nov 15).
+
+  cos-diligence <job folder>            run every step after Claude's opportunity pass (cos-run calls this)
+  cos-diligence compare <job folder>    redo the comparison from the saved passes (no model)
+  cos-diligence verdict <job folder>    redo the verdict and BUILDER's receipt from the saved files (no model)
+
+Steps, in order. Each runs only if the $30 cap (COS_DILIGENCE_CAP) still covers it; a step that doesn't fit is
+listed as not run, and so is every step after it.
+  1. Claude's pass (done before this, in cos-run's investigate lane): opportunities.md, diligence.json, slack-digest.md.
+  2. Codex's blind pass over the same candidates (card and one-line idea only, never Claude's statuses or evidence).
+     Codex works in <job>/codex/ws, walled by claude/codex/cli.json and claude/cursor-codex-hook: reads only that
+     workspace and ~/cos/data-org-main, GitHub reads only, no writes, no other shell, no web. Before anything is
+     copied in, the canon tripwire checks it; a hit holds that file on the Mac and the receipt says so. Transcripts
+     never go to Codex: evidence Claude cites from a call is replaced by "held on the Mac" before Codex sees it.
+  3. Comparison (this script): card by card, agree CHECKED, agree out (agree DEAD when both say DEAD), or disagree.
+  4. Cross-examination, one round each: Claude attacks Codex's CHECKED ideas and Codex attacks Claude's; then each
+     side may concede or defend once, with citations.
+  5. Verdict (this script): survives only if both end CHECKED and nothing stands refuted. A live dispute is contested
+     (Cassidy sees both arguments). Everything else is out, with its reason.
+  6. BUILDER's receipt: builder.md and receipt.json's "diligence" block. Survivors and contested ideas, labeled, with
+     each model's score line and the models' consensus order as advice. BUILDER ranks loosely (2c) and can't promote
+     an idea that's out.
+Never posts, never writes outside the job folder, never touches a card.
+"""
+import json, os, re, shutil, subprocess, sys, time
+from datetime import datetime, timedelta
+
+HOME = os.path.expanduser("~")
+COS = os.path.join(HOME, "cos")
+CAP = float(os.environ.get("COS_DILIGENCE_CAP", "30"))
+CODEX_MODEL = "gpt-5.3-codex-high"
+# Codex runs through the Cursor CLI, which reports tokens, not dollars. Cost is estimated at OpenAI's list price for
+# the GPT-5 codex models ($ per million tokens). Cursor bills its own plan; this is for the cap, and labeled an estimate.
+PRICE = {"in": 1.75, "cache": 0.175, "out": 14.0}
+CODEX_RESERVE = {"codex-pass": 4.0, "codex-attack": 2.0, "codex-respond": 1.5}  # needed before a Codex step starts
+CLAUDE_BUDGET = {"claude-attack": 3.0, "claude-respond": 1.5}                   # --max-budget-usd for Claude steps
+CODEX_TIMEOUT = int(os.environ.get("COS_CODEX_TIMEOUT", "1800"))
+STEP_ORDER = ["codex-pass", "claude-attack", "codex-attack", "claude-respond", "codex-respond"]
+STATUSES = ["CHECKED", "OFFER", "DEAD", "NOT CHECKED YET"]
+CANON_RE = re.compile(r"canon_ingredient|canon_term|canon_assets\.|food_expression_ingredients|mirror\.canon_|history\.canon_|mart\.canon_", re.I)
+# Anything that points at a call: the transcript folders, the word, a .txt/.vtt call file, or a call timestamp.
+TRANSCRIPT_RE = re.compile(r"cos/zoom|/meetings/|transcript|\.vtt\b|check-in\.txt|\b\d{1,2}:\d{2}:\d{2}\b|\[\d{1,2}:\d{2}", re.I)
+HELD_EVIDENCE = "[evidence from a call transcript, held on the Mac]"
+
+
+# ------------------------------------------------------------------ small helpers
+def load(path, default=None):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def save(path, obj):
+    with open(path + ".tmp", "w") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(path + ".tmp", path)
+
+
+def norm_status(s):
+    s = (s or "").strip().upper()
+    return s if s in STATUSES else "NOT CHECKED YET"
+
+
+def extract_json(text, key):
+    """The last {"<key>": ...} object in a reply. Codex sometimes opens with a sentence, or wraps it in a fence."""
+    if isinstance(text, dict):
+        return text if key in text else None
+    text = text or ""
+    for m in reversed(list(re.finditer(r'\{\s*"' + re.escape(key) + r'"', text))):
+        try:
+            obj = json.JSONDecoder().raw_decode(text[m.start():])[0]
+            if isinstance(obj, dict) and isinstance(obj.get(key), list):
+                return obj
+        except Exception:
+            continue
+    return None
+
+
+def codex_safe(s):
+    """Text bound for Codex: canon text is held, call evidence is held. Returns (text, held_reason or None)."""
+    s = "" if s is None else str(s)
+    if CANON_RE.search(s):
+        return "[held on the Mac: names a canon table]", "canon"
+    if TRANSCRIPT_RE.search(s):
+        return HELD_EVIDENCE, "transcript"
+    return s, None
+
+
+# ------------------------------------------------------------------ the run's ledger and the cap
+class Run:
+    def __init__(self, out):
+        self.out = out
+        self.state_path = os.path.join(out, "diligence-steps.json")
+        st = load(self.state_path, {}) or {}
+        self.steps = st.get("steps", {})
+        self.claude_pass = st.get("claude_pass") or self.claude_pass_cost()
+        self.held = st.get("held", [])
+        self.capped = False
+
+    def claude_pass_cost(self):
+        r = load(os.path.join(self.out, "receipt.json"), {}) or {}
+        c = float(r.get("cost_usd") or 0)          # the pass, plus its revision round when one ran
+        for f in ("checker.json", "checker.round1.json"):
+            c += float((load(os.path.join(self.out, f), {}) or {}).get("total_cost_usd") or 0)
+        return round(c, 4)
+
+    def spent(self):
+        return round(self.claude_pass + sum(float(s.get("cost_usd") or 0) for s in self.steps.values()), 4)
+
+    def remaining(self):
+        return round(CAP - self.spent(), 4)
+
+    def record(self, name, **kw):
+        self.steps[name] = {**self.steps.get(name, {}), **kw}
+        self.persist()
+
+    def hold(self, what, why):
+        if not any(h["what"] == what for h in self.held):
+            self.held.append({"what": what, "why": why})
+        self.persist()
+
+    def persist(self):
+        save(self.state_path, {"cap_usd": CAP, "claude_pass": self.claude_pass, "steps": self.steps, "held": self.held})
+
+
+def codex_cost(usage):
+    u = usage or {}
+    return round((u.get("inputTokens", 0) * PRICE["in"] + u.get("cacheReadTokens", 0) * PRICE["cache"]
+                  + u.get("outputTokens", 0) * PRICE["out"]) / 1e6, 4)
+
+
+# ------------------------------------------------------------------ the two engines
+def codex_ws(out):
+    ws = os.path.join(out, "codex", "ws")
+    os.makedirs(os.path.join(ws, ".cursor"), exist_ok=True)
+    shutil.copy(os.path.join(COS, "claude", "codex", "cli.json"), os.path.join(ws, ".cursor", "cli.json"))
+    with open(os.path.join(ws, ".cursor", "hooks.json"), "w") as f:
+        json.dump({"version": 1, "hooks": {"preToolUse": [{"command": os.path.join(COS, "claude", "cursor-codex-hook")}]}}, f)
+    return ws
+
+
+def start_codex(run, name, prompt):
+    ws = codex_ws(run.out)
+    os.makedirs(os.path.join(run.out, "codex"), exist_ok=True)
+    with open(os.path.join(run.out, "codex", name + ".prompt.md"), "w") as f:
+        f.write(prompt)   # exactly what went to Codex, for audit
+    cmd = ["agent", "-p", "--trust", "--model", CODEX_MODEL, "--output-format", "json"]
+    if os.path.isdir(os.path.join(COS, "data-org-main")):
+        cmd += ["--add-dir", os.path.join(COS, "data-org-main")]
+    cmd.append(prompt)
+    return subprocess.Popen(cmd, cwd=ws, stdout=open(os.path.join(run.out, "codex", name + ".raw.json"), "w"),
+                            stderr=open(os.path.join(run.out, "codex", name + ".err"), "w"))
+
+
+def finish_codex(run, name, proc, key):
+    try:
+        proc.wait(timeout=CODEX_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        run.record(name, status="failed", why=f"timed out after {CODEX_TIMEOUT}s", cost_usd=CODEX_RESERVE[name], cost_note="reserve counted: no usage reported")
+        return None
+    raw = load(os.path.join(run.out, "codex", name + ".raw.json"), {}) or {}
+    usage = raw.get("usage")
+    cost = codex_cost(usage) if usage else CODEX_RESERVE[name]
+    obj = extract_json(raw.get("result", ""), key)
+    run.record(name, status="ran" if obj else "failed", engine="codex", model=CODEX_MODEL, cost_usd=cost,
+               cost_note="estimate from tokens at list price" if usage else "reserve counted: no usage reported",
+               chat=raw.get("session_id", ""), why="" if obj else "Codex returned no usable JSON (see codex/" + name + ".err)")
+    if obj:
+        save(os.path.join(run.out, "codex", name + ".json"), obj)
+    return obj
+
+
+def start_claude(run, name, prompt, schema, budget):
+    os.makedirs(os.path.join(run.out, "claude"), exist_ok=True)
+    adds = [run.out, os.path.join(COS, "handbook"), os.path.join(HOME, "meetings")]
+    for d in ("zoom", "data-org-main", "notebook-main", "outbox", "state"):
+        if os.path.isdir(os.path.join(COS, d)):
+            adds.append(os.path.join(COS, d))
+    cmd = ["claude", "-p", prompt, "--settings", os.path.join(COS, "claude", "settings.investigate.json"),
+           "--permission-mode", "dontAsk", "--permission-prompts", "none", "--add-dir", *adds,
+           "--model", "opus", "--effort", "medium", "--max-budget-usd", f"{budget:.2f}", "--no-session-persistence",
+           "--output-format", "json", "--json-schema", json.dumps(schema)]
+    wd = os.path.join(COS, "data-org-main") if os.path.isdir(os.path.join(COS, "data-org-main")) else run.out
+    return subprocess.Popen(cmd, cwd=wd, stdout=open(os.path.join(run.out, "claude", name + ".json"), "w"),
+                            stderr=open(os.path.join(run.out, "claude", name + ".err"), "w"))
+
+
+def finish_claude(run, name, proc, key, budget):
+    try:
+        proc.wait(timeout=CODEX_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        run.record(name, status="failed", why="timed out", cost_usd=budget, cost_note="budget counted")
+        return None
+    raw = load(os.path.join(run.out, "claude", name + ".json"), {}) or {}
+    obj = raw.get("structured_output")
+    if not isinstance(obj, dict):
+        obj = extract_json(raw.get("result", ""), key)
+    ok = isinstance(obj, dict) and isinstance(obj.get(key), list)
+    cost = raw.get("total_cost_usd")
+    run.record(name, status="ran" if ok else "failed", engine="claude", model="opus",
+               cost_usd=float(cost) if cost is not None else budget,
+               cost_note="" if cost is not None else "budget counted: no cost reported",
+               why="" if ok else "Claude returned no usable JSON (see claude/" + name + ".err)")
+    return obj if ok else None
+
+
+def fits(run, name):
+    """Can this step start under the cap? Steps after one that didn't fit don't run either."""
+    need = CODEX_RESERVE.get(name) or 1.0   # a Claude step needs at least $1 to be worth starting
+    if run.capped:
+        run.record(name, status="not run", why=f"the ${CAP:.0f} cap stopped an earlier step", cost_usd=0)
+        return False
+    if run.remaining() < need:
+        run.capped = True
+        run.record(name, status="not run", why=f"the ${CAP:.0f} cap: ${run.spent():.2f} spent, ${run.remaining():.2f} left, this step needs ${need:.2f}", cost_usd=0)
+        return False
+    return True
+
+
+# ------------------------------------------------------------------ the passes
+DILIGENCE_RULES = """For each candidate, read the real thing, not a summary of it:
+- Premise: the one thing the build assumes exists or is true (a field, a score, a table, an API, a rule). Open the actual
+  code, PR or doc that would hold it and quote the line. If it isn't there, the candidate is DEAD. "The card says so" is
+  not a premise check.
+- Owner and overlap: the card's owner, their open milestones, open PRs, and any DRD or DADR on it. If the build would do
+  work they already planned, it's OFFER (offer help to the owner), not a build.
+- User: the named person who would use the result, and what they would do differently with it.
+- Data: what it reads, whether read-only is enough.
+- Smallest useful version: one slice of a week or less, and what it waits on.
+Status: CHECKED (every line backed by something you opened), DEAD (premise false, or excluded), OFFER (overlaps the
+owner's planned work), NOT CHECKED YET (something you needed couldn't be read; say what).
+Every claim cites a file:line, a PR or issue number with what you read there, or a slack-digest.md line."""
+
+PASS_SHAPE = """{"candidates":[{"id":"<the id given>","status":"CHECKED|OFFER|DEAD|NOT CHECKED YET","reason":"one sentence",
+ "score_line":"the number it moves · whose problem · the data it needs · blast radius · size · reversibility (CHECKED only)",
+ "rank":1,
+ "evidence":[{"field":"premise|owner|user|data|smallest","claim":"what you found","cite":"file:line, PR/issue # or slack-digest.md:N"}]}]}
+rank: your order among your CHECKED candidates (1 = build first); null for the others."""
+
+
+def claude_candidates(out):
+    d = load(os.path.join(out, "diligence.json"), {}) or {}
+    cands = []
+    for c in d.get("candidates", []) or []:
+        if not isinstance(c, dict) or not c.get("id"):
+            continue
+        c = dict(c)
+        c["id"] = str(c["id"])
+        c["status"] = norm_status(c.get("status"))
+        cands.append(c)
+    return d, cands
+
+
+def screen_into_ws(run, ws, window):
+    """Copy what Codex may read into its workspace, each file through the canon tripwire. Returns a list for the prompt."""
+    have = []
+    sd = os.path.join(run.out, "slack-digest.md")
+    if os.path.isfile(sd):
+        t = open(sd, errors="replace").read()
+        if CANON_RE.search(t):
+            run.hold("slack-digest.md", "names a canon table")
+        else:
+            lines = t.splitlines()
+            kept = [l if not TRANSCRIPT_RE.search(l) else "(line held on the Mac: it pointed at a call transcript)" for l in lines]
+            if kept != lines:
+                run.hold("slack-digest.md lines that pointed at a call", "transcripts never go to Codex")
+            open(os.path.join(ws, "slack-digest.md"), "w").write("\n".join(kept) + "\n")
+            have.append("slack-digest.md: Claude's summaries of this week's relevant Slack threads, with links (cite as slack-digest.md:N)")
+    else:
+        run.hold("slack-digest.md", "Claude's pass didn't write one, so Codex has no Slack")
+    # Receipts (decision 1b): the board and roadmap as STEWARD saw them this week. receipt.json only, no artifacts.
+    rdir = os.path.join(ws, "receipts"); os.makedirs(rdir, exist_ok=True)
+    since = time.time() - 9 * 86400
+    n = 0
+    for job in sorted(os.listdir(os.path.join(COS, "outbox"))) if os.path.isdir(os.path.join(COS, "outbox")) else []:
+        if not re.match(r"^(pulse|capture|reconcile|week|flow)-", job):
+            continue
+        rp = os.path.join(COS, "outbox", job, "receipt.json")
+        if not os.path.isfile(rp) or os.path.getmtime(rp) < since:
+            continue
+        t = open(rp, errors="replace").read()
+        if CANON_RE.search(t):
+            run.hold(f"receipt {job}", "names a canon table"); continue
+        open(os.path.join(rdir, job + ".json"), "w").write(t); n += 1
+    if n:
+        have.append(f"receipts/: {n} board and roadmap receipts from this week (pulse, capture, reconcile, week)")
+    ex = os.path.join(COS, "handbook", "build-exclusions.md")
+    if os.path.isfile(ex):
+        t = open(ex, errors="replace").read()
+        if CANON_RE.search(t):
+            run.hold("build-exclusions.md", "names a canon table")
+        else:
+            open(os.path.join(ws, "build-exclusions.md"), "w").write(t)
+            have.append("build-exclusions.md: work Cassidy ruled out (a candidate it covers is DEAD)")
+    return have
+
+
+def codex_pass_prompt(cands, have, window, held):
+    lines = []
+    for c in cands:
+        idea, why = codex_safe(c.get("idea", ""))
+        lines.append(f"- id {c['id']}: card {c.get('card')}. Idea: {idea}")
+    heldtxt = "\n".join(f"- {h['what']}: {h['why']}" for h in held) or "- nothing"
+    return f"""[cos-diligence:codex-pass]
+You are an independent engineer doing due diligence on build ideas for WISEcode's data team, window {window}. Another
+model proposed these candidates; you see only the card and a one-line idea, not its conclusions. Decide each one
+yourself. Most ideas that sound good die on a premise nobody checked: on Nov 14, an idea assumed a confidence score
+that the code doesn't emit, and overlapped its owner's own milestone.
+
+Candidates:
+{chr(10).join(lines)}
+
+{DILIGENCE_RULES}
+
+What you can read (everything else is walled, and a refusal is final):
+- GitHub, read-only: gh issue view|list, gh pr view|list|diff|checks, gh search issues|prs|code|commits, gh repo view,
+  gh api (GET). Repos are under wisecodeai (data-org, food-enrichment, nutrient-estimator and others). Cards are issues.
+- ~/cos/data-org-main: the data-org repo on main (DRDs in drd/, DADRs in dadr/, docs/). A file that names a canon
+  table is held and you'll get a refusal; say so if it mattered.
+- In your working folder: {'; '.join(have) or 'nothing extra'}.
+Held on the Mac and never shown to you: call transcripts, canon data, and:
+{heldtxt}
+Missing call evidence alone is not a reason for NOT CHECKED YET: check the premise in the code and PRs.
+You cannot write files, post or comment, and you must not try.
+
+Return ONLY this JSON, no prose, no code fence:
+{PASS_SHAPE}"""
+
+
+def pass_by_id(obj, cands, model):
+    got = {str(c.get("id")): c for c in (obj or {}).get("candidates", []) if isinstance(c, dict)}
+    res = {}
+    for c in cands:
+        g = got.get(c["id"])
+        if g is None:
+            res[c["id"]] = {"id": c["id"], "status": "NOT CHECKED YET", "reason": f"{model} gave no answer for it", "evidence": [], "rank": None}
+        else:
+            g = dict(g); g["status"] = norm_status(g.get("status")); g["id"] = c["id"]
+            res[c["id"]] = g
+    return res
+
+
+# ------------------------------------------------------------------ comparison (no model)
+def compare(cl, cx, ids):
+    rows = []
+    for i in ids:
+        a, b = cl[i]["status"], cx[i]["status"]
+        if a == "CHECKED" and b == "CHECKED":
+            cat = "agree CHECKED"
+        elif a == "CHECKED" or b == "CHECKED":
+            cat = "disagree"
+        else:
+            cat = "agree DEAD" if a == b == "DEAD" else "agree out"
+        rows.append({"id": i, "claude": a, "codex": b, "category": cat})
+    return rows
+
+
+# ------------------------------------------------------------------ cross-examination prompts
+ATTACK_SHAPE = """{"attacks":[{"id":"<id>","verdict":"stands|refuted","proposed_status":"DEAD|OFFER|NOT CHECKED YET (refuted only)",
+ "reason":"one or two sentences","cite":"file:line, PR/issue # or slack-digest.md:N you opened"}]}
+stands: you tried and couldn't break it; you accept it as CHECKED. refuted: a premise is false, an owner already planned
+it, there's no real user, or a cited line doesn't say what's claimed. Cite what you opened."""
+
+RESPOND_SHAPE = """{"responses":[{"id":"<id>","response":"concede|defend","reason":"one or two sentences","cite":"file:line, PR/issue # or slack-digest.md:N"}]}
+concede: the attack is right. defend: it's wrong, and you show why with a citation. One reply per attack, no new ideas."""
+
+
+def render_entry(e, for_codex):
+    out = [f"### id {e['id']} · status {e.get('status')} · {('rank ' + str(e['rank'])) if e.get('rank') else ''}".rstrip(" ·"),
+           f"Reason: {codex_safe(e.get('reason'))[0] if for_codex else e.get('reason', '')}"]
+    if e.get("score_line"):
+        out.append(f"Score: {codex_safe(e['score_line'])[0] if for_codex else e['score_line']}")
+    for ev in e.get("evidence", []) or []:
+        if not isinstance(ev, dict):
+            continue
+        claim, cite = ev.get("claim", ""), ev.get("cite", "")
+        if for_codex:
+            if (ev.get("kind") or "").lower() == "transcript" or TRANSCRIPT_RE.search(f"{claim} {cite}"):
+                claim, cite = HELD_EVIDENCE, "call transcript (held on the Mac)"
+            else:
+                claim, cite = codex_safe(claim)[0], codex_safe(cite)[0]
+        out.append(f"- {ev.get('field', 'evidence')}: {claim} [{cite}]")
+    return "\n".join(out)
+
+
+def attack_prompt(engine, targets, window):
+    other = "Codex" if engine == "claude" else "Claude"
+    body = "\n\n".join(targets)
+    extra = ("You can read everything on this Mac that the investigate lane can, including transcripts. Cite what you open."
+             if engine == "claude" else
+             "Evidence that came from a call transcript is marked held on the Mac; you can't see it. Judge the rest, and say if a\n"
+             "conclusion rests only on held evidence. You can read GitHub (read-only commands), ~/cos/data-org-main and your working folder.")
+    return f"""[cos-diligence:{engine}-attack]
+Cross-examination, window {window}. {other} marked the ideas below CHECKED: safe to build. Try to break each one.
+Open the cited lines yourself. {extra}
+
+{body}
+
+Return ONLY this JSON:
+{ATTACK_SHAPE}"""
+
+
+def respond_prompt(engine, items, window):
+    other = "Codex" if engine == "claude" else "Claude"
+    return f"""[cos-diligence:{engine}-respond]
+Cross-examination reply, window {window}. You marked these ideas CHECKED. {other} attacked them. For each attack, concede
+or defend once, with a citation you opened. Don't restate your whole case.
+
+{chr(10).join(items)}
+
+Return ONLY this JSON:
+{RESPOND_SHAPE}"""
+
+
+ATTACK_SCHEMA = {"type": "object", "required": ["attacks"], "properties": {"attacks": {"type": "array", "items": {
+    "type": "object", "required": ["id", "verdict", "reason"], "properties": {
+        "id": {"type": "string"}, "verdict": {"enum": ["stands", "refuted"]},
+        "proposed_status": {"enum": ["DEAD", "OFFER", "NOT CHECKED YET"]}, "reason": {"type": "string"}, "cite": {"type": "string"}}}}}}
+RESPOND_SCHEMA = {"type": "object", "required": ["responses"], "properties": {"responses": {"type": "array", "items": {
+    "type": "object", "required": ["id", "response", "reason"], "properties": {
+        "id": {"type": "string"}, "response": {"enum": ["concede", "defend"]}, "reason": {"type": "string"}, "cite": {"type": "string"}}}}}}
+
+
+def by_id(obj, key):
+    return {str(x.get("id")): x for x in (obj or {}).get(key, []) if isinstance(x, dict) and x.get("id") is not None}
+
+
+# ------------------------------------------------------------------ verdict (no model)
+def decide(ids, cl, cx, att_cl, att_cx, resp_cx, resp_cl, steps):
+    """att_cl: Claude's attacks on Codex's CHECKED; att_cx: Codex's on Claude's. resp_cx: Codex's replies to Claude's
+    attacks; resp_cl: Claude's replies to Codex's. Returns one record per id."""
+    def ran(s):
+        return (steps.get(s) or {}).get("status") == "ran"
+    res = []
+    for i in ids:
+        fin = {"claude": cl[i]["status"], "codex": cx[i]["status"]}
+        disputes, unexamined, log = [], [], []
+        for attacker, defender, atk, rsp, astep, rstep in (("claude", "codex", att_cl, resp_cx, "claude-attack", "codex-respond"),
+                                                            ("codex", "claude", att_cx, resp_cl, "codex-attack", "claude-respond")):
+            mine = cl if defender == "claude" else cx
+            if mine[i]["status"] != "CHECKED":
+                continue
+            a = atk.get(i)
+            if a is None:
+                st = steps.get(astep) or {}
+                unexamined.append(f"{attacker} didn't cross-examine it ({astep} {st.get('status', 'not run')}{': ' + st['why'] if st.get('why') else ''})")
+                continue
+            if a.get("verdict") == "stands":
+                fin[attacker] = "CHECKED"
+                log.append(f"{attacker} tried to break {defender}'s case and couldn't: {a.get('reason', '')} [{a.get('cite', '')}]")
+                continue
+            r = rsp.get(i)
+            prop = norm_status(a.get("proposed_status"))
+            prop = prop if prop != "CHECKED" else "NOT CHECKED YET"
+            if r and r.get("response") == "concede":
+                fin[defender] = prop
+                log.append(f"{attacker} refuted it ({a.get('reason', '')} [{a.get('cite', '')}]); {defender} conceded: {r.get('reason', '')}")
+            else:
+                disputes.append({"attacker": attacker, "attack": a.get("reason", ""), "attack_cite": a.get("cite", ""),
+                                 "proposed_status": prop, "defender": defender,
+                                 "defense": (r or {}).get("reason") or f"no reply ({rstep} {(steps.get(rstep) or {}).get('status', 'not run')})",
+                                 "defense_cite": (r or {}).get("cite", "")})
+        if unexamined:
+            outcome, why = "out", "not cross-examined: " + "; ".join(unexamined)
+        elif disputes:
+            outcome, why = "contested", "; ".join(f"{d['attacker']} says {d['proposed_status']}: {d['attack']} / {d['defender']} defends: {d['defense']}" for d in disputes)
+        elif fin["claude"] == fin["codex"] == "CHECKED":
+            outcome, why = "survives", "both CHECKED, neither refuted"
+        else:
+            outcome = "out"
+            why = f"Claude {fin['claude']}: {cl[i].get('reason', '')} / Codex {fin['codex']}: {cx[i].get('reason', '')}"
+        res.append({"id": i, "outcome": outcome, "why": why, "final": fin, "passes": {"claude": cl[i]["status"], "codex": cx[i]["status"]},
+                    "disputes": disputes, "cross_exam": log,
+                    "score_lines": {"claude": cl[i].get("score_line", ""), "codex": cx[i].get("score_line", "")},
+                    "ranks": {"claude": cl[i].get("rank"), "codex": cx[i].get("rank")}})
+    return res
+
+
+def consensus(records):
+    keep = [r for r in records if r["outcome"] in ("survives", "contested")]
+    def rk(r, m):
+        v = r["ranks"].get(m)
+        return v if isinstance(v, int) and v > 0 else len(keep) + 1
+    keep.sort(key=lambda r: ((rk(r, "claude") + rk(r, "codex")) / 2, 0 if r["outcome"] == "survives" else 1, r["id"]))
+    return [r["id"] for r in keep]
+
+
+# ------------------------------------------------------------------ BUILDER's receipt
+def write_receipt(run, d, cands, records, order, notes):
+    out = run.out
+    meta = {c["id"]: c for c in cands}
+    label = {"survives": "SURVIVES", "contested": "CONTESTED", "out": "OUT"}
+    surv = [r for r in records if r["outcome"] == "survives"]
+    cont = [r for r in records if r["outcome"] == "contested"]
+    outs = [r for r in records if r["outcome"] == "out"]
+    claude_usd = run.claude_pass + sum(s.get("cost_usd", 0) for n, s in run.steps.items() if s.get("engine") == "claude")
+    codex_usd = sum(s.get("cost_usd", 0) for n, s in run.steps.items() if s.get("engine") == "codex")
+    notrun = [f"{n} ({s.get('why', '')})" for n, s in run.steps.items() if s.get("status") in ("not run", "failed")]
+    name = lambda i: f"{meta[i].get('card') or i}: {meta[i].get('idea', '')}".strip()
+    md = [f"# BUILDER: two-model diligence ({os.path.basename(out)}, window {d.get('window', '?')})", "",
+          f"**{len(surv)} survive · {len(cont)} contested · {len(outs)} out.** Cost ${run.spent():.2f} of the ${CAP:.0f} cap "
+          f"(Claude ${claude_usd:.2f}; Codex ≈${codex_usd:.2f}, estimated from tokens).", ""]
+    if notes:
+        md += ["Notes: " + " ".join(notes), ""]
+    if notrun:
+        md += ["Steps that didn't run or failed: " + "; ".join(notrun), ""]
+    if run.held:
+        md += ["Held on the Mac (not shown to Codex): " + "; ".join(f"{h['what']} ({h['why']})" for h in run.held), ""]
+    md += ["## For BUILDER", "", "Rank survivors and contested ideas loosely (decision 2c). The order below is the models' consensus, as "
+           "advice. An idea that's out can't be promoted. A contested idea needs Cassidy's call before it's built.", ""]
+    for n, i in enumerate(order, 1):
+        r = next(x for x in records if x["id"] == i)
+        md += [f"{n}. [{label[r['outcome']]}] {name(i)}",
+               f"   - Claude's score: {r['score_lines']['claude'] or '(not CHECKED by Claude)'}",
+               f"   - Codex's score: {r['score_lines']['codex'] or '(not CHECKED by Codex)'}"]
+        for line in r["cross_exam"]:
+            md.append(f"   - {line}")
+    if not order:
+        md.append("Nothing survived or is contested this week. Fewer is a fine answer.")
+    if cont:
+        md += ["", "## Contested: both arguments, side by side", ""]
+        for r in cont:
+            md += [f"### {name(r['id'])}", "", "| | Claude | Codex |", "|---|---|---|",
+                   f"| Own pass | {r['passes']['claude']} | {r['passes']['codex']} |"]
+            for dsp in r["disputes"]:
+                a, b = (dsp["attack"] + f" [{dsp['attack_cite']}]", dsp["defense"] + f" [{dsp['defense_cite']}]")
+                row = (b, a) if dsp["attacker"] == "codex" else (a, b)
+                md.append(f"| {dsp['attacker'].title()} attacks, {dsp['defender'].title()} replies | {row[0].replace('|', '/')} | {row[1].replace('|', '/')} |")
+            md.append("")
+    md += ["", "## Out", ""] + [f"- {name(r['id'])}: {r['why']}" for r in outs]
+    for e in d.get("excluded", []) or []:
+        md.append(f"- excluded: {e}")
+    md += ["", "## How each model saw it", "", "| Card | Claude | Codex | Comparison | Verdict |", "|---|---|---|---|---|"]
+    cmp_ = {c["id"]: c["category"] for c in (load(os.path.join(out, "compare.json"), {}) or {}).get("rows", [])}
+    for r in records:
+        md.append(f"| {meta[r['id']].get('card') or r['id']} | {r['passes']['claude']} | {r['passes']['codex']} | {cmp_.get(r['id'], '')} | {label[r['outcome']]} |")
+    open(os.path.join(out, "builder.md"), "w").write("\n".join(md) + "\n")
+
+    block = {"status": "done", "cap_usd": CAP, "spent_usd": run.spent(), "claude_usd": round(claude_usd, 4),
+             "codex_usd_estimate": round(codex_usd, 4), "steps": run.steps, "held": run.held, "consensus_order": order,
+             "records": records, "file": "builder.md"}
+    save(os.path.join(out, "diligence-verdict.json"), block)
+    lines = [f"Two-model diligence (Claude and Codex): {len(surv)} survive, {len(cont)} contested, {len(outs)} out. "
+             f"Cost ${run.spent():.2f} of ${CAP:.0f}. BUILDER ranks only survivors and contested ideas; contested ones need Cassidy."]
+    for i in order:
+        r = next(x for x in records if x["id"] == i)
+        lines.append(f"- [{label[r['outcome']]}] {name(i)}" + (f": {r['why']}" if r["outcome"] == "contested" else ""))
+    for r in outs:
+        lines.append(f"- [OUT] {meta[r['id']].get('card') or r['id']}: {r['why']}")
+    if notrun:
+        lines.append("Didn't run: " + "; ".join(notrun) + ".")
+    if run.held:
+        lines.append("Held on the Mac: " + "; ".join(h["what"] for h in run.held) + ".")
+    summ = "\n".join(lines)
+    if CANON_RE.search(summ):   # the receipt leaves the Mac for Grok
+        summ = f"Two-model diligence: {len(surv)} survive, {len(cont)} contested, {len(outs)} out. Details held on the Mac (builder.md): they name a canon table."
+    merge(out, block, summ)
+
+
+def merge(out, block, summary):
+    rp = os.path.join(out, "receipt.json")
+    r = load(rp, {}) or {}
+    r["diligence"] = {k: v for k, v in block.items() if k != "records"} | {"outcomes": {x["id"]: x["outcome"] for x in block.get("records", [])}}
+    rc = r.setdefault("receipt", {})
+    rc["summary"] = summary + "\n\n" + (rc.get("summary") or "")
+    arts = rc.setdefault("artifacts", [])
+    for f in ("builder.md", "diligence-verdict.json", "compare.json", "slack-digest.md"):
+        p = os.path.join(out, f)
+        if os.path.isfile(p) and p not in arts and f not in arts:
+            arts.append(p)
+    save(rp, r)
+
+
+def skip_all(out, why):
+    run = Run(out)
+    for s in STEP_ORDER:
+        run.record(s, status="not run", why=why, cost_usd=0)
+    block = {"status": "skipped", "why": why, "cap_usd": CAP, "spent_usd": run.spent(), "steps": run.steps, "held": run.held}
+    save(os.path.join(out, "diligence-verdict.json"), block)
+    merge(out, block, f"Two-model diligence didn't run: {why}. Nothing from this pass can be ranked.")
+
+
+# ------------------------------------------------------------------ the run
+def main_run(out):
+    out = os.path.abspath(out)
+    if not os.path.isfile(os.path.join(out, "receipt.json")):
+        print(f"cos-diligence: no receipt in {out}", file=sys.stderr); return 66
+    r = load(os.path.join(out, "receipt.json"), {}) or {}
+    if (r.get("checker") or {}).get("verdict") != "pass":
+        skip_all(out, "the checker blocked Claude's pass"); return 0
+    d, cands = claude_candidates(out)
+    if not cands:
+        skip_all(out, "Claude's pass wrote no diligence.json with candidates"); return 0
+    run = Run(out)
+    window = d.get("window") or os.environ.get("COS_DILIGENCE_WINDOW") or \
+        f"{(datetime.now() - timedelta(days=8)):%Y-%m-%d} to {(datetime.now() - timedelta(days=1)):%Y-%m-%d}"
+    cl = {c["id"]: c for c in cands}
+    carded = [c for c in cands if c.get("card")]
+    for c in cands:
+        why = codex_safe(c.get("idea"))[1]
+        if why and c.get("card"):
+            run.hold(f"idea text for {c['card']}", "names a canon table" if why == "canon" else "points at a call transcript")
+
+    # 2. Codex's blind pass
+    cx_obj = None
+    if carded and fits(run, "codex-pass"):
+        ws = codex_ws(out)
+        have = screen_into_ws(run, ws, window)
+        with open(os.path.join(ws, "candidates.md"), "w") as f:
+            f.write("\n".join(f"- id {c['id']}: card {c['card']}. Idea: {codex_safe(c.get('idea', ''))[0]}" for c in carded) + "\n")
+        p = start_codex(run, "codex-pass", codex_pass_prompt(carded, have, window, run.held))
+        cx_obj = finish_codex(run, "codex-pass", p, "candidates")
+    elif not carded:
+        run.record("codex-pass", status="not run", why="no candidate has a card", cost_usd=0)
+    cx = pass_by_id(cx_obj, cands, "Codex")
+    for c in cands:
+        if not c.get("card"):
+            cx[c["id"]]["reason"] = "needs a card first (Codex reviews carded ideas only)"
+    save(os.path.join(out, "codex-pass.json"), {"candidates": list(cx.values())})
+
+    # 3. Comparison
+    ids = [c["id"] for c in cands]
+    rows = compare(cl, cx, ids)
+    save(os.path.join(out, "compare.json"), {"rows": rows})
+
+    # 4a. Attacks, both at once
+    tgt_for_claude = [render_entry(cx[i], False) for i in ids if cx[i]["status"] == "CHECKED"]
+    tgt_for_codex = [render_entry(cl[i], True) for i in ids if cl[i]["status"] == "CHECKED"]
+    att_cl, att_cx = {}, {}
+    procs = []
+    for name, targets in (("claude-attack", tgt_for_claude), ("codex-attack", tgt_for_codex)):
+        if not targets:
+            run.record(name, status="not needed", why="no CHECKED idea to attack", cost_usd=0); continue
+        if not fits(run, name):
+            continue
+        if name == "claude-attack":
+            b = min(CLAUDE_BUDGET[name], run.remaining())
+            procs.append((name, start_claude(run, name, attack_prompt("claude", targets, window), ATTACK_SCHEMA, b), b))
+            run.record(name, status="running", cost_usd=b)   # reserve while running, so the next check sees it
+        else:
+            procs.append((name, start_codex(run, name, attack_prompt("codex", targets, window)), None))
+            run.record(name, status="running", cost_usd=CODEX_RESERVE[name])
+    for name, p, b in procs:
+        if name == "claude-attack":
+            att_cl = by_id(finish_claude(run, name, p, "attacks", b), "attacks")
+        else:
+            att_cx = by_id(finish_codex(run, name, p, "attacks"), "attacks")
+    save(os.path.join(out, "attacks.json"), {"claude_on_codex": list(att_cl.values()), "codex_on_claude": list(att_cx.values())})
+
+    # 4b. Replies, both at once: each side concedes or defends once
+    items_claude = [f"{render_entry(cl[i], False)}\nCodex's attack: {a.get('reason', '')} [{a.get('cite', '')}] (proposes {a.get('proposed_status', '')})"
+                    for i, a in att_cx.items() if a.get("verdict") == "refuted" and i in cl]
+    items_codex = [f"{render_entry(cx[i], False)}\nClaude's attack: {codex_safe(a.get('reason', ''))[0]} [{codex_safe(a.get('cite', ''))[0]}] (proposes {a.get('proposed_status', '')})"
+                   for i, a in att_cl.items() if a.get("verdict") == "refuted" and i in cx]
+    resp_cl, resp_cx = {}, {}
+    procs = []
+    for name, items in (("claude-respond", items_claude), ("codex-respond", items_codex)):
+        if not items:
+            run.record(name, status="not needed", why="nothing refuted to answer", cost_usd=0); continue
+        if not fits(run, name):
+            continue
+        if name == "claude-respond":
+            b = min(CLAUDE_BUDGET[name], run.remaining())
+            procs.append((name, start_claude(run, name, respond_prompt("claude", items, window), RESPOND_SCHEMA, b), b))
+            run.record(name, status="running", cost_usd=b)
+        else:
+            procs.append((name, start_codex(run, name, respond_prompt("codex", items, window)), None))
+            run.record(name, status="running", cost_usd=CODEX_RESERVE[name])
+    for name, p, b in procs:
+        if name == "claude-respond":
+            resp_cl = by_id(finish_claude(run, name, p, "responses", b), "responses")
+        else:
+            resp_cx = by_id(finish_codex(run, name, p, "responses"), "responses")
+    save(os.path.join(out, "replies.json"), {"claude": list(resp_cl.values()), "codex": list(resp_cx.values())})
+
+    return main_verdict(out)
+
+
+def main_verdict(out):
+    out = os.path.abspath(out)
+    run = Run(out)
+    d, cands = claude_candidates(out)
+    cl = {c["id"]: c for c in cands}
+    cx = {str(c["id"]): c for c in (load(os.path.join(out, "codex-pass.json"), {}) or {}).get("candidates", [])}
+    cx = {i: cx.get(i) or {"id": i, "status": "NOT CHECKED YET", "reason": "no Codex pass", "evidence": []} for i in cl}
+    att = load(os.path.join(out, "attacks.json"), {}) or {}
+    rep = load(os.path.join(out, "replies.json"), {}) or {}
+    ids = [c["id"] for c in cands]
+    records = decide(ids, cl, cx, by_id({"a": att.get("claude_on_codex", [])}, "a"), by_id({"a": att.get("codex_on_claude", [])}, "a"),
+                     by_id({"r": rep.get("codex", [])}, "r"), by_id({"r": rep.get("claude", [])}, "r"), run.steps)
+    order = consensus(records)
+    notes = []
+    if run.spent() > CAP:
+        notes.append(f"Spent ${run.spent():.2f}, over the ${CAP:.0f} cap: a Codex step can't be stopped mid-call, and its cost is known only after.")
+    write_receipt(run, d, cands, records, order, notes)
+    print(os.path.join(out, "builder.md"))
+    return 0
+
+
+def main_compare(out):
+    out = os.path.abspath(out)
+    d, cands = claude_candidates(out)
+    cl = {c["id"]: c for c in cands}
+    cx = {str(c["id"]): dict(c, status=norm_status(c.get("status"))) for c in (load(os.path.join(out, "codex-pass.json"), {}) or {}).get("candidates", [])}
+    cx = {i: cx.get(i) or {"id": i, "status": "NOT CHECKED YET"} for i in cl}
+    rows = compare(cl, cx, list(cl))
+    save(os.path.join(out, "compare.json"), {"rows": rows})
+    print(json.dumps(rows, indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help"):
+        print(__doc__); sys.exit(0 if a else 64)
+    if a[0] == "compare" and len(a) == 2:
+        sys.exit(main_compare(a[1]))
+    if a[0] == "verdict" and len(a) == 2:
+        sys.exit(main_verdict(a[1]))
+    if len(a) == 1:
+        sys.exit(main_run(a[0]))
+    print(__doc__, file=sys.stderr); sys.exit(64)
