@@ -78,7 +78,7 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 
 ## Who Does What
 
-**Grok** handles conversation, mail, Slack, calendar and routing. **Cursor Agent** answers one-command lookups for cents. **Claude Code** does anything multi-step on the repos, transcripts or data, plus every checker and verifier. **Codex** reviews Claude's builds and judges its evals, so a different model family checks the work.
+**Grok** handles conversation, mail, Slack, calendar and routing. **Cursor Agent** answers one-command lookups for cents. **Claude Code** does anything multi-step on the repos, transcripts or data, plus every checker and verifier. **Codex** reviews Claude's builds, judges its evals, and does its own diligence on BUILDER's ideas, so a different model family checks the work.
 
 <p align="center">
   <picture>
@@ -94,7 +94,7 @@ Each bot has a **REMEMBER** block (its lasting rules) and a **PLAYBOOK** saved a
 | ![grok](https://img.shields.io/badge/Grok-15181e?style=flat-square) | Chat, Gmail and Slack drafts, calendar, routing, routines, the Bots' browser | It holds the connected apps and the conversation. It never touches the Mac unattended. |
 | ![cursor](https://img.shields.io/badge/Cursor_Agent-3d4452?style=flat-square) | `quick`: one read-only command, summarized | Cheapest. The script runs the command, and the model only reads the output. |
 | ![claude](https://img.shields.io/badge/Claude_Code-c96442?style=flat-square&logo=anthropic&logoColor=white) | `investigate`, `draft`, `build`, the checker, the verifier | Multi-step work with the repo's skills, under the gate, with a receipt |
-| ![codex](https://img.shields.io/badge/Codex-10a37f?style=flat-square) | Second-opinion review of builds, the blind eval judge | A different model family catches what Claude misses. Skipped for canon or label builds (decision 14). |
+| ![codex](https://img.shields.io/badge/Codex-10a37f?style=flat-square) | Second-opinion review of builds, the blind eval judge, BUILDER's second diligence pass and cross-examiner | A different model family catches what Claude misses. Skipped for canon or label builds (decision 14). |
 
 ---
 
@@ -202,7 +202,7 @@ Source: [claude/cos-ledger](claude/cos-ledger), [claude/cos-db](claude/cos-db), 
 | ![capture](https://img.shields.io/badge/capture-e66f30?style=flat-square) | Weekdays 16:00 | STEWARD | A write batch for his cards, by sha256 |
 | ![reconcile](https://img.shields.io/badge/reconcile-e66f30?style=flat-square) | Tue, Thu 10:00 | STEWARD | Drift, which side should move, sheet paste text |
 | ![week](https://img.shields.io/badge/week-e66f30?style=flat-square) | Fri 10:00 | STEWARD | The weekly packet for him and Melanie |
-| ![opportunity](https://img.shields.io/badge/opportunity-e79738?style=flat-square) | Mon 08:30 | BUILDER | Up to three build ideas, each premise-checked against the code and kill-reviewed by Codex |
+| ![opportunity](https://img.shields.io/badge/opportunity-e79738?style=flat-square) | Mon 08:30 | BUILDER | Up to three build ideas that Claude and Codex each checked and failed to break, plus contested ones for him to call |
 | ![keeper](https://img.shields.io/badge/keeper-757675?style=flat-square) | Fri 13:00 | KEEPER | A scorecard and up to three fixes |
 | ![obligations](https://img.shields.io/badge/obligations-e54796?style=flat-square) | Weekdays 08, 10, 12, 14, 16 | OPS | What the Mac finished under standing approval, and what needs one tap |
 
@@ -214,33 +214,56 @@ Sources: [claude/cos-sched](claude/cos-sched), [claude/briefs/](claude/briefs/).
 
 ## How BUILDER Picks a Build
 
-**BUILDER only shows Cassidy ideas that were proven and survived a challenge.** On Nov 14, two of three ranked ideas died
-on premises nobody had checked (#651 assumed an IQA confidence score that doesn't exist, and overlapped its owner's own
-milestone). Since Nov 15, the research happens on the Mac, where the code and cards are, and every idea must pass three
-gates before BUILDER can rank it. Fewer than three ideas is a normal, honest result.
+**BUILDER only shows Cassidy ideas that two different models proved, and that each failed to break.** On Nov 14, two of
+three ranked ideas died on premises nobody had checked (#651 assumed an IQA confidence score that doesn't exist, and
+overlapped its owner's own milestone). Since Nov 15 the research happens on the Mac, where the code and cards are.
+Claude and Codex each do their own diligence, a script compares them, each attacks the other's CHECKED ideas once, and
+a script decides. Fewer than three ideas is a normal, honest result. Cassidy's decisions: Codex reads code, PRs, the
+board, receipts and a canon-screened Slack digest, never transcripts (1b); Grok ranks loosely (2c); $30 per run (3a).
 
 ```mermaid
 flowchart TD
-  T["Trigger<br/>Monday 08:30, or on request"] --> P1["Pass 1: candidates<br/>Claude on the Mac: board, calls, Slack, builds; up to six"]
-  P1 --> P2["Pass 2: diligence<br/>premise in the code, owner overlap, user, data"]
-  P2 -->|DEAD, OFFER, NOT CHECKED YET| S1["Listed with the reason<br/>never ranked"]
-  P2 -->|CHECKED| C["Independent checker<br/>opens the cited lines; one revision round"]
-  C --> K["Kill review<br/>Codex tries to refute each idea"]
-  K -->|killed or unproven| S2["Shown with the reason"]
-  K -->|survives| B["BUILDER ranks survivors<br/>through the Chief's chat"]
+  T["Trigger<br/>Monday 08:30, or on request"] --> P1["Claude's pass, on the Mac<br/>candidates from board, calls, Slack, builds;<br/>diligence per idea; slack-digest.md"]
+  P1 --> C["Checker<br/>opens the cited lines; one revision round"]
+  C -->|blocked| X["Nothing ranked<br/>the receipt says why"]
+  C -->|pass| W["Canon tripwire<br/>digest, receipts, idea text;<br/>call evidence held on the Mac"]
+  W --> P2["Codex's blind pass<br/>card and one-line idea only;<br/>walled: reads and GitHub reads, no writes"]
+  P2 --> CMP["Compare (script)<br/>agree CHECKED · agree DEAD · disagree"]
+  CMP --> XA["Cross-examination, one round each<br/>Claude attacks Codex's CHECKED,<br/>Codex attacks Claude's; concede or defend once"]
+  XA --> V["Verdict (script)"]
+  V -->|both CHECKED, unrefuted| S["Survives"]
+  V -->|a refutation defended| CT["Contested<br/>both arguments side by side"]
+  V -->|anything else| O["Out, with its reason"]
+  S --> B["BUILDER ranks loosely<br/>models' consensus order as advice"]
+  CT --> B
   B --> Y["Cassidy picks one<br/>yes to its brief, then a build"]
 ```
 
-| Status | Means | What happens |
+| Status (each model) | Means | What happens |
 | --- | --- | --- |
-| CHECKED | Premise quoted from the real code or PR, owner's plans read, a named user, data reachable | Goes to the checker and the kill review |
+| CHECKED | Premise quoted from the real code or PR, owner's plans read, a named user, data reachable | Cross-examined by the other model |
 | OFFER | The owner already planned this work (a milestone, PR, DRD or DADR) | Offer help to the owner; never build next to them |
-| DEAD | The premise is false, or the idea is on `~/cos/handbook/build-exclusions.md` | Listed with the reason |
-| NOT CHECKED YET | Something couldn't be read | Listed with what's missing; can't be picked |
+| DEAD | The premise is false, or the idea is on `~/cos/handbook/build-exclusions.md` | Out, with the reason |
+| NOT CHECKED YET | Something couldn't be read | Out, with what's missing |
 
-Canon text never goes to Codex: if the ideas file names canon tables, the kill review is skipped and says so. Sources:
-[claude/briefs/opportunity.md](claude/briefs/opportunity.md), [claude/cos-killreview](claude/cos-killreview),
-[grokbot/builder.md](grokbot/builder.md).
+| Verdict | Rule | BUILDER |
+| --- | --- | --- |
+| Survives | Both models end at CHECKED, and no refutation stands | Ranks it |
+| Contested | One side refuted it and the other defended, with citations | Shows it labeled; Cassidy decides before any build |
+| Out | Everything else, including an idea the cap kept from being cross-examined | Lists it with the reason; can't promote it |
+
+What crosses to Codex: the cards and one-line ideas (blind), `slack-digest.md`, this week's pulse, capture, reconcile
+and week receipts, `build-exclusions.md`, and in cross-examination Claude's case with every call-sourced line replaced by
+"held on the Mac". Each passes the canon tripwire first; a hit holds that file on the Mac and the receipt says so.
+Codex runs through the Cursor CLI in `<job>/codex/ws`, behind `claude/codex/cli.json` and `claude/cursor-codex-hook`:
+it reads only that folder and `~/cos/data-org-main` (a file naming a canon table is refused), runs only GitHub reads,
+and can't write, post or reach the web. Proved live on Nov 15 (15 of 15 refusals and reads as intended).
+
+The $30 cap covers every model in the run. Codex's cost is estimated from its tokens at list price, because the Cursor
+CLI reports tokens, not dollars. A step that doesn't fit doesn't start, and neither does any step after it; the receipt
+names them. The result is `builder.md` and the receipt's `diligence` block. Sources:
+[claude/briefs/opportunity.md](claude/briefs/opportunity.md), [claude/cos-diligence](claude/cos-diligence),
+[claude/cursor-codex-hook](claude/cursor-codex-hook), [grokbot/builder.md](grokbot/builder.md).
 
 ---
 

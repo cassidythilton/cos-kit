@@ -83,7 +83,8 @@ transcript: <meeting, date, start time>", and the Chief takes step 2 (or 3).
 |---|---|---|
 | Lake or warehouse, to Claude on the Mac | rows except canon values; canon aggregates and IDs | canon names, terms, aliases, flag assignments |
 | Mac job, to the Grok Bots (receipts, webhooks) | summaries, IDs, counts, card numbers, draft text | canon terms, label text or images, credentials, raw data rows |
-| Mac job, to another model provider (Codex review, eval judge, BUILDER kill review) | diffs and receipts of open builds; the opportunity pass's ideas file (skipped when it names canon tables) | anything from a canon or label build (canon charter decision 14) |
+| Mac job, to another model provider (Codex review, eval judge) | diffs and receipts of open builds | anything from a canon or label build (canon charter decision 14) |
+| BUILDER's diligence, to Codex (`cos-diligence`, decision 1b, Nov 15) | cards and one-line ideas; `slack-digest.md` (Claude's own summaries with links, never Slack itself); this week's pulse, capture, reconcile and week receipts; `build-exclusions.md`; Claude's diligence with every call-sourced line replaced by "held on the Mac"; its own GitHub reads (read-only) and `~/cos/data-org-main`. Each file passes the canon tripwire first; a hit is held on the Mac and the receipt says so | transcripts and anything quoted from a call, canon values or any file naming a canon table, the notebook (rendered outputs can hold canon values), Agent Atlas, `~/cos/state`, other jobs' artifacts. Codex can't write, post or reach the web (`claude/codex/cli.json`, `claude/cursor-codex-hook`) |
 | Anything, to data-org or a team channel | what the writing standard and the boundary allow | personnel, compensation, individual performance, verbatim executive quotes, RAGB values in files, CDO ADR contents |
 | Anything, to a shared link | nothing | AI conversation links with WISEcode information; public Bot share links |
 

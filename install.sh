@@ -334,7 +334,8 @@ V="$H/cos/outbox/opp1/diligence-verdict.json"; C="$H/cos/outbox/opp1/compare.jso
 jq -e '[.rows[] | {(.id): .category}] | add | .["651"]=="agree CHECKED" and .["374"]=="agree DEAD" and .["778"]=="disagree" and .["650"]=="disagree" and .["kit-x"]=="agree out"' "$C" >/dev/null 2>&1 \
   && pass "diligence compare: agree CHECKED, agree DEAD, disagree, card by card" || fail "diligence compare ($(jq -c '.rows' "$C" 2>/dev/null))"
 jq -e '[.records[] | {(.id): .outcome}] | add | .["651"]=="survives" and .["778"]=="contested" and .["650"]=="out" and .["374"]=="out" and .["kit-x"]=="out"' "$V" >/dev/null 2>&1 \
-  && pass "diligence verdict: both CHECKED and unrefuted survives; a defended refutation is contested; a conceded one is out" || fail "diligence verdict ($(jq -c '[.records[]|{id,outcome}]' "$V" 2>/dev/null))"
+  && jq -e '.records[] | select(.id=="650") | .why | test("conceded: PR 407 is his")' "$V" >/dev/null 2>&1 \
+  && pass "diligence verdict: both CHECKED and unrefuted survives; a defended refutation is contested; a conceded one is out, with the concession as its reason" || fail "diligence verdict ($(jq -c '[.records[]|{id,outcome}]' "$V" 2>/dev/null))"
 jq -e '.consensus_order == ["651","778"] and (.records[] | select(.id=="778") | .disputes[0].attacker=="codex" and (.disputes[0].defense|test("v0 is the set")))' "$V" >/dev/null 2>&1 \
   && grep -q '\[CONTESTED\]' "$H/cos/outbox/opp1/builder.md" && grep -q "Claude's score: A-claude" "$H/cos/outbox/opp1/builder.md" && grep -q "Codex's score: A-codex" "$H/cos/outbox/opp1/builder.md" \
   && jq -e '(.receipt.summary|startswith("Two-model diligence")) and (.diligence.outcomes["651"]=="survives") and (.receipt.summary|test("pass 1"))' "$H/cos/outbox/opp1/receipt.json" >/dev/null \

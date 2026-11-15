@@ -3,7 +3,7 @@
 Read this first if you're a new agent (Claude Code, Cursor, or anything else) picking up this kit with no history.
 It takes about ten minutes. Then read the files it points to before you change anything.
 
-Last updated: 2026-11-14 (Build B). `./install.sh` runs 321 checks; all pass on a committed, pushed tree (one check fails on
+Last updated: 2026-11-15 (BUILDER two-model diligence). `./install.sh` runs 374 checks; all pass on a committed, pushed tree (one check fails on
 purpose while there are uncommitted changes). A fresh agent read this file cold and fact-checked it against the files.
 
 ## 1. What this is, in one paragraph
@@ -104,6 +104,7 @@ yourself. If one stops working, Cassidy regenerates it in Grok and stores it (IN
 | (`cos-flow`) | a Python script, no model, not a lane | board facts for STEWARD: `lanes` (as the Lanes view counts), `week` (lane moves from `ProjectV2ItemStatusChangedEvent`), `evidence` ("evidence says #N can move to <lane>", for owners), `nostatus`, `today` (PR #524's DRD/DADR check on cards worked today), `debt`, `next-id` (every open PR, not just the newest 30). cos-sched stages `flow-capture.md` / `flow-week.md` in the job folder; board-pulse adds lane counts to `board-health.csv` | nothing |
 | `preview` | none | a staged batch in plain words with each line's tier, and the call to run on his yes | nothing |
 | `lake` | Cursor Agent on a Claude model | one data question after his yes, in `~/cos/outbox/<job>/ws` walled by `claude/lake/cli.json` and `claude/cursor-lake-hook` (which runs the gate); only reads and `lake-query`. Never scheduled. | `result.md` in the job folder |
+| (`cos-diligence`) | Codex, then Claude and Codex, then a script; not a lane | after every opportunity pass: Codex's blind pass, compare, cross-examination, verdict, BUILDER's receipt (builder.md); $30 cap per run | the job folder |
 | `eval` | Claude, judged by Codex | blind A/B of a prompt change on `evals/core.json`; KEEPER's test before proposing (kept by Cassidy, 2026-11-14) | the job folder |
 | `note`, `pause`, `receipt` | none | record a correction; hold a scheduled slot; read a result | `state/` |
 
@@ -162,13 +163,33 @@ minutes, so the fix lane is for the Chief, not for you.
   deny holds; a hook "allow" doesn't override a cli.json deny; without `--force`, unlisted shell commands are refused;
   writes are allowed unless denied, so deny `Write(**)`.
 
-- A checker that grades only sourcing will pass an idea built on a false premise. BUILDER's opportunity pass now
-  checks each idea's premise against the code, reads the owner's plans, and gets a Codex kill review before BUILDER can
-  rank it (Nov 15; README "How BUILDER Picks a Build").
+- A checker that grades only sourcing will pass an idea built on a false premise. Since Nov 15, BUILDER's ideas get
+  two independent diligence passes (Claude, then Codex blind), one round of cross-examination each way, and a verdict
+  by script: survives, contested (Cassidy decides) or out; $30 cap per run (`claude/cos-diligence`; README "How
+  BUILDER Picks a Build"). It replaced the one-shot Codex kill review.
+- Codex can be walled too (proved 2026-11-15, agent 2026.11.13, gpt-5.3-codex-high, `agent -p --trust`, no `--mode`):
+  `claude/codex/cli.json` plus `claude/cursor-codex-hook` held 15 of 15 (transcript, outbox, `../` and canon-file reads
+  refused; writes, `gh issue comment`, `gh api -X POST`, curl, cat, redirects refused; workspace, data-org main and
+  `gh issue view` allowed). The permission file alone still let Codex list `~/meetings` file names (not contents); the
+  hook refuses that. The hook fails closed if the gate is missing.
+- Check what a "nothing to review" guard really matches. The kill review's CHECKED test matched "CHECKED 0" in a BLUF,
+  so on Nov 15 it sent opportunities.md, call quotes included, to Codex. Transcripts now never reach Codex: call
+  evidence is tagged `transcript` in diligence.json and replaced by "held on the Mac" before any Codex prompt.
 - Don't turn a one-off scoping note into a standing rule. A "keep Tolga's work out" exclusion was invented from a note
   that only scoped one ad hoc run (Nov 15); ask before writing a rule into a file the bots read.
 
-## 9. Open items (as of 2026-11-14, after Build B)
+## 9. Open items (as of 2026-11-15)
+
+- BUILDER two-model diligence is in and proved once (`~/cos/outbox/opportunity-2model-20261115`, window Nov 7-14):
+  Claude CHECKED #778 only; Codex, blind, CHECKED nothing (OFFER for #778, #650, #767, #777, #740; DEAD for #651,
+  agreeing with Claude on #651 from the lake contract). Codex refuted #778 (a miscited digest line; the pass/fail floor
+  is still TBD under RAQ-013) and Claude conceded. Verdict: 0 survive, 0 contested, 6 out. Cost $14.35 of $30
+  (Claude $13.13, Codex about $1.22, estimated). Codex made 49 allowed calls and 3 refused ones in the real run.
+  The receipt pushed to the Chief before a small fix: its #778 line showed Claude's first reason instead of the
+  concession; `builder.md` and the receipt in the folder are corrected (`cos-diligence verdict <job>` reruns that step).
+- The Grok side doesn't know yet: BUILDER's FIT CHECK still names the kill review, and BUILDER should read pass-1's
+  "Ranked:" line as superseded by the diligence block. Intents for BUILDER and the Chief are in the side-session notes
+  (two-model-diligence-2026-11-15.md), to go into `grokbot/pending-pastes.md` by the file method.
 
 - Build B (plan items 8 and 9) is in: `cos-flow`; `cos-run draft --doc drd|dadr --card <his card>` (his cards only,
   from main, at most three questions, no flip to Approved/accepted, never a DRD and a DADR in one diff); `cos-run gh

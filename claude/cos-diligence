@@ -439,6 +439,7 @@ def decide(ids, cl, cx, att_cl, att_cx, resp_cx, resp_cl, steps):
     res = []
     for i in ids:
         fin = {"claude": cl[i]["status"], "codex": cx[i]["status"]}
+        why_of = {"claude": cl[i].get("reason", ""), "codex": cx[i].get("reason", "")}
         disputes, unexamined, log = [], [], []
         for attacker, defender, atk, rsp, astep, rstep in (("claude", "codex", att_cl, resp_cx, "claude-attack", "codex-respond"),
                                                             ("codex", "claude", att_cx, resp_cl, "codex-attack", "claude-respond")):
@@ -452,6 +453,7 @@ def decide(ids, cl, cx, att_cl, att_cx, resp_cx, resp_cl, steps):
                 continue
             if a.get("verdict") == "stands":
                 fin[attacker] = "CHECKED"
+                why_of[attacker] = "accepted the other model's case: " + a.get("reason", "")
                 log.append(f"{attacker} tried to break {defender}'s case and couldn't: {a.get('reason', '')} [{a.get('cite', '')}]")
                 continue
             r = rsp.get(i)
@@ -459,6 +461,7 @@ def decide(ids, cl, cx, att_cl, att_cx, resp_cx, resp_cl, steps):
             prop = prop if prop != "CHECKED" else "NOT CHECKED YET"
             if r and r.get("response") == "concede":
                 fin[defender] = prop
+                why_of[defender] = "conceded: " + (r.get("reason") or a.get("reason", ""))
                 log.append(f"{attacker} refuted it ({a.get('reason', '')} [{a.get('cite', '')}]); {defender} conceded: {r.get('reason', '')}")
             else:
                 disputes.append({"attacker": attacker, "attack": a.get("reason", ""), "attack_cite": a.get("cite", ""),
@@ -473,7 +476,7 @@ def decide(ids, cl, cx, att_cl, att_cx, resp_cx, resp_cl, steps):
             outcome, why = "survives", "both CHECKED, neither refuted"
         else:
             outcome = "out"
-            why = f"Claude {fin['claude']}: {cl[i].get('reason', '')} / Codex {fin['codex']}: {cx[i].get('reason', '')}"
+            why = f"Claude {fin['claude']}: {why_of['claude']} / Codex {fin['codex']}: {why_of['codex']}"
         res.append({"id": i, "outcome": outcome, "why": why, "final": fin, "passes": {"claude": cl[i]["status"], "codex": cx[i]["status"]},
                     "disputes": disputes, "cross_exam": log,
                     "score_lines": {"claude": cl[i].get("score_line", ""), "codex": cx[i].get("score_line", "")},
@@ -567,7 +570,9 @@ def merge(out, block, summary):
     r = load(rp, {}) or {}
     r["diligence"] = {k: v for k, v in block.items() if k != "records"} | {"outcomes": {x["id"]: x["outcome"] for x in block.get("records", [])}}
     rc = r.setdefault("receipt", {})
-    rc["summary"] = summary + "\n\n" + (rc.get("summary") or "")
+    if "pass1_summary" not in r:   # Claude's own summary, kept once so a rerun of the verdict doesn't stack summaries
+        r["pass1_summary"] = rc.get("summary") or ""
+    rc["summary"] = summary + "\n\n" + r["pass1_summary"]
     arts = rc.setdefault("artifacts", [])
     for f in ("builder.md", "diligence-verdict.json", "compare.json", "slack-digest.md"):
         p = os.path.join(out, f)
