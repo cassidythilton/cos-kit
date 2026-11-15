@@ -80,7 +80,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,claude/lake,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-killreview,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
@@ -278,6 +278,22 @@ done
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
 HOME="$T" "$COS/bin/cos-atlas" find x >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "cos-atlas refuses when Agent Atlas isn't there" || fail "cos-atlas ran without Agent Atlas"
 "$COS/bin/cos-atlas" sql 'x' >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-atlas takes only find|show|search|messages|recent" || fail "cos-atlas took another command"
+# BUILDER diligence (Nov 15): the opportunity brief demands a premise check, and Codex tries to kill each ranked idea.
+grep -q "PASS 2: DILIGENCE" "$COS/claude/briefs/opportunity.md" && grep -q "Only CHECKED candidates can be ranked" "$COS/claude/briefs/opportunity.md" && ! grep -q "~/meetings" "$COS/claude/briefs/opportunity.md" \
+  && pass "opportunity brief: premise, owner overlap and user checked before ranking" || fail "opportunity brief lacks the diligence pass"
+grep -q "build-opportunity pass" "$COS/bin/cos-run" && grep -q "cos-killreview" "$COS/bin/cos-run" && pass "opportunity passes get the checker's premise rule and a Codex kill review" || fail "kill review not wired"
+KR="$(mktemp -d)"; mkdir -p "$KR/home/cos/repos" "$KR/bin" "$KR/o1" "$KR/o2"
+printf '#!/bin/bash\necho %s\n' "'{\"result\":\"{\\\"candidates\\\":[{\\\"name\\\":\\\"harness\\\",\\\"verdict\\\":\\\"survives\\\",\\\"reason\\\":\\\"premise checked\\\"},{\\\"name\\\":\\\"confidence flag\\\",\\\"verdict\\\":\\\"killed\\\",\\\"reason\\\":\\\"no IQA score exists\\\"}]}\"}'" > "$KR/bin/agent"; chmod +x "$KR/bin/agent"
+for o in o1 o2; do echo '{"receipt":{"summary":"ranked 2"}}' > "$KR/$o/receipt.json"; done
+echo "### harness CHECKED" > "$KR/o1/opportunities.md"; echo "select count(*) from mart.canon_term" > "$KR/o2/opportunities.md"
+HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o1" >/dev/null 2>&1
+jq -e '.kill_review.status=="done" and (.receipt.summary|test("1 survive, 1 killed")) and (.receipt.summary|test("no IQA score"))' "$KR/o1/receipt.json" >/dev/null \
+  && pass "kill review: verdicts merged; the summary leads with survivors and why the rest died" || fail "kill review merge ($(jq -c .kill_review "$KR/o1/receipt.json" 2>/dev/null))"
+: > "$KR/bin/agent.called"; printf '#!/bin/bash\ntouch %s\n' "$KR/bin/agent.ran" > "$KR/bin/agent"; chmod +x "$KR/bin/agent"
+HOME="$KR/home" PATH="$KR/bin:$PATH" "$COS/bin/cos-killreview" "$KR/o2" >/dev/null 2>&1
+[[ ! -f "$KR/bin/agent.ran" ]] && jq -e '.kill_review.status=="skipped" and (.kill_review.why|test("canon"))' "$KR/o2/receipt.json" >/dev/null \
+  && pass "kill review: a file naming canon tables never goes to Codex" || fail "kill review sent canon text to Codex"
+rm -rf "$KR"
 grep -q '"Bash(cos-atlas \*)"' "$COS/claude/settings.investigate.json" && grep -q 'cos-atlas find' "$COS/claude/briefs/atlas.md" && pass "atlas jobs use cos-atlas" || fail "atlas jobs can't run cos-atlas"
 [[ -f "$COS/claude/briefs/atlas.md" ]] && grep -q 'canon_risk' "$COS/claude/briefs/atlas.md" && pass "brief: atlas (with the canon_risk rule)" || fail "atlas brief missing"
 HOME="$T" "$COS/bin/cos-run" land nofix abc >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "land refuses a job with no fix receipt" || fail "land ran without a fix receipt"

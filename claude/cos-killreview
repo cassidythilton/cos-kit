@@ -1,0 +1,54 @@
+#!/bin/bash
+# cos-killreview <job folder>: a second model tries to kill each ranked build idea (plan 2026-11-14, BUILDER diligence).
+# cos-run calls it after the checker passes an opportunity pass. Codex reads the DILIGENCE blocks and the cited files
+# (cwd ~/cos/repos, read-only ask mode) and returns a verdict per ranked candidate: survives, killed or unproven.
+# Writes kill-review.json in the job folder and merges it into receipt.json. Never edits anything else.
+# Skips (and says so) when there's no opportunities file, or when it holds canon text: canon never goes to a
+# non-Claude model (canon charter decision 14).
+set -uo pipefail
+OUT="${1:?usage: cos-killreview <job folder>}"; COS="$HOME/cos"
+R="$OUT/receipt.json"; [[ -f "$R" ]] || { echo "cos-killreview: no receipt in $OUT" >&2; exit 66; }
+F="$OUT/opportunities.md"; [[ -f "$F" ]] || F="$OUT/result.md"
+CANON_RE='canon_ingredient|canon_term|canon_assets\.|food_expression_ingredients|mirror\.canon_|history\.canon_|mart\.canon_'
+
+merge() {  # $1 = kill_review JSON object
+  jq --argjson k "$1" '
+    . + {kill_review: $k}
+    | ($k.candidates // []) as $c
+    | ([$c[] | select(.verdict == "survives")] | length) as $s
+    | ([$c[] | select(.verdict == "killed")]) as $dead
+    | ([$c[] | select(.verdict == "unproven")]) as $unp
+    | .receipt.summary = (
+        (if $k.status == "done" then
+           "Kill review (Codex): \($s) survive, \($dead|length) killed, \($unp|length) unproven. Only survivors go to BUILDER."
+           + (if ($dead|length) > 0 then " Killed: " + ([$dead[] | "\(.name) (\(.reason))"] | join("; ")) + "." else "" end)
+           + (if ($unp|length) > 0 then " Unproven: " + ([$unp[] | "\(.name) (\(.reason))"] | join("; ")) + "." else "" end)
+         else "Kill review skipped: \($k.why). Treat every ranked idea as unproven until it runs." end)
+        + "\n\n" + (.receipt.summary // ""))' "$R" > "$R.tmp" && mv "$R.tmp" "$R"
+}
+
+if [[ ! -f "$F" ]]; then merge '{"status":"skipped","why":"no opportunities.md"}'; exit 0; fi
+if grep -Eqi "$CANON_RE" "$F"; then merge '{"status":"skipped","why":"the file names canon tables, which stay with Claude"}'; exit 0; fi
+
+PROMPT="You are a skeptical reviewer. Another model proposed the build ideas below for a data team and wrote a DILIGENCE
+block for each. Your job is to try to kill each RANKED idea (the ones marked CHECKED). For each one:
+1. Is the premise real? Where the block cites a file and line under data-org or data-org-notebook (your working
+   folder holds both), open it and check the quote. A premise backed only by a card's own description counts as unproven.
+2. Does it overlap work the owner already planned (an open milestone, PR, DRD or DADR named in the block)? Then it
+   should have been an offer of help, not a build.
+3. Would the named user really act differently with it? Is the smallest version really a week or less?
+Verdict per idea: survives (premise checked and no fatal flaw), killed (premise false, overlap, or no real user), or
+unproven (you couldn't check the premise). Be strict: when in doubt, unproven. Ignore ideas not marked CHECKED.
+Return ONLY this JSON, no prose, no code fence:
+{\"candidates\":[{\"name\":\"short name\",\"verdict\":\"survives|killed|unproven\",\"reason\":\"one sentence\",\"checked\":\"file:line or what you opened\"}]}
+
+$(cat "$F")"
+(cd "$COS/repos" && agent -p --mode ask --trust --model gpt-5.3-codex-high --output-format json "$PROMPT") \
+  > "$OUT/kill-review.raw.json" 2> "$OUT/kill-review.err" || true
+J="$(jq -r '.result // ""' "$OUT/kill-review.raw.json" 2>/dev/null | sed -e 's/^```[a-z]*//' -e 's/```$//')"
+if jq -e '.candidates | type == "array"' <<<"$J" >/dev/null 2>&1; then
+  jq '{status: "done", model: "gpt-5.3-codex-high"} + .' <<<"$J" > "$OUT/kill-review.json"
+  merge "$(cat "$OUT/kill-review.json")"
+else
+  merge '{"status":"skipped","why":"Codex returned no usable verdicts (see kill-review.err)"}'
+fi
