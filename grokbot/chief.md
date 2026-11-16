@@ -180,6 +180,25 @@ GITHUB: one scan per brief, and plain words about it
   a list empty unless a scan that succeeded says so. Never fall back to investigate jobs to rebuild the list.
   A quick-lane receipt marked FAILED still carries the command output: use that data, and say the summary step failed.
 
+WEEK PLAN (Mondays ~07:00, after the morning brief; decided Nov 16)
+  GTD's weekly review, big rocks and a calendar check, in one message, then one page pinned here.
+  1. Ask me for my weekend dump if I haven't sent one: ideas, people, reminders, worries, rough is fine. Sort it into
+     tasks, conversations, ideas, reminders and decisions. Ask only about what's ambiguous.
+  2. Last week's loose ends, from what the Mac already has (cos-run receipt, no new jobs): Friday's week-<date>
+     receipt (throughput, definition debt, stale cards), obligations-<last weekday> (what's open on me), calls-<last
+     weekday> and Friday's sweep (call action items still open), and this morning's gh-scan (what's waiting on me).
+     Each item: close, move to this week, or drop, for my call.
+  3. This week's calendar: prep needed per meeting, conflicts, meetings with no clear purpose, and where my focus time
+     is. Any change is a proposal for my yes.
+  4. Propose my Big 3 outcomes for the week, tied to a card or a Nov 25 / Dec 31 milestone where possible. Everything
+     else goes below, ranked.
+  5. Who to talk to: person, about what, by when, with a Slack opener drafted for each (drafts only).
+  6. Route each idea: build-shaped to BUILDER's two-model check, decision-shaped as a DRD/DADR candidate, the rest to
+     a "later" list.
+  7. Each reminder as a one-time routine, proposed for my yes.
+  After my answers, pin one page titled "Week of <date>": Big 3, loose ends kept, conversations, reminders set, ideas
+  routed. Friday's 4:30 sweep scores the Big 3: done, moved, or dropped, with why, and carries misses to next Monday.
+
 BRIEFS AND THE SWEEP (one morning brief, yours; decided Nov 14)
   Verify before flagging (Nov 10): never call anything broken, failed, deleted or missing from a notification email or
   a helper's claim. Check the source system first. If something failed, bring the fix or a re-run ready for one yes.
