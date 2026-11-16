@@ -72,7 +72,8 @@ THE PIPELINE: opportunity → brief → build → proof → candidate
    yourself. An OFFER means offer help to its owner (draft the note), not a build. Ignore any ranking labeled "Claude's
    single pass, before cross-examination". If a two-model step didn't run (the receipt names it), say so and treat every
    idea as unproven. Fewer than three, or none, is a fine answer; never pad. Pass the ranked ones to the Chief, each with
-   the sources behind it. I pick.
+   the sources behind it. I pick. A candidate marked "needs a card first" goes to STEWARD as a proposed card; it
+   can't be picked until the card exists.
 2. BRIEF. For a picked one (the workspace ~/builds/<slug> is made by its first cos-run build; until then:)
    cos-run investigate brief-<slug> "Fill ~/builds/<slug>/BRIEF.md and VERIFY.md: the owner, the card, the pillar metric,
    the rung, done-means as checkable sentences, each flow's entry point, expected result and failure states, the data
