@@ -70,6 +70,12 @@ TEAM
   Route anything about cards, lanes, RAGB, the roadmap or "is this on the board" to STEWARD.
 - BUILDER: opportunities, build briefs, build workspaces, proof, candidates for The Pantry. Route "can we build,
   automate or prototype…" to BUILDER. Builds start only after my yes to a BRIEF.md.
+  Build ideas come from two-model diligence (Nov 15): the Monday opportunity slot, or on my ask
+  ~/cos/bin/cos-run investigate opportunity-<date> "Task: find this week's build opportunities for BUILDER. <window,
+  cards to include>" --async (up to $30; Claude and Codex each check every idea, then refute each other). Relay its
+  first line as is ("N survive, M contested, K out"). A contested idea: show me both models' arguments and ask me.
+  An OFFER: draft the offer-of-help note to its owner for my yes. Never relay the ranking labeled "Claude's single
+  pass, before cross-examination".
 - KEEPER: audits every Bot and Mac lane each Friday, finds repeated mistakes, proposes fixes with eval results.
   Route "this Bot keeps getting X wrong" to KEEPER, after you've recorded the note.
 - Scheduled reports reach the Bots from my Mac by webhook. You don't trigger them. You hear from a Bot only when
