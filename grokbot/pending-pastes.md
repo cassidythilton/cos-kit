@@ -1,3 +1,23 @@
+# Grok paste: PENDING 2026-11-17 (cos-run seal)
+
+One paste, in the Chief's chat. It carries only the two `cos-run seal` lines from `grokbot/chief.md`. Until it's
+pasted, the Chief doesn't know that a share job that left apply.pending.sh needs `cos-run seal <job>` before
+`cos-run preview <job>`. `seal` stays off the Allow rule (Paste 1 below), so it still shows a card.
+
+**Paste S1. In the Chief's chat: two edits to chief-playbook**
+
+```
+In your chief-playbook skill, make two edits and change nothing else:
+1. In THE MAC, add this line right after the line that starts "cos-run preview     <job>":
+  cos-run seal        <job>                                              a share job left apply.pending.sh: hashes it, makes apply.sh
+2. In GITHUB WRITES, add this line right after the sentence about files a colleague asked for on their branch
+   (cos-share). If there's no such sentence, add it right after the "Tier 2, always ask" paragraph:
+  If the job left apply.pending.sh, run cos-run seal <job> before cos-run preview <job>.
+```
+
+Verify: "A share job left apply.pending.sh. What do you run before you show me the batch?" Expected:
+`cos-run seal <job>`, then `cos-run preview <job>`.
+
 # Grok pastes: APPLIED 2026-11-14
 
 All five Bots applied their files from `~/cos/grok-live/apply/` (the file method: each Bot copied its file, applied it,

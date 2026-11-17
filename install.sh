@@ -785,11 +785,48 @@ S="$(mkshare cassidy/487-oracle tests/fx o.jsonl)"; [[ "$(sh1 000000000000000000
 S="$(mkshare dgonzo/487-tier1-service tests/fx o.jsonl)"; [[ "$(sh1 "$S")" == 65 ]] && pass "cos-share never pushes to the colleague's own branch" || fail "cos-share accepted someone else's branch"
 S="$(mkshare cassidy/487-oracle ../escape o.jsonl)"; [[ "$(sh1 "$S")" == 65 ]] && pass "cos-share refuses a destination outside the repo" || fail "cos-share accepted ../"
 S="$(mkshare cassidy/487-oracle tests/fx ../../.ssh/id)"; [[ "$(sh1 "$S")" == 65 ]] && pass "cos-share refuses an item outside the source folder" || fail "cos-share accepted an item outside the source"
+: > "$SH/Documents/src/-delete"
+S="$(mkshare cassidy/487-oracle tests/fx -delete)"; [[ "$(sh1 "$S")" == 65 && -e "$SH/Documents/src/-delete" ]] && pass "cos-share refuses an item starting with - (find would read it as an option)" || fail "cos-share accepted an item starting with -"
+S="$(mkshare cassidy/487-oracle tests/fx $'o.jsonl\ncache')"; [[ "$(sh1 "$S")" == 65 ]] && pass "cos-share refuses an item with a newline in its name" || fail "cos-share accepted an item with a newline"
 S="$(mkshare cassidy/487-oracle tests/fx o.jsonl)"; echo changed >> "$SH/Documents/src/o.jsonl"; [[ "$(sh1 "$S")" == 67 ]] && pass "cos-share refuses files that changed after the job checked them" || fail "cos-share pushed changed files"
+# cos-run seal (Nov 17): a job can't hash a folder, so it stages content_sha256 empty and apply.pending.sh; seal finishes both.
+# Seal's content_sha256 recipe is cos-share's, byte for byte (shasum -a 256 at both steps), and matches cos-share line 12.
+SR="$(sed -n 's/^GOT="\$(cd "\$SRC" && \(.*\))"$/\1/p' "$KIT/claude/cos-share")"; SL="$(sed -n 's/^  CS="\$(cd "\$SRC" && \(.*\))" \\$/\1/p' "$KIT/claude/cos-run")"
+[[ "$SR" == 'find "${ITEMS[@]}" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d'"' '"' -f1' && "$SL" == "$SR" \
+   && "$(sed -n 12p "$KIT/claude/cos-share")" == '#   (cd <source_root> && find <items> -type f -print0 | sort -z | xargs -0 shasum -a 256) | shasum -a 256' ]] \
+  && pass "seal hashes with cos-share's recipe, byte for byte (cos-share line 12 and its check)" || fail "seal's recipe differs from cos-share's (cos-share: $SR; seal: $SL)"
+J2="$SH/cos/outbox/s2"; mkdir -p "$J2" "$SH/stub"; echo pr > "$J2/pr.md"
+printf '#!/bin/bash\necho "$*" >> "%s/git-called"\nexit 2\n' "$SH" > "$SH/stub/git"; chmod +x "$SH/stub/git"
+seal() { HOME="$SH" "$COS/bin/cos-run" seal s2 >/dev/null 2>&1; echo $?; }
+mks2() { jq -n --arg r "$SH/Documents/src" --arg i "$1" '{repo:"food-enrichment",base:"dgonzo/487-tier1-service",branch:"cassidy/487-oracle",dest:"tests/fx",source_root:$r,items:[$i,"cache"],content_sha256:"",title:"t",body_file:"pr.md"}' > "$J2/share.json"; }
+printf '# NOT RUNNABLE YET\ncos-share s2 SHARE_SHA\ngh issue comment 487 --repo wisecodeai/food-enrichment --body-file %s/c.md\n' "$J2" > "$SH/pending"
+[[ "$(seal)" == 66 ]] && pass "seal refuses a job without share.json" || fail "seal ran without share.json"
+mks2 o.jsonl; [[ "$(seal)" == 66 ]] && pass "seal refuses a job without apply.pending.sh" || fail "seal ran without apply.pending.sh"
+mks2 ../../.ssh/id; cp "$SH/pending" "$J2/apply.pending.sh"; [[ "$(seal)" == 65 && ! -e "$J2/apply.sh" ]] && pass "seal refuses an item outside the source folder, as cos-share does" || fail "seal accepted an item outside the source"
+mks2 -delete; [[ "$(seal)" == 65 && ! -e "$J2/apply.sh" && -e "$SH/Documents/src/-delete" ]] && pass "seal refuses an item starting with -, as cos-share does" || fail "seal accepted an item starting with -"
+mks2 $'o.jsonl\ncache'; [[ "$(seal)" == 65 && ! -e "$J2/apply.sh" ]] && pass "seal refuses an item with a newline in its name, as cos-share does" || fail "seal accepted an item with a newline"
+mks2 o.jsonl; outside() { find "$SH" -type f ! -path "$J2/*" -print0 | sort -z | xargs -0 shasum -a 256; }; O1="$(outside)"
+rc="$(seal)"; S="$(shasum -a 256 "$J2/share.json" | cut -d' ' -f1)"; CS="$(cd "$SH/Documents/src" && find o.jsonl cache -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+[[ $rc == 0 && ! -e "$J2/apply.pending.sh" && "$(jq -r .content_sha256 "$J2/share.json")" == "$CS" && "$(sed -n 2p "$J2/apply.sh")" == "cos-share s2 $S" && "$(sed -n 3p "$J2/apply.sh")" == "$(sed -n 3p "$SH/pending")" ]] \
+  && pass "seal writes content_sha256, puts share.json's sha256 in apply.sh and renames it" || fail "seal (rc $rc)"
+[[ "$O1" == "$(outside)" ]] && pass "seal writes nothing outside the job folder" || fail "seal wrote outside the job folder"
+# Both of cos-share's sha256 checks (share.json, then the files) come before its first git call. The stub git records
+# that call and fails it, so reaching ls-remote proves both passed; 66 alone could also mean a missing file.
+e="$(PATH="$SH/stub:$PATH" HOME="$SH" "$COS/bin/cos-share" s2 "$S" 2>&1 >/dev/null)"; rc=$?
+[[ $rc == 66 && "$e" == *"dgonzo/487-tier1-service isn't on wisecodeai/food-enrichment"* \
+   && "$(cat "$SH/git-called" 2>/dev/null)" == "ls-remote --exit-code --heads https://github.com/wisecodeai/food-enrichment.git dgonzo/487-tier1-service" ]] \
+  && pass "cos-share accepts a sealed share.json (both sha256 checks pass; it reached git ls-remote)" || fail "cos-share refused a sealed share.json (rc $rc: $e)"
+A1="$(shasum -a 256 "$J2/apply.sh")"; [[ "$(seal)" == 0 && "$A1" == "$(shasum -a 256 "$J2/apply.sh")" && "$(shasum -a 256 "$J2/share.json" | cut -d' ' -f1)" == "$S" ]] && pass "seal run twice changes nothing" || fail "seal is not idempotent"
+echo again >> "$SH/Documents/src/cache/c.json"; [[ "$(seal)" == 67 && "$A1" == "$(shasum -a 256 "$J2/apply.sh")" ]] && pass "seal refuses, and never rewrites apply.sh, when the files changed after sealing" || fail "seal after a change"
+mkdir -p "$SH/cos/outbox/s3"; touch "$SH/cos/outbox/s3/apply.pending.sh"
+e="$(HOME="$SH" "$COS/bin/cos-run" preview s3 2>&1 >/dev/null)"; [[ $? -eq 66 && "$e" == *"cos-run seal s3"* ]] && pass "preview of an unsealed share says to run cos-run seal" || fail "preview unsealed: $e"
 rm -rf "$SH"
+# The Chief learns bot text only through a paste: chief.md's seal lines must be in pending-pastes.md, word for word.
+np=0; while IFS= read -r l; do grep -qxF -- "$l" "$KIT/grokbot/pending-pastes.md" && np=$((np+1)); done < <(grep -e '^  cos-run seal ' -e 'run cos-run seal <job> before' "$KIT/grokbot/chief.md")
+[[ $np -eq 2 ]] && pass "pending-pastes.md carries chief.md's two cos-run seal lines" || fail "pending-pastes.md has $np of chief.md's 2 seal lines"
 # --help for every lane, and refusals that print the correct call.
-nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake eval fix land note pause receipt preflight; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
-[[ $nh -eq 18 ]] && pass "cos-run <lane> --help has examples for all 18 lanes" || fail "--help examples on $nh of 18 lanes"
+nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
+[[ $nh -eq 19 ]] && pass "cos-run <lane> --help has examples for all 19 lanes" || fail "--help examples on $nh of 19 lanes"
 e="$(HOME="$T" "$T/cos/bin/cos-run" investigate 2>&1 >/dev/null)"; [[ $? -ne 0 && "$e" == *"Correct call:"*"cos-run investigate inv-"* ]] && pass "a call missing its job id prints the correct call" || fail "no correct call printed: $e"
 e="$(HOME="$T" "$T/cos/bin/cos-run" quick q1 "x" --wiht "ls" 2>&1 >/dev/null)"; [[ "$e" == *"unknown option: --wiht"*"Correct call:"*"--with"* ]] && pass "an unknown option prints the correct call" || fail "unknown option: $e"
 # The lake lane: never scheduled, Claude only, stops at once without VPN and sign-in.

@@ -29,7 +29,9 @@ case "$SRC" in "$HOME"/Documents/*|"$HOME"/builds/*|"$COS"/outbox/*) ;; *) die "
 [[ -n "$TITLE" && -f "$BODY" && "$BODY" == "$OUT"/* ]] || die "title and a body_file in the job folder are required"
 ITEMS=(); while IFS= read -r line; do ITEMS+=("$line"); done < <(jq -r '.items[]' "$M")  # bash 3.2: no mapfile
 (( ${#ITEMS[@]} > 0 )) || die "no items"
-for i in "${ITEMS[@]}"; do [[ -n "$i" && "$i" != /* && "$i" != *..* && -e "$SRC/$i" ]] || die "bad or missing item: $i"; done
+# No control characters or newlines (read would split them), and nothing find would read as an option or operator.
+jq -e 'all(.items[]; test("[[:cntrl:]]") | not)' "$M" >/dev/null 2>&1 || die "an item has a control character or a newline"
+for i in "${ITEMS[@]}"; do [[ -n "$i" && "$i" != /* && "$i" != -* && "$i" != '!' && "$i" != '(' && "$i" != *..* && -e "$SRC/$i" ]] || die "bad or missing item: $i"; done
 GOT="$(cd "$SRC" && find "${ITEMS[@]}" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
 [[ "$GOT" == "$WANTC" ]] || die "the files changed since the job looked at them (content sha256 differs). Run the job again." 67
 BYTES="$(cd "$SRC" && find "${ITEMS[@]}" -type f -print0 | xargs -0 stat -f %z | awk '{s+=$1} END {print s+0}')"

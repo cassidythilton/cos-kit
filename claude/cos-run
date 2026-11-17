@@ -20,6 +20,7 @@
 #   cos-run lake        <job-id> "<question>" [--env dev|uat|prod]                one data question, Cursor CLI in a walled workspace, after his yes
 #   cos-run eval        <suite> current|<proposed-lane-prompt.md>                 blinded A/B of the investigate lane on a fixed suite
 #   cos-run preview     <job-id>                                                  a staged batch in plain words, with what to run on his yes
+#   cos-run seal        <job-id>                                                  hashes a staged cos-share (share.json) and makes its apply.sh
 #   cos-run note        <bot> "<what went wrong, and the rule>"                   appends one correction to ~/cos/state/corrections.jsonl
 #   cos-run pause       <slot|all> <days>                                         holds a scheduled slot for N days (0 resumes)
 #   cos-run receipt     <job>                                                     a job's result, or "running" / "didn't finish, rerun?"
@@ -30,7 +31,7 @@
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake eval fix land note pause receipt preflight"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -99,6 +100,17 @@ cos-run preview <job>
   Show him the words, not the sha256.
 Examples:
   cos-run preview inv-720-status
+H
+;;
+    seal) cat <<'H'
+cos-run seal <job>
+  For a cos-share job that left share.json with content_sha256 empty and apply.pending.sh (jobs can't hash a folder).
+  Checks share.json's source folder and items the way cos-share does, writes content_sha256, puts share.json's sha256
+  in place of SHARE_SHA and renames apply.pending.sh to apply.sh. No model. Writes only in the job folder; pushes and
+  posts nothing. Running it again changes nothing. Then preview and apply as usual, after his yes.
+Examples:
+  cos-run seal share-backlog974-20261117
+  cos-run preview share-backlog974-20261117
 H
 ;;
     gh) "$HOME/cos/bin/cos-gh" --help ;;
@@ -184,7 +196,7 @@ LANE="${1:-}"
 [[ "$LANE" == gh ]] && exec "$HOME/cos/bin/cos-gh" "${@:2}"
 JOB="${2:-}"; [[ -n "$JOB" ]] || usage_fail "$LANE" "missing the job id"
 BRIEF_IN="${3:-}"
-[[ -n "$BRIEF_IN" || "$LANE" =~ ^(receipt|gh-scan|preview|preflight)$ ]] || usage_fail "$LANE" "missing the third argument (the brief, the question or the lane's value)"
+[[ -n "$BRIEF_IN" || "$LANE" =~ ^(receipt|gh-scan|preview|seal|preflight)$ ]] || usage_fail "$LANE" "missing the third argument (the brief, the question or the lane's value)"
 if [[ "$LANE" == gh-scan && "$BRIEF_IN" == --* ]]; then BRIEF_IN=""; shift 2; else shift $(( $# < 3 ? $# : 3 )); fi
 export PATH="$HOME/cos/bin:$PATH"
 # Jobs use their own clones under ~/cos/repos. launchd jobs cannot read ~/Documents (macOS privacy, TCC),
@@ -667,7 +679,9 @@ fi
 # cos-run preview <job>. The Chief shows Cassidy these words; his "yes" runs on_yes. The sha256 stays in on_yes, never
 # in what he reads: apply and apply-sheet still refuse a file that changed after this preview.
 if [[ "$LANE" == preview ]]; then
-  P="$COS/outbox/$JOB"; [[ -f "$P/apply.sh" || -f "$P/sheet.json" ]] || usage_fail preview "nothing staged in ~/cos/outbox/$JOB (no apply.sh or sheet.json)" 66
+  P="$COS/outbox/$JOB"
+  [[ -f "$P/apply.sh" || -f "$P/sheet.json" || ! -f "$P/apply.pending.sh" ]] || usage_fail preview "~/cos/outbox/$JOB has apply.pending.sh, not apply.sh: run cos-run seal $JOB first" 66
+  [[ -f "$P/apply.sh" || -f "$P/sheet.json" ]] || usage_fail preview "nothing staged in ~/cos/outbox/$JOB (no apply.sh or sheet.json)" 66
   RES='{}'
   if [[ -f "$P/apply.sh" ]]; then
     S="$(shasum -a 256 "$P/apply.sh" | cut -d' ' -f1)"
@@ -678,6 +692,40 @@ if [[ "$LANE" == preview ]]; then
     RES="$(jq --slurpfile s "$P/sheet.json" --arg y "cos-run apply-sheet $JOB $S" '. + {sheet: {tier: 1, items: [$s[0].writes[] | "\(.tab) row \(.row) (\(.row_name)) column \(.col): \"\(.old)\" -> \"\(.new)\""], on_yes: $y}}' <<<"$RES")"
   fi
   jq --arg j "$JOB" '{job: $j, show_cassidy: "the items, in plain words; never the sha256", preview: .}' <<<"$RES"; exit 0
+fi
+# ---------------------------------------------------------------- seal: finish a cos-share batch a job couldn't hash
+# cos-run seal <job>. A job can't run find | sort | xargs, so a share job stages share.json with content_sha256 empty
+# and apply.pending.sh with "cos-share <job> SHARE_SHA". This hashes the items exactly as cos-share checks them, writes
+# content_sha256, puts share.json's sha256 on that line and renames the file apply.sh. No model; it writes only in the
+# job folder and pushes nothing. Once apply.sh exists it is never rewritten: a rerun only checks it still matches.
+if [[ "$LANE" == seal ]]; then
+  P="$COS/outbox/$JOB"; M="$P/share.json"; PEND="$P/apply.pending.sh"; A="$P/apply.sh"
+  [[ -f "$M" ]] || usage_fail seal "no share.json in ~/cos/outbox/$JOB" 66
+  [[ -f "$PEND" || -f "$A" ]] || usage_fail seal "no apply.pending.sh in ~/cos/outbox/$JOB" 66
+  SRC="$(jq -r '.source_root // empty' "$M" 2>/dev/null)" || usage_fail seal "share.json isn't valid JSON" 65
+  case "$SRC" in "$HOME"/Documents/*|"$HOME"/builds/*|"$COS"/outbox/*) ;; *) usage_fail seal "source_root must be under ~/Documents, ~/builds or ~/cos/outbox" 65;; esac
+  [[ "$SRC" != *..* && -d "$SRC" ]] || usage_fail seal "source_root isn't a folder: $SRC" 66
+  ITEMS=(); while IFS= read -r line; do ITEMS+=("$line"); done < <(jq -r '.items[]' "$M" 2>/dev/null)  # bash 3.2: no mapfile
+  (( ${#ITEMS[@]} > 0 )) || usage_fail seal "share.json has no items" 65
+  # Same item rules as cos-share: no control characters or newlines (read would split them), nothing find reads as an option.
+  jq -e 'all(.items[]; test("[[:cntrl:]]") | not)' "$M" >/dev/null 2>&1 || usage_fail seal "an item has a control character or a newline" 65
+  for i in "${ITEMS[@]}"; do [[ -n "$i" && "$i" != /* && "$i" != -* && "$i" != '!' && "$i" != '(' && "$i" != *..* && -e "$SRC/$i" ]] || usage_fail seal "bad or missing item: $i" 65; done
+  CS="$(cd "$SRC" && find "${ITEMS[@]}" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)" \
+    || usage_fail seal "couldn't read every file under the items in $SRC" 66
+  if [[ -f "$A" ]]; then
+    S="$(shasum -a 256 "$M" | cut -d' ' -f1)"
+    [[ "$(jq -r '.content_sha256 // empty' "$M")" == "$CS" ]] && grep -qxF "cos-share $JOB $S" "$A" \
+      || usage_fail seal "apply.sh is already there and no longer matches share.json or the files; it is never rewritten. Stage the share again under a new job id" 67
+    rm -f "$PEND"
+    jq -n --arg j "$JOB" '{job: $j, seal: "already sealed; nothing changed", next: ("cos-run preview " + $j)}'; exit 0
+  fi
+  [[ "$(grep -cxF "cos-share $JOB SHARE_SHA" "$PEND")" == 1 ]] || usage_fail seal "apply.pending.sh needs exactly one line: cos-share $JOB SHARE_SHA" 65
+  { jq --arg c "$CS" '.content_sha256 = $c' "$M" > "$M.tmp" && mv "$M.tmp" "$M"; } || usage_fail seal "couldn't write share.json" 73
+  S="$(shasum -a 256 "$M" | cut -d' ' -f1)"
+  { awk -v a="cos-share $JOB SHARE_SHA" -v b="cos-share $JOB $S" '$0 == a { $0 = b } 1' "$PEND" > "$A.tmp" && mv "$A.tmp" "$A"; } \
+    || usage_fail seal "couldn't write apply.sh" 73
+  rm -f "$PEND"
+  jq -n --arg j "$JOB" --argjson n "${#ITEMS[@]}" '{job: $j, seal: "share.json hashed (\($n) items) and apply.sh made", next: ("cos-run preview " + $j)}'; exit 0
 fi
 # The lake lane is never scheduled and never started by another agent (the gate also refuses it inside a job).
 if [[ "$LANE" == lake && "${COS_CALLER:-bot}" == sched ]]; then usage_fail lake "the lake lane never runs on a schedule; the Chief runs it after Cassidy's yes to the question" 65; fi

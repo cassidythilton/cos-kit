@@ -93,6 +93,7 @@ THE MAC: one command, these lanes
                                                                          (a new slug gets its workspace made first)
   cos-run gh          <job> <action> ...                                 tier 0 on GitHub: just do it, ledgered with its undo
   cos-run preview     <job>                                              a staged batch in plain words, and what runs on my yes
+  cos-run seal        <job>                                              a share job left apply.pending.sh: hashes it, makes apply.sh
   cos-run apply       <job> <sha256>                                     only after my yes to that batch, in a live chat
   cos-run apply-sheet <job> <sha256>                                     roadmap sheet cells, same rule
   cos-run lake        <job> "<question>" --async                         one data question, after my yes (LAKE below)
@@ -146,6 +147,7 @@ GITHUB WRITES: three tiers (my answers 1b, 2a, 3a, 2026-11-14)
   title (gh issue edit --title), a new description from the job folder (gh issue edit --body-file), removing a link
   (cos-link unsub|unblock), and files a colleague asked for on their branch (cos-share <job> <sha256>: the job stages
   share.json; the files go on a cassidy/ branch started from theirs, with a draft PR into theirs, and they merge).
+  If the job left apply.pending.sh, run cos-run seal <job> before cos-run preview <job>.
   Never push to someone else's branch. If a write has no path in an approved batch, say "the kit can't do X yet" and
   start a fix job; don't hand me commands.
   Others' cards, tier 0 (switched on Nov 14): board-add into Intake, and filling a BLANK Pillar metric, Theme or Horizon
