@@ -248,10 +248,14 @@ gh pr comment 722 --repo wisecodeai/data-org --body-file $T/cos/outbox/t5/review
 gh pr merge 720 --repo wisecodeai/data-org --squash --delete-branch
 gh issue edit 652 --repo wisecodeai/data-org --add-label type/discovery --milestone "Nov 25 · November slice to Live"
 gh pr edit 720 --repo wisecodeai/data-org --add-reviewer someone-else
+gh issue edit 767 --repo wisecodeai/data-org --title "Re-parse ingredient lists from a flat-file export" --body-file $T/cos/outbox/t5/review.md
+cos-link unblock wisecodeai/data-org#767 wisecodeai/data-org#728
 AP
 S5="$(shasum -a 256 "$T/cos/outbox/t5/apply.sh" | cut -d' ' -f1)"
-HOME="$T" "$COS/bin/cos-run" apply t5 "$S5" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^\$ gh' "$T/cos/outbox/t5/applied.log" 2>/dev/null)" == 6 ]] \
-  && pass "apply runs approved PR reviews, comments, a merge, an issue edit and a review request" || fail "apply refused an approved PR write"
+HOME="$T" "$COS/bin/cos-run" apply t5 "$S5" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^\$ \(gh\|cos-link\)' "$T/cos/outbox/t5/applied.log" 2>/dev/null)" == 8 ]] \
+  && pass "apply runs approved PR reviews, comments, a merge, issue edits (labels, title, body), a link removal and a review request" || fail "apply refused an approved PR write"
+mkdir -p "$T/cos/outbox/t8"; echo 'gh issue edit 767 --repo wisecodeai/data-org --body-file /tmp/x.md' > "$T/cos/outbox/t8/apply.sh"; S8="$(shasum -a 256 "$T/cos/outbox/t8/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t8 "$S8" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t8/applied.log" ]] && pass "apply refuses a new issue body from outside the job folder" || fail "apply took a body from outside the job folder"
 mkdir -p "$T/cos/outbox/t7"; echo 'gh pr edit 720 --repo wisecodeai/data-org --add-reviewer x;rm' > "$T/cos/outbox/t7/apply.sh"; S7="$(shasum -a 256 "$T/cos/outbox/t7/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t7 "$S7" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t7/applied.log" ]] && pass "apply refuses a review request with anything after the logins" || fail "apply ran a bad review request"
 mkdir -p "$T/cos/outbox/t6"; echo 'gh pr review 746 --repo wisecodeai/data-org --approve --body "looks good"' > "$T/cos/outbox/t6/apply.sh"; S6="$(shasum -a 256 "$T/cos/outbox/t6/apply.sh" | cut -d' ' -f1)"

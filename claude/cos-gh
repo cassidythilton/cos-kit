@@ -944,6 +944,8 @@ PLAIN = [
     (r"^make context-request ", 1, "File a context request for the CDO"),
     (r"^gh issue comment (\d+) --repo (\S+)", 1, "Comment on {1}#{0} (text in the job folder)"),
     (r"^gh issue create --repo (\S+) --title (\"[^\"]*\")", 0, "File a new card in {0}: {1}"),
+    (r"^gh issue edit (\d+) --repo (\S+) .*--body-file", 2, "Rewrite the description of {1}#{0} (new text in the job folder)"),
+    (r"^gh issue edit (\d+) --repo (\S+) .*--title (\"[^\"]*\")", 2, "Retitle {1}#{0} to {2}"),
     (r"^gh issue edit (\d+) --repo (\S+)(.*)", 0, "Edit labels, assignees or milestone on {1}#{0}:{2}"),
     (r"^gh pr comment (\d+) --repo (\S+)", 1, "Comment on PR {1}#{0}"),
     (r"^gh pr review (\d+) --repo (\S+) --approve", 2, "Approve PR {1}#{0}"),
@@ -955,6 +957,8 @@ PLAIN = [
     (r"^gh pr create --draft --repo (\S+) --head (\S+)", 0, "Open a draft PR in {0} from {1}"),
     (r"^cos-link sub (\S+) (\S+)", 0, "Make {1} a sub-issue of {0}"),
     (r"^cos-link blocked-by (\S+) (\S+)", 0, "Mark {0} blocked by {1}"),
+    (r"^cos-link unsub (\S+) (\S+)", 1, "Remove {1} as a sub-issue of {0}"),
+    (r"^cos-link unblock (\S+) (\S+)", 1, "Remove the link saying {0} is blocked by {1} (also clears it on {1})"),
     (r"^cos-push-draft (\S+) ", 0, "Push the reviewed draft from job {0} onto its branch"),
     (r"^git -C \S+ push \S+ (\S+)", 0, "Push build branch {0}"),
 ]
