@@ -294,6 +294,7 @@ HOME="$T" "$COS/bin/cos-atlas" find x >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "
 grep -q "PASS 2: DILIGENCE" "$COS/claude/briefs/opportunity.md" && grep -q "Only CHECKED candidates can be ranked" "$COS/claude/briefs/opportunity.md" && ! grep -q "~/meetings" "$COS/claude/briefs/opportunity.md" \
   && grep -q "slack-digest.md" "$COS/claude/briefs/opportunity.md" && grep -q '"kind": "code|pr|issue|board|receipt|slack|doc|transcript"' "$COS/claude/briefs/opportunity.md" \
   && pass "opportunity brief: premise, owner overlap and user checked; writes slack-digest.md and diligence.json with call evidence tagged" || fail "opportunity brief lacks the diligence pass, the digest or diligence.json"
+grep -q "except Cassidy's own words" "$COS/bin/cos-run" && grep -q "waiver.json" "$COS/claude/lane.md" && pass "a comment Cassidy approved word for word, with a recorded lint waiver, isn't blocked by lint" || fail "no path for Cassidy's own words past the lint"
 grep -q "build-opportunity pass" "$COS/bin/cos-run" && grep -q '"$COS/bin/cos-diligence" "$OUT"' "$COS/bin/cos-run" && ! grep -q "cos-killreview" "$COS/bin/cos-run" && [[ ! -e "$COS/bin/cos-killreview" ]] \
   && pass "opportunity passes get the checker's premise rule and two-model diligence (the one-shot kill review is retired)" || fail "two-model diligence not wired"
 grep -q "diligence.json is missing" "$COS/bin/cos-run" && pass "checker: diligence.json must match opportunities.md; slack-digest.md canon-free with links" || fail "checker lacks the diligence.json and digest rules"

@@ -51,6 +51,10 @@ Write batches (board jobs):
   roadmap fields, a lane move with GitHub evidence): don't stage these in apply.sh. List each as the exact
   `cos-run gh <job> <action> ...` call in needs_approval, with its evidence; the Chief runs them without asking and they
   land in the ledger with their undo (`cos-run gh --help`). You can't run them yourself.
+- Cassidy's own words: when he approves a comment word for word and waives the lint (recorded by `cos-run note` in
+  the corrections ledger, naming the issue), copy his text unchanged, stage the line, and write waiver.json:
+  {"ledger": "~/cos/state/ledger/corrections.jsonl:<line>", "issue": "wisecodeai/<repo>#<n>", "file": "<comment file>"}.
+  Don't rewrite his text and don't refuse to stage it over lint findings. The other data-org rules still apply.
 - Files for a colleague's branch (they asked for them at a path): never push to their branch. Stage share.json in the
   job folder (repo, base = their branch, branch = cassidy/<issue>-<topic>, dest, source_root, items, content_sha256,
   title, body_file; the format is at the top of ~/cos/bin/cos-share) and the PR body file, and put one line in apply.sh:
