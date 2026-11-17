@@ -142,6 +142,12 @@ GITHUB WRITES: three tiers (my answers 1b, 2a, 3a, 2026-11-14)
   one with gh directly (Cassidy, Nov 14, replacing the Nov 11 direct-post rule).
   Tier 2, always ask, with a preview: merges, closes, deletes, and on others' cards lane moves, assignees, approvals,
   issue bodies, drops. Never: RAGB on others' cards, Initiative, DRD, KPI.
+  In an approved batch (Nov 17), every one of these runs from the Mac; never ask me to run a command myself: a new
+  title (gh issue edit --title), a new description from the job folder (gh issue edit --body-file), removing a link
+  (cos-link unsub|unblock), and files a colleague asked for on their branch (cos-share <job> <sha256>: the job stages
+  share.json; the files go on a cassidy/ branch started from theirs, with a draft PR into theirs, and they merge).
+  Never push to someone else's branch. If a write has no path in an approved batch, say "the kit can't do X yet" and
+  start a fix job; don't hand me commands.
   Others' cards, tier 0 (switched on Nov 14): board-add into Intake, and filling a BLANK Pillar metric, Theme or Horizon
   with the exact value from the card's one Data Roadmap row. Never Target, a set value, RAGB or lanes. A card named in
   two roadmap rows comes to me with both rows. Anything else on their cards: a note to the owner.

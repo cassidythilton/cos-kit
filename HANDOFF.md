@@ -178,6 +178,11 @@ minutes, so the fix lane is for the Chief, not for you.
 - Don't turn a one-off scoping note into a standing rule. A "keep Tolga's work out" exclusion was invented from a note
   that only scoped one ad hoc run (Nov 15); ask before writing a rule into a file the bots read.
 
+- If a bot hands Cassidy a command to run himself, the kit is missing a write path; add it to the approved-batch
+  allow-list (with a test) instead. Nov 17: issue title and body edits, link removal (`cos-link unsub|unblock`), and
+  `cos-share` for files a colleague asks for on their branch.
+- Gate patterns must not match inside arguments: "Documents/Cursor Projects/…" was once refused as "cursor" (Nov 17).
+
 ## 9. Open items (as of 2026-11-15)
 
 - BUILDER two-model diligence is in and proved once (`~/cos/outbox/opportunity-2model-20261115`, window Nov 7-14):

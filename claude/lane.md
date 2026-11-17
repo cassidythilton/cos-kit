@@ -51,6 +51,10 @@ Write batches (board jobs):
   roadmap fields, a lane move with GitHub evidence): don't stage these in apply.sh. List each as the exact
   `cos-run gh <job> <action> ...` call in needs_approval, with its evidence; the Chief runs them without asking and they
   land in the ledger with their undo (`cos-run gh --help`). You can't run them yourself.
+- Files for a colleague's branch (they asked for them at a path): never push to their branch. Stage share.json in the
+  job folder (repo, base = their branch, branch = cassidy/<issue>-<topic>, dest, source_root, items, content_sha256,
+  title, body_file; the format is at the top of ~/cos/bin/cos-share) and the PR body file, and put one line in apply.sh:
+  `cos-share <this job> <sha256 of share.json>`. A comment that says where the files are goes after it in the same batch.
 - Preview each make write with `DRY_RUN=1` first in the command (`DRY_RUN=1 make field CARD=652 FIELD=Target TO=2026-11-25`), never at the end, and quote the preview in notes.md.
 - Data questions: you don't query data. Write the question in open_questions as a `cos-run lake` request (the question, the tables you expect it to read, the shape of the answer); the Chief runs it after Cassidy's yes.
 - No write of any kind (RAGB, Status, log, make field) on a card whose owner isn't cassidythilton, in apply.sh or in needs_approval. Those go in that owner's nudge draft instead.

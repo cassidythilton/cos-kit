@@ -284,7 +284,7 @@ Board writes never run inside a job. A job stages them, the receipt fingerprints
                                                                                         Chief re-reads each card
 ```
 
-Allowed lines: the repo's own write targets (`make ragb`, `field`, `set-pillar`, `complete`, `promote`, `board-add`, `ship-link`, `context-request`), `gh issue create`, `gh issue edit` (labels, assignees, milestone), `gh issue comment --body-file`, `cos-link sub|blocked-by`, `gh pr comment`, `gh pr review`, `gh pr merge`, `gh pr ready`, `cos-push-draft` to one of his `cassidy/*` branches (fast-forward only, refused if the branch moved), and for builds a push of a `<name>/<branch>` build branch and `gh pr create --draft`. `EXECUTE=1`, raw closes and deletes are refused. Sheet edits go through `apply-sheet` the same way. Kit fixes go through `land` the same way.
+Allowed lines: the repo's own write targets (`make ragb`, `field`, `set-pillar`, `complete`, `promote`, `board-add`, `ship-link`, `context-request`), `gh issue create`, `gh issue edit` (labels, assignees, milestone, title, and a body from the job folder), `gh issue comment --body-file`, `cos-link sub|blocked-by|unsub|unblock`, `gh pr comment`, `gh pr review`, `gh pr merge`, `gh pr ready`, `cos-push-draft` to one of his `cassidy/*` branches (fast-forward only, refused if the branch moved), `cos-share` for files a colleague asked for (a `cassidy/*` branch started from theirs, with a draft PR into theirs; never a push to their branch), and for builds a push of a `<name>/<branch>` build branch and `gh pr create --draft`. `EXECUTE=1`, raw closes and deletes are refused. Sheet edits go through `apply-sheet` the same way. Kit fixes go through `land` the same way.
 
 ---
 

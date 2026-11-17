@@ -960,6 +960,7 @@ PLAIN = [
     (r"^cos-link unsub (\S+) (\S+)", 1, "Remove {1} as a sub-issue of {0}"),
     (r"^cos-link unblock (\S+) (\S+)", 1, "Remove the link saying {0} is blocked by {1} (also clears it on {1})"),
     (r"^cos-push-draft (\S+) ", 0, "Push the reviewed draft from job {0} onto its branch"),
+    (r"^cos-share (\S+) ", 1, "Put the files listed in job {0}'s share.json on a cassidy/ branch started from the owner's branch, and open a draft PR into it (the owner merges)"),
     (r"^git -C \S+ push \S+ (\S+)", 0, "Push build branch {0}"),
 ]
 

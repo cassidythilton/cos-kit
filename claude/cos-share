@@ -1,0 +1,64 @@
+#!/bin/bash
+# cos-share <job> <sha256>: hand files to a colleague's branch the way GitHub expects, without touching their branch.
+# Runs only from an approved apply batch (cos-run apply); jobs can't call it (the gate blocks it).
+# Reads ~/cos/outbox/<job>/share.json, which a job stages:
+#   {"repo": "food-enrichment", "base": "dgonzo/487-tier1-service", "branch": "cassidy/487-tier1-oracle",
+#    "dest": "tests/rapid_recipe/fixtures/tier1_oracle", "source_root": "/Users/…/image-extractor/eval/runs/backlog974",
+#    "items": ["oracle.jsonl", "cache_a", …], "content_sha256": "<see below>", "title": "…", "body_file": "pr.md"}
+# Then: checks share.json is the approved one (sha256) and the files are byte-for-byte what the job saw
+# (content_sha256), clones wisecodeai/<repo> at <base>, copies the items under <dest>, commits on <branch> (always
+# cassidy/…), pushes that branch (never --force, never <base>), and opens a draft PR into <base>. The owner merges.
+# content_sha256 = sha256 of the sorted "sha256  relative/path" lines for every file under the items:
+#   (cd <source_root> && find <items> -type f -print0 | sort -z | xargs -0 shasum -a 256) | shasum -a 256
+set -euo pipefail
+JOB="${1:?usage: cos-share <job> <sha256>}"; WANT="${2:?sha256}"
+COS="$HOME/cos"; OUT="$COS/outbox/$JOB"; M="$OUT/share.json"
+die() { echo "cos-share: $*" >&2; exit "${2:-65}"; }
+[[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ && "$WANT" =~ ^[0-9a-f]{64}$ ]] || die "bad arguments" 64
+[[ -f "$M" ]] || die "no share.json in $OUT" 66
+[[ "$(shasum -a 256 "$M" | cut -d' ' -f1)" == "$WANT" ]] || die "share.json isn't the approved one (sha256 differs)" 67
+j() { jq -r "$1 // empty" "$M"; }
+REPO="$(j .repo)"; BASE="$(j .base)"; BR="$(j .branch)"; DEST="$(j .dest)"; SRC="$(j .source_root)"
+TITLE="$(j .title)"; BODY="$OUT/$(j .body_file)"; WANTC="$(j .content_sha256)"
+[[ "$REPO" =~ ^[A-Za-z0-9._-]+$ ]] || die "repo must be a wisecodeai repo name"
+[[ "$BASE" =~ ^[A-Za-z0-9._/-]+$ && "$BASE" != *..* ]] || die "bad base branch"
+[[ "$BR" =~ ^cassidy/[a-z0-9._/-]+$ && "$BR" != *..* ]] || die "the new branch must be cassidy/<something>"
+[[ -n "$DEST" && "$DEST" != /* && "$DEST" != *..* && "$DEST" =~ ^[A-Za-z0-9._/-]+$ ]] || die "dest must be a plain relative path in the repo"
+case "$SRC" in "$HOME"/Documents/*|"$HOME"/builds/*|"$COS"/outbox/*) ;; *) die "source_root must be under ~/Documents, ~/builds or ~/cos/outbox";; esac
+[[ "$SRC" != *..* && -d "$SRC" ]] || die "source_root isn't a folder: $SRC" 66
+[[ -n "$TITLE" && -f "$BODY" && "$BODY" == "$OUT"/* ]] || die "title and a body_file in the job folder are required"
+ITEMS=(); while IFS= read -r line; do ITEMS+=("$line"); done < <(jq -r '.items[]' "$M")  # bash 3.2: no mapfile
+(( ${#ITEMS[@]} > 0 )) || die "no items"
+for i in "${ITEMS[@]}"; do [[ -n "$i" && "$i" != /* && "$i" != *..* && -e "$SRC/$i" ]] || die "bad or missing item: $i"; done
+GOT="$(cd "$SRC" && find "${ITEMS[@]}" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+[[ "$GOT" == "$WANTC" ]] || die "the files changed since the job looked at them (content sha256 differs). Run the job again." 67
+BYTES="$(cd "$SRC" && find "${ITEMS[@]}" -type f -print0 | xargs -0 stat -f %z | awk '{s+=$1} END {print s+0}')"
+BIG="$(cd "$SRC" && find "${ITEMS[@]}" -type f -size +95M | head -1)"
+[[ -z "$BIG" ]] || die "a file is over 95 MB (GitHub's limit is 100 MB): $BIG"
+(( BYTES <= 200*1024*1024 )) || die "more than 200 MB in all; that belongs in S3, not git"
+
+git ls-remote --exit-code --heads "https://github.com/wisecodeai/$REPO.git" "$BASE" >/dev/null || die "$BASE isn't on wisecodeai/$REPO" 66
+EXISTING="$(git ls-remote --heads "https://github.com/wisecodeai/$REPO.git" "$BR" | cut -f1)"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+gh repo clone "wisecodeai/$REPO" "$TMP/r" -- --quiet --depth 1 --single-branch --branch "$BASE" >/dev/null 2>&1 || die "couldn't clone wisecodeai/$REPO at $BASE" 70
+cd "$TMP/r"
+mkdir -p "$DEST"
+for i in "${ITEMS[@]}"; do mkdir -p "$DEST/$(dirname "$i")"; cp -R "$SRC/$i" "$DEST/$(dirname "$i")/"; done
+git add -- "$DEST"
+if git diff --cached --quiet; then echo "nothing to add: $BASE already has these files at $DEST"; exit 0; fi
+if [[ -n "$EXISTING" ]]; then
+  # A rerun: the branch exists. Only accept it if it already holds exactly this content; never rewrite it.
+  git fetch -q --depth 1 origin "refs/heads/$BR:refs/remotes/origin/$BR" || die "couldn't read existing $BR" 70
+  if git diff --quiet --cached "origin/$BR" -- "$DEST"; then echo "already pushed: $BR has these files"; else die "$BR already exists with different content; pick a new branch name" 65; fi
+else
+  git -c user.name="Cassidy Hilton" -c user.email="$(git config --global user.email || echo cassidythilton@users.noreply.github.com)" \
+    commit -q -m "$TITLE" -m "Files for $BASE, at $DEST, as its owner asked. Merge this PR into $BASE to take them."
+  git push -q origin "HEAD:refs/heads/$BR"
+  echo "pushed $BR ($(git rev-parse --short HEAD)) with ${#ITEMS[@]} item(s), $((BYTES/1024/1024)) MB, at $DEST"
+fi
+PR="$(gh pr list --repo "wisecodeai/$REPO" --head "$BR" --base "$BASE" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+if [[ -n "$PR" ]]; then echo "draft PR already open: $PR"
+else
+  PR="$(gh pr create --draft --repo "wisecodeai/$REPO" --base "$BASE" --head "$BR" --title "$TITLE" --body-file "$BODY")"
+  echo "opened draft PR into $BASE: $PR"
+fi

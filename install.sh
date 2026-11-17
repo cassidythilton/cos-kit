@@ -80,7 +80,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,claude/lake,claude/codex,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
@@ -164,6 +164,8 @@ chk "cd /tmp && agent -p hi" job block
 chk "env agent -p hi" job block
 chk 'echo $(cursor-agent -p hi)' job block
 chk "/usr/local/bin/cursor-agent -p hi" job block
+chk 'python3 "/Users/x/Documents/Cursor Projects/agent-atlas/atlas_cli.py" show y' job allow
+chk "cos-share j1 0000000000000000000000000000000000000000000000000000000000000000" job block
 chk "aws s3 sync . s3://b" pair block
 chk 'psql "host=prod" -c "delete from food"' pair block
 chk "select name from wisecode_gold.canon_term" pair block
@@ -774,6 +776,17 @@ PV="$(HOME="$T" "$T/cos/bin/cos-run" preview pv1 2>/dev/null)"
 jq -e --arg s "$(shasum -a 256 "$T/cos/outbox/pv1/apply.sh" | cut -d' ' -f1)" '.preview.github.highest_tier == 2 and (.preview.github.items[0].says | test("RAGB on #712 to GREEN")) and .preview.github.on_yes == ("cos-run apply pv1 " + $s)' <<<"$PV" >/dev/null 2>&1 \
   && pass "preview: a batch in plain words, each line's tier, and the call to run on his yes" || fail "preview ($PV)"
 HOME="$T" "$T/cos/bin/cos-run" preview nothing-here >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "preview refuses a job with nothing staged" || fail "preview of nothing"
+# cos-share (Nov 17): files for a colleague's branch go on a cassidy/ branch with a draft PR into theirs, only as approved.
+SH="$(mktemp -d)"; mkdir -p "$SH/cos/outbox/s1" "$SH/Documents/src/cache"; echo a > "$SH/Documents/src/o.jsonl"; echo b > "$SH/Documents/src/cache/c.json"; echo pr > "$SH/cos/outbox/s1/pr.md"
+CS="$(cd "$SH/Documents/src" && find o.jsonl cache -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+mkshare() { jq -n --arg r "$SH/Documents/src" --arg c "$CS" --arg b "$1" --arg d "$2" --arg i "$3" '{repo:"food-enrichment",base:"dgonzo/487-tier1-service",branch:$b,dest:$d,source_root:$r,items:[$i,"cache"],content_sha256:$c,title:"t",body_file:"pr.md"}' > "$SH/cos/outbox/s1/share.json"; shasum -a 256 "$SH/cos/outbox/s1/share.json" | cut -d' ' -f1; }
+sh1() { HOME="$SH" "$COS/bin/cos-share" s1 "$1" >/dev/null 2>&1; echo $?; }
+S="$(mkshare cassidy/487-oracle tests/fx o.jsonl)"; [[ "$(sh1 0000000000000000000000000000000000000000000000000000000000000000)" == 67 ]] && pass "cos-share refuses a share.json that isn't the approved one" || fail "cos-share ran an unapproved share.json"
+S="$(mkshare dgonzo/487-tier1-service tests/fx o.jsonl)"; [[ "$(sh1 "$S")" == 65 ]] && pass "cos-share never pushes to the colleague's own branch" || fail "cos-share accepted someone else's branch"
+S="$(mkshare cassidy/487-oracle ../escape o.jsonl)"; [[ "$(sh1 "$S")" == 65 ]] && pass "cos-share refuses a destination outside the repo" || fail "cos-share accepted ../"
+S="$(mkshare cassidy/487-oracle tests/fx ../../.ssh/id)"; [[ "$(sh1 "$S")" == 65 ]] && pass "cos-share refuses an item outside the source folder" || fail "cos-share accepted an item outside the source"
+S="$(mkshare cassidy/487-oracle tests/fx o.jsonl)"; echo changed >> "$SH/Documents/src/o.jsonl"; [[ "$(sh1 "$S")" == 67 ]] && pass "cos-share refuses files that changed after the job checked them" || fail "cos-share pushed changed files"
+rm -rf "$SH"
 # --help for every lane, and refusals that print the correct call.
 nh=0; for l in quick investigate atlas gh-scan draft build apply apply-sheet preview gh lake eval fix land note pause receipt preflight; do HOME="$T" "$T/cos/bin/cos-run" $l --help 2>/dev/null | grep -q '^Examples:' && nh=$((nh+1)); done
 [[ $nh -eq 18 ]] && pass "cos-run <lane> --help has examples for all 18 lanes" || fail "--help examples on $nh of 18 lanes"
