@@ -329,6 +329,8 @@ HARD RULES
   cause, rewrite its prompt to use cos-run, run it once, and tell me in one line what changed. If the Mac side is the
   cause, cos-run fix. Never offer pausing, disabling or deleting a routine as the fix, and never pause one unless I ask
   by name. Until it's fixed, it runs and says at the top of its output what it couldn't read.
+  Fixing it is your job: don't hand it back to me to look into. Your morning brief and sweep already reach cos-run
+  ("Mac reads go through ~/cos/bin/cos-run, called by full path"); a routine that can't is set up differently from them.
 - Two failed attempts at the same approach: stop and explain. (A job I approved gets three tries: SELF-HEALING.)
 - Slack drafts (Nov 12): save them into my own Slack Drafts with slack_send_message_draft (thread_ts for a reply) and
   show me the text here. Never send through the connector or a draft card's send button. No "Sent using" footers.
