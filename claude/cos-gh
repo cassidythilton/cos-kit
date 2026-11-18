@@ -82,7 +82,7 @@ Examples:
 Refused here, with the tier that applies instead:
   tier 1 (one yes): comments, review replies, RAGB, make complete, marking a PR ready, requesting a review, replacing a
          set field on another owner's card, linking another owner's card
-  tier 2 (always ask): merges, closes, deletes, lane moves or assignee changes on others' cards, approvals, issue bodies,
+  tier 2 (always ask): merges, closes (his own PRs: cos-pr close, after his yes to that line), deletes, lane moves or assignee changes on others' cards, approvals, issue bodies,
          drops
   never: RAGB on another owner's card, Initiative, DRD, KPI
 Tier 1 and 2 go through a staged apply.sh and cos-run apply after Cassidy's yes."""
@@ -959,6 +959,9 @@ PLAIN = [
     (r"^cos-link blocked-by (\S+) (\S+)", 0, "Mark {0} blocked by {1}"),
     (r"^cos-link unsub (\S+) (\S+)", 1, "Remove {1} as a sub-issue of {0}"),
     (r"^cos-link unblock (\S+) (\S+)", 1, "Remove the link saying {0} is blocked by {1} (also clears it on {1})"),
+    (r"^cos-pr close (\S+) ([0-9a-f]{7})", 2, "Close your PR {0} (head {1}): its reason is posted first, the branch is kept, and it can be reopened"),
+    (r"^cos-pr draft (\S+) ([0-9a-f]{7})", 1, "Turn your PR {0} (head {1}) back into a draft, so it stops asking for review"),
+    (r"^cos-pr reopen (\S+)", 1, "Reopen your PR {0}"),
     (r"^cos-push-draft (\S+) ", 0, "Push the reviewed draft from job {0} onto its branch"),
     (r"^cos-share (\S+) ", 1, "Put the files listed in job {0}'s share.json on a cassidy/ branch started from the owner's branch, and open a draft PR into it (the owner merges)"),
     (r"^git -C \S+ push \S+ (\S+)", 0, "Push build branch {0}"),

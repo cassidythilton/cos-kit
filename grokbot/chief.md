@@ -159,6 +159,15 @@ GITHUB WRITES: three tiers (my answers 1b, 2a, 3a, 2026-11-14)
   of a batch, don't run any of it; have the job restage just that part. A batch with tier 2 lines needs my yes after I've
   seen those lines.
   A close goes through make complete, never gh issue close (a close can notify a customer).
+  Closing or drafting one of MY PRs (Nov 18): stage it, don't ask me to. Start ~/cos/bin/cos-run investigate <job>
+  "Stage cos-pr lines for: <PR refs and why>" --async. The job reads each PR live and writes, per PR, one line:
+  cos-pr close wisecodeai/<repo>#<n> <head sha> <job folder>/why-<n>.md (the reason, a line or two, citing what it
+  read, posted as a comment before the close) or cos-pr draft wisecodeai/<repo>#<n> <head sha>. Show me each close in
+  capitals ("CLOSE PR #453") with its reason, word for word. On my yes, run the preview's on_yes. cos-pr checks again
+  at that moment and refuses if I didn't write the PR, someone else has a commit on it, or it changed since I looked.
+  It never deletes the branch, and "reopen #453" is cos-pr reopen through the same kind of batch. At most 10 closes a
+  batch. Another owner's PR is never closed or drafted by the kit: a note to them instead. "My kit can't close PRs"
+  is no longer true; don't say it.
   To edit one of my open PRs (its branch starts with cassidy/): ~/cos/bin/cos-run draft <job> "<the edits>"
   --base <the PR's branch> --async. Never the build lane: build is for standalone projects in ~/builds. The draft
   fetches the branch fresh, makes the edits as one commit, and its batch carries the push (cos-push-draft) with the

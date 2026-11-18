@@ -65,7 +65,7 @@ fi
 ctl_re='(/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|\.claude/(skills|settings)|LaunchAgents)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit|NotebookEdit)$ ]] && [[ "$path" =~ $ctl_re ]]; then hard "editing the system's own controls ($path)"; fi
 if [[ "$tool" == "Bash" ]]; then
-  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-push-draft|cos-sched|cos-obligations|cos-link|cos-share)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
+  [[ "$cmd" =~ (^|[;&|[:space:]/])(launchctl|cos-push|cos-push-draft|cos-sched|cos-obligations|cos-link|cos-share|cos-pr)([[:space:]]|$) ]] && hard "the schedule or the webhook path to a bot"
   [[ "$cmd" =~ (^|[;&|[:space:]/])cos-run[[:space:]]+(apply|apply-sheet|land)([[:space:]]|$) ]] && hard "running an approved batch or landing a fix: only the Chief, after Cassidy's yes"
   t0_re='(^|[;&|(][[:space:]]*)([^[:space:];&|]*/)?(cos-run[[:space:]]+(gh|lake)|cos-gh)([[:space:]]|$)'   # the command itself, not a word in an argument
   [[ "$cmd" =~ $t0_re ]] && hard "tier-0 GitHub writes and lake questions: only the Chief starts them (a job stages, it never writes)"

@@ -1,0 +1,63 @@
+#!/bin/bash
+# cos-pr: close, draft or reopen one of Cassidy's own PRs. Runs only from an approved apply batch (cos-run apply);
+# jobs can't call it (the gate blocks it). No model runs here.
+#   cos-pr close  wisecodeai/<repo>#<n> <head-sha> <job folder>/<why>.md   comment why, then close; the branch is kept
+#   cos-pr draft  wisecodeai/<repo>#<n> <head-sha>                         back to draft (undo: gh pr ready)
+#   cos-pr reopen wisecodeai/<repo>#<n>                                    undoes a close made here
+# Every close and draft checks, live, right before it acts:
+#   - the PR is open and not merged;
+#   - Cassidy wrote it, and nobody else has a commit on it (owners own their work: another owner's PR gets a note);
+#   - its head is still <head-sha>, the commit he looked at (a push since then refuses: look again);
+#   - a close posts its reason first, from a file in the job folder, and never deletes the branch.
+# Each one is read back and written to the ledger (pr_writes) with its undo. A rerun of a half-applied batch is safe:
+# a PR already closed or already a draft is reported and skipped.
+set -euo pipefail
+ME="cassidythilton"
+ACT="${1:?usage: cos-pr close|draft|reopen wisecodeai/<repo>#<n> [head-sha] [why.md]}"; REF="${2:?}"
+die() { echo "cos-pr: $1" >&2; exit "${2:-65}"; }
+led() { "$HOME/cos/bin/cos-ledger" pr_writes "$@" >/dev/null 2>&1 || true; }
+[[ "$ACT" =~ ^(close|draft|reopen)$ ]] || die "unknown action $ACT (close, draft or reopen)" 64
+[[ "$REF" =~ ^wisecodeai/([A-Za-z0-9._-]+)#([0-9]+)$ ]] || die "the PR must be wisecodeai/<repo>#<n>" 64
+REPO="wisecodeai/${BASH_REMATCH[1]}"; N="${BASH_REMATCH[2]}"
+SHA="${3:-}"; WHY="${4:-}"
+if [[ "$ACT" != reopen ]]; then
+  [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die "$ACT needs the PR's head commit (40 characters) as it was when Cassidy looked" 64
+fi
+if [[ "$ACT" == close ]]; then
+  [[ -n "$WHY" && "$WHY" == "$HOME"/cos/outbox/*/*.md && "$WHY" != *..* && -s "$WHY" ]] || die "close needs a reason file (.md, not empty) in the job folder" 64
+  (( $(wc -c < "$WHY") <= 4000 )) || die "the reason is over 4000 characters; a close note is a few lines"
+fi
+V="$(gh pr view "$N" --repo "$REPO" --json state,isDraft,author,headRefOid,headRefName,title,url,commits 2>/dev/null)" || die "couldn't read $REF" 66
+st="$(jq -r .state <<<"$V")"; draft="$(jq -r .isDraft <<<"$V")"; head="$(jq -r .headRefOid <<<"$V")"
+author="$(jq -r '.author.login // ""' <<<"$V")"; title="$(jq -r .title <<<"$V")"; br="$(jq -r .headRefName <<<"$V")"
+others="$(jq -r --arg me "$ME" '[.commits[].authors[].login // "" | select(. != "" and . != $me)] | unique | join(",")' <<<"$V")"
+
+[[ "$author" == "$ME" ]] || { led action="$ACT" pr="$REF" decision=refused why="author $author"; die "$REF is $author's PR. Owners own their work: draft them a note instead." 65; }
+
+if [[ "$ACT" == reopen ]]; then
+  [[ "$st" == CLOSED ]] || { echo "nothing to do: $REF is $st"; exit 0; }
+  gh pr reopen "$N" --repo "$REPO" >/dev/null
+  [[ "$(gh pr view "$N" --repo "$REPO" --json state -q .state)" == OPEN ]] || die "reopen didn't take; $REF is still closed" 1
+  led action=reopen pr="$REF" title="$title" status=done
+  echo "reopened: $REF ($title)"; exit 0
+fi
+
+[[ "$st" != MERGED ]] || die "$REF is already merged; there's nothing to $ACT"
+if [[ "$ACT" == close && "$st" == CLOSED ]]; then echo "already closed: $REF"; exit 0; fi
+if [[ "$ACT" == draft && "$draft" == true ]]; then echo "already a draft: $REF"; exit 0; fi
+[[ "$st" == OPEN ]] || die "$REF is $st"
+[[ -z "$others" ]] || { led action="$ACT" pr="$REF" decision=refused why="commits by $others"; die "$REF has commits by $others. Their work is on it: ask them first." 65; }
+[[ "$head" == "$SHA" ]] || { led action="$ACT" pr="$REF" decision=refused why="head moved"; die "$REF changed since Cassidy looked (head is ${head:0:7}, he saw ${SHA:0:7}). Show him again." 67; }
+
+if [[ "$ACT" == draft ]]; then
+  gh pr ready "$N" --repo "$REPO" --undo >/dev/null
+  [[ "$(gh pr view "$N" --repo "$REPO" --json isDraft -q .isDraft)" == true ]] || die "the switch to draft didn't take on $REF" 1
+  led action=draft pr="$REF" title="$title" head="$SHA" status=done undo="gh pr ready $N --repo $REPO"
+  echo "draft: $REF ($title). Undo: gh pr ready $N --repo $REPO"; exit 0
+fi
+
+gh pr comment "$N" --repo "$REPO" --body-file "$WHY" >/dev/null
+gh pr close "$N" --repo "$REPO" >/dev/null
+[[ "$(gh pr view "$N" --repo "$REPO" --json state -q .state)" == CLOSED ]] || die "the close didn't take on $REF (the reason comment is posted)" 1
+led action=close pr="$REF" title="$title" head="$SHA" branch="$br" status=done undo="cos-pr reopen $REF"
+echo "closed: $REF ($title). Branch $br kept at ${SHA:0:7}. Undo: cos-pr reopen $REF"

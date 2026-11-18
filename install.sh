@@ -80,7 +80,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,claude/lake,claude/codex,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-pr,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
@@ -175,6 +175,9 @@ chk "EXECUTE=1 make intake-sweep" job block
 chk "DRY_RUN=1 make ragb CARD=1 TO=RED" job allow
 chk "cos-push steward pulse r.json" pair block
 chk "cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2" job block
+chk "cos-pr close wisecodeai/data-org#1 0123456789abcdef0123456789abcdef01234567 /tmp/why.md" job block
+chk "gh pr close 453 --repo wisecodeai/data-org" job block
+chk "gh pr ready 3 --repo wisecodeai/data-org-notebook --undo" job block
 chk "gh api repos/wisecodeai/data-org/issues/721/comments --jq .[]" job allow
 chk "gh api graphql -f query=query{viewer{login}}" job allow
 chk "gh api graphql -f query=mutation{addStar(input:{starrableId:1}){clientMutationId}}" job block
@@ -260,6 +263,52 @@ mkdir -p "$T/cos/outbox/t8"; echo 'gh issue edit 767 --repo wisecodeai/data-org 
 HOME="$T" "$COS/bin/cos-run" apply t8 "$S8" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t8/applied.log" ]] && pass "apply refuses a new issue body from outside the job folder" || fail "apply took a body from outside the job folder"
 mkdir -p "$T/cos/outbox/t7"; echo 'gh pr edit 720 --repo wisecodeai/data-org --add-reviewer x;rm' > "$T/cos/outbox/t7/apply.sh"; S7="$(shasum -a 256 "$T/cos/outbox/t7/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t7 "$S7" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t7/applied.log" ]] && pass "apply refuses a review request with anything after the logins" || fail "apply ran a bad review request"
+# PR close and draft (Nov 18): only through cos-pr, only his own PRs, only at the head he saw, branch kept.
+H40=0123456789abcdef0123456789abcdef01234567
+printf '#!/bin/bash\necho "stub $*"\n' > "$T/cos/bin/cos-pr"; chmod +x "$T/cos/bin/cos-pr"
+mkdir -p "$T/cos/outbox/t9"; echo "Superseded by #594; its issue is closed." > "$T/cos/outbox/t9/why.md"
+printf 'cos-pr close wisecodeai/data-org#453 %s %s\ncos-pr draft wisecodeai/data-org-notebook#3 %s\ncos-pr reopen wisecodeai/data-org#453\n' "$H40" "$T/cos/outbox/t9/why.md" "$H40" > "$T/cos/outbox/t9/apply.sh"
+S9="$(shasum -a 256 "$T/cos/outbox/t9/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t9 "$S9" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^stub \(close\|draft\|reopen\)' "$T/cos/outbox/t9/applied.log" 2>/dev/null)" == 3 ]] \
+  && pass "apply runs an approved cos-pr close, draft and reopen" || fail "apply refused an approved cos-pr line"
+for badline in "gh pr close 453 --repo wisecodeai/data-org" "gh pr close 453 --repo wisecodeai/data-org --delete-branch" \
+  "cos-pr close wisecodeai/data-org#453 $H40 /tmp/why.md" "cos-pr close wisecodeai/data-org#453 $H40 $T/cos/outbox/t9/why.md --delete-branch" \
+  "cos-pr close wisecodeai/data-org#453 abc123 $T/cos/outbox/t9/why.md" "cos-pr draft someone/else#3 $H40" "gh pr ready 3 --repo wisecodeai/data-org --undo"; do
+  rm -rf "$T/cos/outbox/t10"; mkdir -p "$T/cos/outbox/t10"; echo "$badline" > "$T/cos/outbox/t10/apply.sh"; S10="$(shasum -a 256 "$T/cos/outbox/t10/apply.sh" | cut -d' ' -f1)"
+  HOME="$T" "$COS/bin/cos-run" apply t10 "$S10" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t10/applied.log" ]] && pass "apply refuses: ${badline:0:60}" || fail "apply ran: $badline"
+done
+rm -rf "$T/cos/outbox/t11"; mkdir -p "$T/cos/outbox/t11"
+for i in $(seq 1 11); do echo "cos-pr close wisecodeai/data-org#$i $H40 $T/cos/outbox/t9/why.md"; done > "$T/cos/outbox/t11/apply.sh"
+S11="$(shasum -a 256 "$T/cos/outbox/t11/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t11 "$S11" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t11/applied.log" ]] && pass "apply refuses more than 10 PR closes in one batch" || fail "apply ran 11 closes"
+# cos-pr itself, against a fake gh that answers pr view from PRV and records every call.
+P="$(mktemp -d)"; mkdir -p "$P/bin" "$P/cos/outbox/j" "$P/cos/bin"; echo "why" > "$P/cos/outbox/j/why.md"
+cat > "$P/bin/gh" <<'GH'
+#!/bin/bash
+echo "$*" >> "$PRLOG"
+if [[ "$1 $2" == "pr view" ]]; then
+  if [[ "$*" == *"-q .state"* ]]; then [[ -f "$PRLOG.closed" ]] && echo CLOSED || echo OPEN
+  elif [[ "$*" == *"-q .isDraft"* ]]; then echo true
+  else cat "$PRV"; fi
+fi
+[[ "$1 $2" == "pr close" ]] && touch "$PRLOG.closed"
+exit 0
+GH
+chmod +x "$P/bin/gh"
+prv() { jq -nc --arg a "$1" --arg s "$2" --arg h "$3" --arg c "$4" '{state:$s,isDraft:false,author:{login:$a},headRefOid:$h,headRefName:"cassidy/x",title:"t",url:"u",commits:[{authors:[{login:$c}]}]}' > "$P/prv.json"; rm -f "$P/log" "$P/log.closed"; }
+cp "$KIT/claude/cos-pr" "$P/cos/bin/cos-pr"
+cpr() { HOME="$P" PATH="$P/bin:$PATH" PRV="$P/prv.json" PRLOG="$P/log" "$P/cos/bin/cos-pr" "$@" >/dev/null 2>&1; }
+prv someone-else OPEN "$H40" someone-else; cpr close wisecodeai/data-org#9 "$H40" "$P/cos/outbox/j/why.md"; [[ $? -eq 65 ]] && ! grep -q "pr close" "$P/log" && pass "cos-pr refuses to close another owner's PR" || fail "cos-pr closed another owner's PR"
+prv cassidythilton OPEN "$H40" david; cpr close wisecodeai/data-org#9 "$H40" "$P/cos/outbox/j/why.md"; [[ $? -eq 65 ]] && ! grep -q "pr close" "$P/log" && pass "cos-pr refuses a PR with someone else's commits" || fail "cos-pr closed a PR with others' commits"
+prv cassidythilton OPEN ffffffffffffffffffffffffffffffffffffffff cassidythilton; cpr close wisecodeai/data-org#9 "$H40" "$P/cos/outbox/j/why.md"; [[ $? -eq 67 ]] && ! grep -q "pr close" "$P/log" && pass "cos-pr refuses when the PR moved since he looked" || fail "cos-pr closed a PR that moved"
+prv cassidythilton MERGED "$H40" cassidythilton; cpr close wisecodeai/data-org#9 "$H40" "$P/cos/outbox/j/why.md"; [[ $? -eq 65 ]] && pass "cos-pr refuses a merged PR" || fail "cos-pr acted on a merged PR"
+prv cassidythilton OPEN "$H40" cassidythilton; cpr close wisecodeai/data-org#9 "$H40" /tmp/why.md; [[ $? -eq 64 ]] && pass "cos-pr refuses a reason file outside the job folder" || fail "cos-pr took a reason from outside the job folder"
+prv cassidythilton OPEN "$H40" cassidythilton; cpr close wisecodeai/data-org#9 "$H40" "$P/cos/outbox/j/why.md"
+[[ $? -eq 0 ]] && [[ "$(grep -n 'pr comment 9' "$P/log" | cut -d: -f1)" -lt "$(grep -n 'pr close 9' "$P/log" | cut -d: -f1)" ]] && ! grep -q -- "--delete-branch\|-d " "$P/log" \
+  && pass "cos-pr closes his own PR: reason first, branch kept" || fail "cos-pr close (see $P/log)"
+prv cassidythilton CLOSED "$H40" cassidythilton; cpr close wisecodeai/data-org#9 "$H40" "$P/cos/outbox/j/why.md"; [[ $? -eq 0 ]] && ! grep -q "pr close" "$P/log" && pass "cos-pr skips a PR that's already closed" || fail "cos-pr closed a closed PR again"
+prv cassidythilton OPEN "$H40" cassidythilton; cpr draft wisecodeai/data-org-notebook#3 "$H40"; [[ $? -eq 0 ]] && grep -q "pr ready 3 --repo wisecodeai/data-org-notebook --undo" "$P/log" && pass "cos-pr turns his own PR back into a draft" || fail "cos-pr draft (see $P/log)"
+rm -rf "$P"
 mkdir -p "$T/cos/outbox/t6"; echo 'gh pr review 746 --repo wisecodeai/data-org --approve --body "looks good"' > "$T/cos/outbox/t6/apply.sh"; S6="$(shasum -a 256 "$T/cos/outbox/t6/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t6 "$S6" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t6/applied.log" ]] && pass "apply refuses a review body that isn't a file in the job folder" || fail "apply ran an inline review body"
 mkdir -p "$T/cos/outbox/t4"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"K","old":"","new":"1 Relevance"}]}' > "$T/cos/outbox/t4/sheet.json"
