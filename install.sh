@@ -311,6 +311,32 @@ prv cassidythilton OPEN "$H40" cassidythilton; cpr draft wisecodeai/data-org-not
 rm -rf "$P"
 mkdir -p "$T/cos/outbox/t6"; echo 'gh pr review 746 --repo wisecodeai/data-org --approve --body "looks good"' > "$T/cos/outbox/t6/apply.sh"; S6="$(shasum -a 256 "$T/cos/outbox/t6/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t6 "$S6" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t6/applied.log" ]] && pass "apply refuses a review body that isn't a file in the job folder" || fail "apply ran an inline review body"
+# Replacing a comment's text (Nov 17, #774): only Cassidy's own, old text saved in the job folder and ledgered as the undo.
+cat > "$T/cos/bin/gh" <<'STUB'
+#!/bin/bash
+[[ "$1 $2" == "issue create" ]] && echo https://github.com/wisecodeai/data-org/issues/999
+[[ "$1 $2" == "api -X" ]] && { echo "$*" >> "$HOME/patch.log"; cat "${6#body=@}" > "$HOME/cbody"; }
+if [[ "$1" == api && "$2" == repos/* ]]; then [[ "$2" == */111 ]] && w=cassidythilton || w=someone-else
+  jq -n --arg w "$w" --arg b "$(cat "$HOME/cbody" 2>/dev/null || echo old text)" '{user:{login:$w},body:$b}'; fi
+exit 0
+STUB
+cp "$COS/bin/cos-ledger" "$T/cos/bin/"
+mkdir -p "$T/cos/outbox/t12" "$T/cos/outbox/t13" "$T/cos/outbox/t14"; echo "new text" > "$T/cos/outbox/t12/c.md"; echo "new text" > "$T/cos/outbox/t13/c.md"
+echo "newer text" > "$T/cos/outbox/t12/c2.md"; U12="gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@$T/cos/outbox/t12/comment-111"
+printf '%s\n' "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@$T/cos/outbox/t12/c.md" "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@$T/cos/outbox/t12/c2.md" > "$T/cos/outbox/t12/apply.sh"; S12="$(shasum -a 256 "$T/cos/outbox/t12/apply.sh" | cut -d' ' -f1)"
+HOME="$T" COS_LEDGER_DIR="$T/led" "$COS/bin/cos-run" apply t12 "$S12" --in "$T" >/dev/null 2>&1
+[[ "$(cat "$T/cos/outbox/t12/comment-111.before.md" 2>/dev/null)" == "old text" && "$(cat "$T/cos/outbox/t12/comment-111.before-2.md" 2>/dev/null)" == "new text" ]] && grep -q "comments/111 -F body=@$T/cos/outbox/t12/c2.md" "$T/patch.log" 2>/dev/null \
+  && jq -se --arg a "$U12.before.md" --arg b "$U12.before-2.md" 'map(select(.kind == "comment-edit") | .undo) == [$a, $b]' "$T/led/applies.jsonl" >/dev/null 2>&1 \
+  && pass "apply replaces Cassidy's own comment, saves the old text and ledgers the undo (twice in one batch)" || fail "apply comment replace (see $T/cos/outbox/t12/applied.log)"
+echo "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/222 -F body=@$T/cos/outbox/t13/c.md" > "$T/cos/outbox/t13/apply.sh"; S13="$(shasum -a 256 "$T/cos/outbox/t13/apply.sh" | cut -d' ' -f1)"
+HOME="$T" COS_LEDGER_DIR="$T/led" "$COS/bin/cos-run" apply t13 "$S13" --in "$T" >/dev/null 2>&1
+! grep -q "comments/222" "$T/patch.log" 2>/dev/null && grep -q "^FAILED: the comment must be cassidythilton's" "$T/cos/outbox/t13/applied.log" 2>/dev/null \
+  && pass "apply refuses to replace someone else's comment" || fail "apply replaced a comment that isn't Cassidy's"
+echo "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@/tmp/x.md" > "$T/cos/outbox/t14/apply.sh"; S14="$(shasum -a 256 "$T/cos/outbox/t14/apply.sh" | cut -d' ' -f1)"
+HOME="$T" "$COS/bin/cos-run" apply t14 "$S14" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t14/applied.log" ]] && pass "apply refuses a comment's new text from outside the job folder" || fail "apply took a comment's text from outside the job folder"
+"$COS/bin/cos-gh" t12 plain "$T/cos/outbox/t12/apply.sh" 2>/dev/null | jq -e '.highest_tier == 1 and (.items[0].says | test("your own comment 111"))' >/dev/null 2>&1 \
+  && pass "plain: a comment replace reads as tier 1" || fail "plain: comment replace tier"
+rm -f "$T/cos/bin/cos-ledger"
 mkdir -p "$T/cos/outbox/t4"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"K","old":"","new":"1 Relevance"}]}' > "$T/cos/outbox/t4/sheet.json"
 S4="$(shasum -a 256 "$T/cos/outbox/t4/sheet.json" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply-sheet t4 "$S4" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t4/sheet-applied.json" ]] && pass "apply-sheet refuses column K (a formula)" || fail "apply-sheet accepted a column K write"
@@ -334,6 +360,20 @@ rm -f "$T/cos/bin/gh"; mv "$T/cos/bin/gh.stub" "$T/cos/bin/gh" 2>/dev/null
 for qc in 'gh pr list --repo wisecodeai/data-org --search created:>=2026-11-09' "gh api graphql -f query='mutation{x}'" 'gh api repos/wisecodeai/data-org/issues/1/comments -f body=hi' 'gh issue list --search "$(rm -rf ~)"'; do
   HOME="$T" "$COS/bin/cos-run" quick qr1 "x" --with "$qc" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "quick refuses: $qc" || fail "quick ran: $qc"
 done
+# Zendesk intake reads (system map row): bare make intake-holders and make intake-sweep run, always as the dry run. An EXECUTE
+# in the caller's environment or MAKEFLAGS never reaches them; any argument, EXECUTE=1 or another intake target is refused.
+mv "$T/cos/bin/make" "$T/cos/bin/make.stub" 2>/dev/null
+printf '#!/bin/bash\necho "make $* EXECUTE=${EXECUTE:-} MAKEFLAGS=${MAKEFLAGS:-}"\n' > "$T/cos/bin/make"
+printf '#!/bin/bash\necho %s\n' "'{\"result\":\"stub\"}'" > "$T/cos/bin/agent"; chmod +x "$T/cos/bin/make" "$T/cos/bin/agent"
+for qc in "make intake-holders" "make intake-sweep"; do
+  rm -rf "$T/cos/outbox/qi1"; HOME="$T" EXECUTE=1 MAKEFLAGS=EXECUTE=1 "$COS/bin/cos-run" quick qi1 "x" --with "$qc" --in "$T" >/dev/null 2>&1; qrc=$?
+  [[ $qrc -eq 0 ]] && grep -qx "$qc EXECUTE= MAKEFLAGS=" "$T/cos/outbox/qi1/context.txt" 2>/dev/null \
+    && pass "quick reads Zendesk intake as a dry run: $qc" || fail "quick refused $qc, or passed EXECUTE through (rc $qrc: $(tail -c 200 "$T/cos/outbox/qi1/context.txt" 2>/dev/null))"
+done
+for qc in "make intake-sweep EXECUTE=1" "EXECUTE=1 make intake-sweep" "make intake-holders EXECUTE=1" "make intake-sweep --no-unboard" "make intake-sweep -e" "make board-intake" "make classify ISSUE=1" "make intake TITLE=x"; do
+  HOME="$T" "$COS/bin/cos-run" quick qr2 "x" --with "$qc" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 ]] && pass "quick refuses: $qc" || fail "quick ran: $qc"
+done
+rm -f "$T/cos/bin/agent" "$T/cos/bin/make"; mv "$T/cos/bin/make.stub" "$T/cos/bin/make" 2>/dev/null
 HOME="$T" "$COS/bin/cos-run" atlas at1 "the dashboard chat" --in "$T" >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "atlas refuses when it can't read Agent Atlas" || fail "atlas ran without Agent Atlas"
 HOME="$T" "$COS/bin/cos-atlas" find x >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "cos-atlas refuses when Agent Atlas isn't there" || fail "cos-atlas ran without Agent Atlas"
 "$COS/bin/cos-atlas" sql 'x' >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "cos-atlas takes only find|show|search|messages|recent" || fail "cos-atlas took another command"

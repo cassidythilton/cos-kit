@@ -947,6 +947,7 @@ PLAIN = [
     (r"^gh issue edit (\d+) --repo (\S+) .*--body-file", 2, "Rewrite the description of {1}#{0} (new text in the job folder)"),
     (r"^gh issue edit (\d+) --repo (\S+) .*--title (\"[^\"]*\")", 2, "Retitle {1}#{0} to {2}"),
     (r"^gh issue edit (\d+) --repo (\S+)(.*)", 0, "Edit labels, assignees or milestone on {1}#{0}:{2}"),
+    (r"^gh api -X PATCH repos/(\S+)/issues/comments/(\d+) ", 1, "Replace the text of your own comment {1} in {0} (new text in the job folder; the old text is saved first as the undo)"),
     (r"^gh pr comment (\d+) --repo (\S+)", 1, "Comment on PR {1}#{0}"),
     (r"^gh pr review (\d+) --repo (\S+) --approve", 2, "Approve PR {1}#{0}"),
     (r"^gh pr review (\d+) --repo (\S+) --request-changes", 2, "Request changes on PR {1}#{0}"),
