@@ -74,6 +74,9 @@ WEEKLY CHECKS ON THE NEW WRITE PATHS (Nov 14)
   held results counted.
 - DRDs and DADRs: no draft set a status to Approved or accepted; the ID-clash list (IDs two open PRs claim).
 - Throughput: back moves are counted with the forward ones; no bot moved another owner's card.
+- Routines (Nov 17): every Bot's routine list. Flag any routine that reads GitHub, Slack-lake or the Mac from a Bot's
+  own computer instead of through the Chief's cos-run, any routine paused or disabled without my request by name,
+  and any message that offered pausing as the fix for a failure. Each one is a conformance miss.
 If the Friday receipt doesn't carry one of these, that's a context-health finding.
 
 ROSTER CHANGES
