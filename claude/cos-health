@@ -115,11 +115,14 @@ def check_mac_slots(exp, found):
         if not cal:
             continue
         what, limit = names[slot]["what"], dt.timedelta(minutes=names[slot].get("max", 45))
+        # Watched from when its schedule was first loaded (the file's birth time), never for times before it existed.
+        st = os.stat(path)
+        born = dt.datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime), dt.timezone.utc)
         mine = [r for r in sched if r.get("slot") == slot]
         for due in slot_times(cal):
             due_u = due.astimezone(dt.timezone.utc)
-            if NOW - due_u < dt.timedelta(minutes=20):
-                continue  # give launchd time to start it
+            if NOW - due_u < dt.timedelta(minutes=20) or due_u < born:
+                continue  # give launchd time to start it; and nothing before the schedule existed
             after = [r for r in mine if due_u - dt.timedelta(minutes=2) <= r["_t"] <= due_u + dt.timedelta(hours=14)]
             nxt = [d for d in slot_times(cal) if d > due]
             if nxt:
