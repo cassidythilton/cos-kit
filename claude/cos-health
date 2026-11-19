@@ -164,22 +164,32 @@ def due_times(r):
 def armed(exp, rid):
     """A routine is watched once it has reported in at least once, or from heartbeats_required_from (so a routine whose
     prompt never got the heartbeat line is caught too). Until then a missing heartbeat isn't a problem."""
+    """Returns the time it's watched from (never anything before it), or None while it isn't watched yet."""
     req = ts((exp.get("heartbeats_required_from") or "") + "T13:00:00+00:00") if exp.get("heartbeats_required_from") else None
-    if req and NOW >= req:
-        return True
+    first = None
     try:
         with open(f"{LED}/heartbeats.jsonl") as f:
-            return any(json.loads(l).get("routine") == rid for l in f if rid in l)
+            for l in f:
+                if rid in l:
+                    r = json.loads(l)
+                    t = ts(r.get("ts", "")) if r.get("routine") == rid else None
+                    if t and (first is None or t < first):
+                        first = t
     except FileNotFoundError:
-        return False
+        pass
+    cands = [t for t in (first, req if req and NOW >= req else None) if t]
+    return min(cands) if cands else None
 
 
 def check_routines(exp, found):
     beats = rows("heartbeats")
     for r in exp.get("routines", []):
-        if not armed(exp, r["id"]):
+        since = armed(exp, r["id"])
+        if not since:
             continue
         for due in due_times(r):
+            if due.astimezone(dt.timezone.utc) < since - dt.timedelta(hours=12):
+                continue  # before this routine was watched
             due_u = due.astimezone(dt.timezone.utc)
             grace = dt.timedelta(minutes=r.get("grace", 60))
             if NOW < due_u + grace:
@@ -216,8 +226,9 @@ def check_pushes(exp, found):
                                  "check the Bot's webhook routine is on and its key is in the Keychain; cos-push again"))
             continue
         w = hooks.get(bot)
-        if not w or p.get("slot") == "alert" or not armed(exp, w["id"]):
-            continue
+        since = armed(exp, w["id"]) if w else None
+        if not w or p.get("slot") == "alert" or not since or p["_t"] < since:
+            continue  # nothing delivered before its webhook routine started reporting in
         if NOW - p["_t"] < dt.timedelta(minutes=w.get("grace", 30)):
             continue
         if not [b for b in beats if b.get("routine") == w["id"] and p["_t"] - dt.timedelta(minutes=1) <= b["_t"] <= p["_t"] + dt.timedelta(hours=3)]:
