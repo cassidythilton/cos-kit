@@ -358,6 +358,7 @@ cat > "$H/la/com.cos.pulse.plist" <<PL
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>Label</key><string>com.cos.pulse</string><key>StartCalendarInterval</key><array><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>10</integer></dict></array></dict></plist>
 PL
+touch -t 202611010000 "$H/la/com.cos.pulse.plist"   # loaded long before the times checked (cos-health ignores times before a schedule existed)
 cat > "$H/exp.json" <<'EX'
 {"routines": [{"id": "chief-morning-brief", "bot": "chief", "what": "the morning brief", "days": ["thu"], "time": "06:30", "grace": 60}],
  "webhooks": [], "mac_slots": {"pulse": {"what": "the 8:10 AM board pulse", "max": 30}}}
