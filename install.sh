@@ -282,13 +282,13 @@ for i in $(seq 1 11); do echo "cos-pr close wisecodeai/data-org#$i $H40 $T/cos/o
 S11="$(shasum -a 256 "$T/cos/outbox/t11/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t11 "$S11" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t11/applied.log" ]] && pass "apply refuses more than 10 PR closes in one batch" || fail "apply ran 11 closes"
 # An interrupted call doesn't stop the job (Nov 18): stop the caller's whole process group mid-batch; the batch finishes.
-mkdir -p "$T/cos/outbox/t12"; printf '#!/bin/bash\nsleep 2; echo "stub $*" >> "%s/linked"\n' "$T" > "$T/cos/bin/cos-link"; chmod +x "$T/cos/bin/cos-link"
-printf 'cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2\ncos-link sub wisecodeai/data-org#1 wisecodeai/data-org#3\n' > "$T/cos/outbox/t12/apply.sh"
-S12="$(shasum -a 256 "$T/cos/outbox/t12/apply.sh" | cut -d' ' -f1)"
-HOME="$T" perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$COS/bin/cos-run" apply t12 "$S12" --in "$T" >/dev/null 2>"$T/t12.err" &
+mkdir -p "$T/cos/outbox/t12i"; printf '#!/bin/bash\nsleep 2; echo "stub $*" >> "%s/linked"\n' "$T" > "$T/cos/bin/cos-link"; chmod +x "$T/cos/bin/cos-link"
+printf 'cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2\ncos-link sub wisecodeai/data-org#1 wisecodeai/data-org#3\n' > "$T/cos/outbox/t12i/apply.sh"
+S12="$(shasum -a 256 "$T/cos/outbox/t12i/apply.sh" | cut -d' ' -f1)"
+HOME="$T" perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$COS/bin/cos-run" apply t12i "$S12" --in "$T" >/dev/null 2>"$T/t12.err" &
 w=$!; sleep 1; kill -TERM -- -"$w" 2>/dev/null; wait "$w" 2>/dev/null; sleep 5
-[[ "$(grep -c '^stub sub' "$T/linked" 2>/dev/null)" == 2 && -s "$T/cos/outbox/t12/apply-receipt.json" ]] && pass "an interrupted apply call still finishes its whole batch" || fail "an interrupted apply stopped part way (see $T/linked)"
-HOME="$T" "$COS/bin/cos-run" receipt t12 2>/dev/null | grep -q '"finished after an interrupted call"' && pass "cos-run receipt shows what an interrupted call finished" || fail "receipt didn't show the interrupted call's result"
+[[ "$(grep -c '^stub sub' "$T/linked" 2>/dev/null)" == 2 && -s "$T/cos/outbox/t12i/apply-receipt.json" ]] && pass "an interrupted apply call still finishes its whole batch" || fail "an interrupted apply stopped part way (see $T/linked)"
+HOME="$T" "$COS/bin/cos-run" receipt t12i 2>/dev/null | grep -q '"finished after an interrupted call"' && pass "cos-run receipt shows what an interrupted call finished" || fail "receipt didn't show the interrupted call's result"
 printf '#!/bin/bash\necho "stub $*"\n' > "$T/cos/bin/cos-link"
 # cos-pr itself, against a fake gh that answers pr view from PRV and records every call.
 P="$(mktemp -d)"; mkdir -p "$P/bin" "$P/cos/outbox/j" "$P/cos/bin"; echo "why" > "$P/cos/outbox/j/why.md"

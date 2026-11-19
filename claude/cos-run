@@ -201,7 +201,7 @@ if [[ -z "${COS_DETACHED:-}" && " ${ALL_ARGS[*]} " != *" --async "* && ! "$LANE"
   COS_DETACHED=1 nohup perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$0" "$@" > "$F.out" 2> "$F.err" < /dev/null &
   c=$!; echo "$c" > "$F.pid"
   trap 'echo "cos-run: this call was interrupted, but the $LANE job keeps running on the Mac and finishes on its own. Read its result with: cos-run receipt $RJ (never run it again)" >&2; exit 130' INT TERM HUP
-  wait "$c"; rc=$?
+  rc=0; wait "$c" || rc=$?  # set -e: a failed lane must still print its output
   cat "$F.out"; cat "$F.err" >&2; rm -f "$F.pid"; exit "$rc"
 fi
 # Tier-0 GitHub writes live in one small script with no model. It writes its own ledger rows and receipts.
