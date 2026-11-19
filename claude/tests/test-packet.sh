@@ -42,6 +42,11 @@ case "$lane" in
       {where: "Steve DM", when: "Wed Nov 18, 2:10 PM", what: "Asked you to approve the GitHub app.", link: "https://wisecode.slack.com/archives/D1/p1", waiting_on_cassidy: true},
       {where: "#data-team", when: "Wed Nov 18, 3:00 PM", what: "Matt shared the test sets.", link: "https://wisecode.slack.com/archives/C1/p2", waiting_on_cassidy: false}]}}' > "$O/receipt.json"
     cat "$O/receipt.json" ;;
+  mail-read)
+    mkdir -p "$O"
+    jq -n --arg j "$job" '{job: $j, lane: "mail-read", receipt: {status: "done", summary: "read 4", items: [
+      {where: "Greta (Datasembly)", when: "Wed Nov 18, 1:00 PM", what: "Asked which retailers to add first.", link: "https://mail.google.com/mail/u/0/#inbox/abc", waiting_on_cassidy: true}]}}' > "$O/receipt.json"
+    cat "$O/receipt.json" ;;
   atlas)
     mkdir -p "$O"
     jq -n --arg j "$job" '{job: $j, lane: "atlas", receipt: {status: "done", summary: "- Dashboard chat, Claude Code, data-org-notebook: did the scan-demand page. cards: 767"}}' > "$O/receipt.json"
@@ -110,7 +115,7 @@ echo '{"ts":"2026-11-19T21:00:00Z","stream":"slack_drafts","job":"sd-steve","to"
 : > "$PCALLS"; pk morning --no-push > "$PKT/m.out" 2> "$PKT/m.err"; rc=$?
 PM="$PC/outbox/packet-morning-20261119/packet.md"; PR="$PC/outbox/packet-morning-20261119/receipt.json"
 [[ $rc -eq 0 && -f "$PM" && -f "$PR" ]] && pass "packet: a morning packet is written (packet.md and receipt.json)" || fail "packet: no morning packet (rc $rc): $(head -3 "$PKT/m.err")"
-[[ "$(order "$PM")" == "## Health|## Decisions|## Owed|## Slack waiting on you|## FYI|" ]] \
+[[ "$(order "$PM")" == "## Health|## Decisions|## Owed|## Slack waiting on you|## Email waiting on you|## FYI|" ]] \
   && pass "packet: morning sections in order: health, decisions, owed, Slack, FYI" || fail "packet: morning section order is $(order "$PM")"
 grep -q '^cos-push' "$PCALLS" && fail "packet: --no-push still pushed" || pass "packet: --no-push doesn't push"
 [[ ! -f "$PC/state/packet-last.json" ]] && pass "packet: --no-push doesn't move the last-brief time" || fail "packet: --no-push moved the last-brief time"
@@ -192,7 +197,7 @@ CP="$PC/outbox/capture-20261119"; mkdir -p "$CP"; echo 'make ragb CARD=777 RAGB=
 echo '{"job":"capture-20261119","lane":"investigate","receipt":{"status":"done","summary":"Capture: 3 rows. Batch staged for your yes."}}' > "$CP/receipt.json"
 : > "$PCALLS"; PKT_NOW=2026-11-19T16:20:00 pk evening > /dev/null 2>&1; rc=$?
 PE="$PC/outbox/packet-evening-20261119/packet.md"
-[[ "$(order "$PE")" == "## Health|## Decisions|## Done without asking|## Owed|## Slack waiting on you|## FYI|## For the Chief only (never show Cassidy): how to undo today's changes|" ]] \
+[[ "$(order "$PE")" == "## Health|## Decisions|## Done without asking|## Owed|## Slack waiting on you|## Email waiting on you|## FYI|## For the Chief only (never show Cassidy): how to undo today's changes|" ]] \
   && pass "packet: evening sections in order, with done without asking after decisions" || fail "packet: evening order is $(order "$PE")"
 DW="$(sect "$PE" 'Done without asking')"
 grep -qF '[#777](https://github.com/wisecodeai/data-org/issues/777) — set its Target to Thu Dec 31' <<<"$DW" && grep -q '#777.*set its Target to Thu Dec 31, 1:10 PM, you can undo it' <<<"$DW" && grep -q 'Slack draft to Steve.*nothing was sent' <<<"$DW" \

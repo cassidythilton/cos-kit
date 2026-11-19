@@ -111,7 +111,7 @@ if [[ $SANDBOX -eq 0 ]] && { [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirr
   cp "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/" && codesign -f -s - "$ZM" 2>/dev/null
   echo "  ! ZoomMirror.app was (re)built: run  open ~/cos/bin/ZoomMirror.app  once and click Allow for Documents"
 fi
-install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,settings.fix.json,settings.slack.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
+install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,settings.fix.json,settings.slack.json,settings.mail.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
 install -m 644 "$KIT"/claude/briefs/*.md "$COS/claude/briefs/"
 install -m 644 "$KIT"/evals/*.json "$COS/evals/"
 rm -rf "$COS/builds-template.new" && cp -R "$KIT/builds-template" "$COS/builds-template.new" && rm -rf "$COS/builds-template" && mv "$COS/builds-template.new" "$COS/builds-template"
@@ -211,6 +211,18 @@ SDT="$(mktemp)"; echo '{"to":"D123","text":"Hi Steve, can you approve the app?",
 [[ "$(mg mcp__claude_ai_Slack__slack_read_thread slackread)" == 0 ]] && pass "slackread · allow · reading a thread" || fail "slack-read couldn't read"
 [[ "$(mg mcp__claude_ai_Slack__slack_add_reaction slackread)" == 2 ]] && pass "slackread · block · a reaction" || fail "slack-read could react"
 rm -f "$SDT"
+# Email the same way (Nov 19): Gmail reads and the one staged draft; never send, reply or forward.
+MDT="$(mktemp)"; echo '{"to":["david@example.com"],"cc":[],"subject":"Roadmap fields","body":"David, yes on #700.","reply_to_message_id":""}' > "$MDT"
+md() { local ti="${2:-}"; [[ -n "$ti" ]] || ti='{}'; printf '{"tool_name":"mcp__claude_ai_Gmail__%s","tool_input":%s}' "$1" "$ti" | COS_LEDGER_OFF=1 COS_GATE_MODE="${3:-maildraft}" COS_MAIL_DRAFT="$MDT" "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?; }
+[[ "$(md create_draft '{"to":["david@example.com"],"cc":[],"subject":"Roadmap fields","body":"David, yes on #700."}')" == 0 ]] && pass "maildraft · allow · the staged email draft" || fail "the staged email draft was blocked"
+[[ "$(md create_draft '{"to":["david@example.com"],"subject":"Roadmap fields","body":"David, yes on #700.","bcc":["x@y.com"]}')" == 2 ]] && pass "maildraft · block · a draft with a bcc added" || fail "a bcc got through"
+[[ "$(md create_draft '{"to":["someone@else.com"],"subject":"Roadmap fields","body":"David, yes on #700."}')" == 2 ]] && pass "maildraft · block · a draft to someone else" || fail "a changed recipient got through"
+for t in send_message reply forward; do [[ "$(md $t '' maildraft)" == 2 && "$(md $t '' mailread)" == 2 && "$(md $t '' pair)" == 2 && "$(md $t '' job)" == 2 ]] && pass "mail · block · $t in every mode" || fail "mail $t got through"; done
+for t in trash_thread update_message_labels; do [[ "$(md $t '' maildraft)" == 2 && "$(md $t '' mailread)" == 2 ]] && pass "mail lanes · block · $t" || fail "a mail lane could $t"; done
+[[ "$(md create_draft '{"to":["david@example.com"],"subject":"Roadmap fields","body":"David, yes on #700."}' mailread)" == 2 ]] && pass "mailread · block · any draft" || fail "mail-read could save a draft"
+[[ "$(md search_threads '{"query":"from:david"}' mailread)" == 0 ]] && pass "mailread · allow · searching mail" || fail "mail-read couldn't search"
+rm -f "$MDT"
+jq -e '.permissions.deny | index("mcp__claude_ai_Gmail__send_message") and index("mcp__claude_ai_Gmail__reply") and index("mcp__claude_ai_Gmail__forward")' "$KIT/claude/settings.mail.json" >/dev/null && pass "the mail lanes deny send, reply and forward outright" || fail "settings.mail.json doesn't deny sending"
 bad_allow="$(jq -r '.permissions.allow[]?' "$KIT"/claude/settings.*.json | grep -iE '(slack|gmail|mail).*(send|schedule|post|reply)' | grep -viE 'draft$' || true)"
 [[ -z "$bad_allow" ]] && pass "no lane's settings allow sending a message" || fail "a settings file allows a send: $bad_allow"
 jq -e '.permissions.deny | index("mcp__claude_ai_Slack__slack_send_message") and index("mcp__claude_ai_Slack__slack_schedule_message")' "$KIT/claude/settings.slack.json" >/dev/null && pass "the Slack lanes deny send and schedule outright" || fail "settings.slack.json doesn't deny send"

@@ -18,7 +18,7 @@ Remember these as lasting rules:
   Anything else you prepare goes to the Chief, which brings it to me and runs it after my yes. Approvals happen only
   in the Chief's chat.
 - Drafts only, in my voice (the cassidy-voice skill). I send. Slack and Gmail are disconnected from Grok (Nov 19): a
-  Slack draft goes through cos-run slack-draft; an email draft is text in your feed to the Chief, for me to paste.
+  Slack draft goes through cos-run slack-draft; an email draft goes through cos-run mail-draft.
 - You keep no list of your own. The Mac's owed list (cos-run owed list) is the only one (Nov 19).
 
 ## PLAYBOOK
@@ -32,7 +32,7 @@ PLAIN LANGUAGE (Nov 19)
 DRAFTS (Nov 19: no agent can send)
   A Slack draft: write draft.json {"to": "<person or channel>", "text": "...", "thread_ts": "<for a reply>", "why":
   "<one line>"} and run ~/cos/bin/cos-run slack-draft <job> <draft.json>. It saves one draft in my Slack Drafts and
-  can't send. An email: put the text in the feed for me to paste. Never use a Grok Slack or Gmail tool.
+  can't send. An email: the same, with cos-run mail-draft <job> <draft.json>. Never use a Grok Slack or Gmail tool.
 
 THE MORNING BRIEF IS THE CHIEF'S (decided Nov 14, 2026)
   There is one morning brief, the Chief's, weekdays ~06:30. You don't run one. You feed it with one message, the
@@ -123,8 +123,8 @@ result to the Bot's webhook routine.
 Disconnected Nov 19: **Slack** and **Gmail**. Why: a connected app acts as Cassidy, and Grok's own docs say a
 chat-requested message or email goes out once Auto-review allows it. With the app gone, no Bot can send, post, reply or
 react at all, whatever a prompt says. Slack drafts and reads go through the Mac (cos-run slack-draft, slack-read),
-which can only save a draft. Email drafts will come from the Mac later; until then a Bot writes the email text in chat
-and Cassidy pastes it.
+which can only save a draft. Email is the same: cos-run mail-read and mail-draft, which can only save a draft in his
+Gmail Drafts.
 Keep connected: Google Calendar, Drive, Docs, Sheets, GitHub, Figma. Connected apps are available to every Bot on the
 account. No Zoom connector: Cassidy can't set up a Zoom OAuth app (Nov 12).
 Every Bot keeps drafts on: a Bot still drafts, it just saves Slack drafts through the Mac.

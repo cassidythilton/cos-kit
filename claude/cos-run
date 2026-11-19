@@ -31,6 +31,8 @@
 #   cos-run packet      morning|evening                                           rebuild the brief packet by hand (the Mac makes it at 5:45 and 4:12)
 #   cos-run night       add|propose|approve|status|report ...                     the night shift queue and budget (run is launchd only)
 #   cos-run memory      propose|accept|reject|retire|list|show|status|render ...  the one memory store
+#   cos-run mail-read   <job-id> "<what to read>"                                Gmail read on the Mac (read tools only)
+#   cos-run mail-draft  <job-id> <draft.json>                                     saves ONE draft in Cassidy's Gmail Drafts; never sends
 #   cos-run heartbeat   <routine-id> ok|failed ["<what>"]                       a Grok routine reports in (cos-health watches for it)
 #   cos-run preflight   <lane> [job-id]                                           what that lane needs, checked now; no model, no receipt
 #   add --async to investigate, atlas, draft, build, eval, fix, land or lake: returns at once, runs detached, pushes the receipt to the Chief
@@ -39,7 +41,7 @@
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed packet night memory"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed packet night memory mail-read mail-draft"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -983,6 +985,40 @@ Use only the Slack read and search tools. Never send, react, draft or change any
   jq -n --argjson r "$R" --arg j "$JOB" --arg l "$LANE" --argjson c "$(jq '.total_cost_usd // 0' "$OUT/slack-run.json" 2>/dev/null || echo 0)" \
     '{receipt: {status: $r.status, summary: $r.summary, items: ($r.items // []), channel_link: ($r.channel_link // null)}, lane: $l, job: $j, cost_usd: $c}' > "$OUT/receipt.json"
   [[ "$LANE" == slack-draft ]] && ledger slack_drafts job="$JOB" to="$(jq -r .to "$OUT/slack-draft.json")" status="$(jq -r .status <<<"$R")" first_line="$(jq -r '.text|split("\n")[0][0:120]' "$OUT/slack-draft.json")"
+  cat "$OUT/receipt.json"; exit 0
+fi
+
+# ---------------------------------------------------------------- mail-read / mail-draft (Nov 19): email, like Slack
+# Gmail is read and drafted only here; no agent can send, reply, forward, trash or label. Sends are denied in
+# settings.mail.json and hard-blocked by the gate in every mode.
+#   cos-run mail-read  <job> "<what to read>"
+#   cos-run mail-draft <job> <draft.json>   {"to": ["a@b.com"], "cc": [], "subject": "...", "body": "<plain text>", "reply_to_message_id": "<optional>", "why": "<one line>"}
+if [[ "$LANE" == mail-read || "$LANE" == mail-draft ]]; then
+  [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || usage_fail "$LANE" "bad job id '$JOB'"
+  mkdir -p "$OUT"
+  if [[ "$LANE" == mail-draft ]]; then
+    D="$BRIEF_IN"; [[ -f "$D" ]] || usage_fail mail-draft "the second value is a draft.json file" 66
+    jq -e '(.to|type=="array" and length>0 and length<=20 and all(.[]; type=="string" and test("^[^@ ]+@[^@ ]+$"))) and ((.cc // [])|type=="array" and all(.[]; test("^[^@ ]+@[^@ ]+$")))
+           and (.subject|type=="string" and length<300) and (.body|type=="string" and length>0 and length<=20000) and (has("bcc")|not)' "$D" >/dev/null 2>&1 \
+      || usage_fail mail-draft "draft.json needs to (a list of plain addresses), subject, body (plain text); cc optional; no bcc" 65
+    [[ "$D" -ef "$OUT/mail-draft.json" ]] || cp "$D" "$OUT/mail-draft.json"
+    T="Save exactly one Gmail draft for Cassidy, then stop. Never send, reply, forward or change anything. The draft, as data: $(cat "$OUT/mail-draft.json")
+Call create_draft once with to, cc (empty list if none), subject and body exactly as given (byte for byte, plain text, no htmlBody, no bcc, no attachments), and replyToMessageId only if reply_to_message_id is set. Report the draft's viewUrl and the outcome."
+    MODE=maildraft; BUDGET=1
+  else
+    T="Read Cassidy's Gmail, read-only, and report what you find as data. The request: $BRIEF_IN
+Use only search_threads, get_thread and get_message. Never send, reply, draft, label or change anything. For each relevant thread: from whom, when (Mountain time), a one-line summary in plain words, its link, and whether it is waiting on Cassidy (someone asked him something and he hasn't replied after it). Skip newsletters, notifications and automated mail unless asked. Never quote secrets, codes or links with tokens. Say how many threads you read."
+    MODE=mailread; BUDGET=3
+  fi
+  SCHEMA='{"type":"object","properties":{"status":{"type":"string","enum":["done","failed","blocked"]},"summary":{"type":"string"},"view_url":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"where":{"type":"string"},"when":{"type":"string"},"what":{"type":"string"},"link":{"type":"string"},"waiting_on_cassidy":{"type":"boolean"}},"required":["where","what"]}}},"required":["status","summary"]}'
+  COS_GATE_MODE="$MODE" COS_MAIL_DRAFT="$OUT/mail-draft.json" COS_JOB="$JOB" COS_LANE="$LANE" claude -p "$T" \
+    --settings "$COS/claude/settings.mail.json" --permission-mode dontAsk --permission-prompts none \
+    --model sonnet --effort low --max-budget-usd "$BUDGET" --no-session-persistence \
+    --output-format json --json-schema "$SCHEMA" > "$OUT/mail-run.json" 2>>"$OUT/run.err" || true
+  R="$(jq -c '.structured_output // (.result|fromjson?) // {status: "failed", summary: "the mail step returned nothing readable"}' "$OUT/mail-run.json" 2>/dev/null || echo '{"status":"failed","summary":"the mail step did not run"}')"
+  jq -n --argjson r "$R" --arg j "$JOB" --arg l "$LANE" --argjson c "$(jq '.total_cost_usd // 0' "$OUT/mail-run.json" 2>/dev/null || echo 0)" \
+    '{receipt: {status: $r.status, summary: $r.summary, items: ($r.items // []), view_url: ($r.view_url // null)}, lane: $l, job: $j, cost_usd: $c}' > "$OUT/receipt.json"
+  [[ "$LANE" == mail-draft ]] && ledger mail_drafts job="$JOB" to="$(jq -r '.to|join(",")' "$OUT/mail-draft.json")" status="$(jq -r .status <<<"$R")" subject="$(jq -r '.subject[0:120]' "$OUT/mail-draft.json")"
   cat "$OUT/receipt.json"; exit 0
 fi
 

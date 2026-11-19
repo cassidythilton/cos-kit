@@ -50,8 +50,8 @@ PEOPLE_MD = os.path.join(COS, 'handbook', 'people.md')
 SUMMARY_CAP = 12000
 MAX_DECISIONS = 5
 # Each step's own cap, in seconds. The whole packet stays under about 25 minutes even if every step runs to its cap.
-CAPS = {'health': 30, 'github': 240, 'owed': 180, 'slack': 420, 'chats': 600, 'capture': 30}
-LABEL = {'health': 'The health check', 'github': 'GitHub', 'owed': 'The owed list', 'slack': 'Slack',
+CAPS = {'health': 30, 'github': 240, 'owed': 180, 'slack': 420, 'mail': 300, 'chats': 600, 'capture': 30}
+LABEL = {'health': 'The health check', 'github': 'GitHub', 'owed': 'The owed list', 'slack': 'Slack', 'mail': 'Email',
          'chats': "Today's chats (Agent Atlas)", 'capture': "The 4 PM daily-log capture"}
 
 
@@ -337,6 +337,9 @@ def plan():
         ('slack', [RUN, 'slack-read', f'sl-{KIND}-{DAY}-{hhmm}',
                    f"every DM, group DM and thread Cassidy is in with activity since {when(since)} MT; say which are waiting on him"],
          f'sl-{KIND}-{DAY}-{hhmm}'),
+        ('mail', [RUN, 'mail-read', f'ml-{KIND}-{DAY}-{hhmm}',
+                  f"every email thread to Cassidy with new mail since {when(since)} MT, skipping newsletters and notifications; say which are waiting on him"],
+         f'ml-{KIND}-{DAY}-{hhmm}'),
         ('chats', [RUN, 'atlas', f'atlas-{DAY}-{KIND}-{hhmm}', window], f'atlas-{DAY}-{KIND}-{hhmm}'),
     ]
     if KIND == 'evening':
@@ -620,7 +623,7 @@ def assemble(got, since):
     title = 'Morning brief' if KIND == 'morning' else 'End-of-day sweep'
     L = [f'# {title} packet, {when(NOW)} MT', '',
          'Data from Cassidy\'s Mac, already in the plain format. Copy the lines; don\'t recompose them.', '']
-    order = ['health', 'github', 'owed', 'slack', 'chats'] + (['capture'] if KIND == 'evening' else [])
+    order = ['health', 'github', 'owed', 'slack', 'mail', 'chats'] + (['capture'] if KIND == 'evening' else [])
     fails = [f"{LABEL[s]} couldn't be read: {got[s]['why']}." for s in order if s in got and not got[s]['ok']]
     dec, held = decisions(got)  # before the top lines: reading staged changes can add one
     fails += [e + '.' for e in STAGED_ERRS]
@@ -672,6 +675,23 @@ def assemble(got, since):
         L += [f'- {w}' for w in wait] or [f'- Nothing in Slack is waiting on you since {when(since)}.']
     else:
         L += ["- Slack couldn't be read (see above)."]
+    L += ['']
+
+    L += ['## Email waiting on you', '']
+    ml = got.get('mail') or {}
+    if ml.get('ok'):
+        mwait = []
+        for it in ((ml.get('data') or {}).get('receipt') or {}).get('items') or []:
+            if not isinstance(it, dict) or not it.get('waiting_on_cassidy'):
+                continue
+            where = clean(it.get('where'), 80) or 'Email'
+            w = clean(it.get('when'), 40)
+            label = f'{where}, {w}' if w else where
+            ln = f"[{label}]({it['link']})" if it.get('link') and str(it['link']).startswith('https://') else label
+            mwait.append(f"{ln} — {plain_why(it.get('what'), 200)}")
+        L += [f'- {w}' for w in mwait] or [f'- No email is waiting on you since {when(since)}.']
+    else:
+        L += ["- Email couldn't be read (see above)."]
     L += ['']
 
     L += ['## FYI', '']

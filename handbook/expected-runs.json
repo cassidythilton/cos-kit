@@ -140,6 +140,26 @@
    ],
    "time": "09:00",
    "grace": 60
+  },
+  {
+   "id": "chief-steve-reminder",
+   "bot": "chief",
+   "what": "the reminder to follow up with Steve",
+   "dates": [
+    "2026-11-19"
+   ],
+   "time": "09:00",
+   "grace": 60
+  },
+  {
+   "id": "chief-roadmap-paste",
+   "bot": "chief",
+   "what": "the reminder to paste two roadmap links",
+   "dates": [
+    "2026-11-19"
+   ],
+   "time": "08:00",
+   "grace": 60
   }
  ],
  "webhooks": [

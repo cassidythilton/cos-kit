@@ -111,6 +111,22 @@ if [[ "$MODE" == slackread || "$MODE" == slackdraft ]]; then
   esac
 fi
 
+# ---- Mail modes (cos-run mail-read, mail-draft; Nov 19): read tools only; mail-draft may save exactly the staged draft.
+if [[ "$MODE" == mailread || "$MODE" == maildraft ]]; then
+  case "$tool" in
+    *Gmail__search_threads|*Gmail__get_thread|*Gmail__get_message|*Gmail__list_drafts|*Gmail__get_draft|*Gmail__list_labels) gate_log allow "mail read"; exit 0 ;;
+    *Gmail__create_draft)
+      [[ "$MODE" == maildraft && -f "${COS_MAIL_DRAFT:-}" ]] || hard "an email draft outside cos-run mail-draft"
+      ti="$(printf '%s' "$input" | jq -c '.tool_input')"
+      if jq -e --argjson t "$ti" '($t.body // "") == .body and ($t.subject // "") == (.subject // "") and ($t.to // []) == .to and ($t.cc // []) == (.cc // [])
+           and (($t.bcc // []) | length) == 0 and (($t.attachments // []) | length) == 0 and ($t.htmlBody // "") == ""
+           and ($t.replyToMessageId // "") == (.reply_to_message_id // "")' "$COS_MAIL_DRAFT" >/dev/null 2>&1; then gate_log allow "approved email draft"; exit 0; fi
+      hard "an email draft that differs from the staged one (recipients, subject, text, or an attachment or bcc)" ;;
+    Read) exit 0 ;;
+    *) hard "mail lanes only read Gmail and save the one staged draft" ;;
+  esac
+fi
+
 # ---- Sheet mode (cos-run apply-sheet): only the exact cells and values Cassidy approved, by the batch's sha256.
 if [[ "$MODE" == sheet ]]; then
   case "$tool" in

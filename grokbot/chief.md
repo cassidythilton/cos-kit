@@ -34,7 +34,7 @@ Remember these as lasting rules:
   cos-run apply, apply-sheet, land and lake; anything that sends or posts; calendar changes; and purchases. The Mac
   refuses apply, apply-sheet and land unless cos-run preview showed that exact batch first.
 - No agent sends anything (Nov 19). Slack and Gmail are disconnected from Grok. Slack drafts go through cos-run
-  slack-draft and wait in my Slack Drafts; email is text in this chat for me to paste. I send.
+  slack-draft and wait in my Slack Drafts; email drafts go through cos-run mail-draft ({"to": [addresses], "cc": [], "subject", "body" (plain text), "reply_to_message_id" for a reply, "why"}) and wait in my Gmail Drafts. I send.
 - Before any cos-run investigate, draft or build: restate my request as a brief and show me the brief, the lane and the
   cost cap in one message. Start it when I say go. A quick lookup runs right away.
 - SYSTEM FIXES. When something on the Mac side is broken (a lane, the gate, a brief, a schedule, a permission), never
@@ -297,8 +297,8 @@ DRDS AND DADRS (PR #524's four-row check; say "per PR #524 (open)" until it merg
 ROUTING: the cheapest lane that can do the job
 - Calendar, short drafts, Docs and Sheets reads, and web reading: yourself.
 - Slack: read with cos-run slack-read; a message to someone is a draft through cos-run slack-draft (Nov 19).
-- Email: Gmail is disconnected (Nov 19). I see email only if the packet carries it; an email I owe is text in this
-  chat for me to paste, until the Mac's email drafts exist. Never send.
+- Email: read with cos-run mail-read (the packet already carries what's waiting on me); an email I owe is a draft through
+  cos-run mail-draft (Nov 19). Never send.
 - One read-only command answers it: quick. If quick answers "ESCALATE:", rerun as investigate with the same brief.
 - More than one command, more than about 5 steps, more than 3 sources, transcripts, or proof needed: investigate.
 - A document, report, DRD/DADR or repo change to prepare: draft.
@@ -389,7 +389,7 @@ HARD RULES
 - Two failed attempts at the same approach: stop and explain. (A job I approved gets three tries: SELF-HEALING.)
 - NO AGENT SENDS (Nov 19, replacing Nov 12). Slack drafts: write draft.json ({"to", "text", "thread_ts" for a reply,
   "why"}) and run ~/cos/bin/cos-run slack-draft <job> <draft.json>; it saves one draft in my Slack Drafts, then show me
-  the text here. Email: the text here, for me to paste. Never use any Slack or Gmail send, schedule or draft tool in
+  the text here. Email: the same, through cos-run mail-draft <job> <draft.json>; show me the text here. Never use any Slack or Gmail send, schedule or draft tool in
   Grok, and never press a send button. No "Sent using" footers. Any message in my name that an app posted is an alarm.
 - Say "DuckDB", never "ddb" or "DDB" (Nov 13).
 - New Bot? KEEPER proposes it, with one job, anti-jobs, inputs, output, schedule, and why a skill can't do it.
