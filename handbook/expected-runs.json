@@ -1,0 +1,178 @@
+{
+ "about": "Everything that should run, so cos-health can say when something didn't (plan 2026-11-19, change 9). The Mac's own schedules are read from its launchd files, so they aren't listed here. This lists the Grok routines: each one's last step is ~/cos/bin/cos-run heartbeat <id> ok|failed \"<what>\". days: mon..fri; time: Mountain time; grace: minutes after the time before a missing heartbeat is a problem. A one-off has a date instead of days. KEEPER keeps this in step with the Bots' routine exports every Friday. heartbeats_required_from: from this date (13:00 UTC) every listed routine must report in, even one that never has; before it, a routine is watched once it first reports in.",
+ "heartbeats_required_from": "2026-11-23",
+ "routines": [
+  {
+   "id": "chief-morning-brief",
+   "bot": "chief",
+   "what": "the morning brief",
+   "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri"
+   ],
+   "time": "06:30",
+   "grace": 60
+  },
+  {
+   "id": "chief-evening-sweep",
+   "bot": "chief",
+   "what": "the end-of-day sweep",
+   "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri"
+   ],
+   "time": "16:30",
+   "grace": 75
+  },
+  {
+   "id": "chief-call-actions",
+   "bot": "chief",
+   "what": "the daily call action items",
+   "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri"
+   ],
+   "time": "15:50",
+   "grace": 45
+  },
+  {
+   "id": "chief-birddog-nicholas",
+   "bot": "chief",
+   "what": "the check on Nicholas's items",
+   "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri"
+   ],
+   "time": "09:00",
+   "grace": 45
+  },
+  {
+   "id": "chief-postgres-followup",
+   "bot": "chief",
+   "what": "the Postgres auto-load follow-up",
+   "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri"
+   ],
+   "time": "09:00",
+   "grace": 45
+  },
+  {
+   "id": "chief-week-plan",
+   "bot": "chief",
+   "what": "the Monday week plan",
+   "days": [
+    "mon"
+   ],
+   "time": "07:00",
+   "grace": 60
+  },
+  {
+   "id": "chief-zendesk-triage",
+   "bot": "chief",
+   "what": "the Zendesk no-owner triage",
+   "dates": [
+    "2026-11-17",
+    "2026-11-19"
+   ],
+   "time": "10:00",
+   "grace": 60
+  },
+  {
+   "id": "ops-morning-brief",
+   "bot": "ops",
+   "what": "OPS's morning feed",
+   "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri"
+   ],
+   "time": "06:45",
+   "grace": 60
+  }
+ ],
+ "webhooks": [
+  {
+   "id": "chief-webhook",
+   "bot": "chief",
+   "what": "the Chief's results webhook",
+   "grace": 30
+  },
+  {
+   "id": "ops-webhook",
+   "bot": "ops",
+   "what": "OPS's follow-ups webhook",
+   "grace": 30
+  },
+  {
+   "id": "steward-webhook",
+   "bot": "steward",
+   "what": "STEWARD's board receipts webhook",
+   "grace": 30
+  },
+  {
+   "id": "builder-webhook",
+   "bot": "builder",
+   "what": "BUILDER's opportunity webhook",
+   "grace": 30
+  },
+  {
+   "id": "keeper-webhook",
+   "bot": "keeper",
+   "what": "KEEPER's audit webhook",
+   "grace": 30
+  }
+ ],
+ "mac_slots": {
+  "about": "Plain names and time limits for the Mac's schedules (com.cos.<slot> in ~/Library/LaunchAgents). max: minutes a run may take.",
+  "capture": {
+   "what": "the 4:00 PM daily-log capture",
+   "max": 45
+  },
+  "followups": {
+   "what": "the 6:15 AM follow-ups for OPS",
+   "max": 45
+  },
+  "keeper": {
+   "what": "KEEPER's Friday audit",
+   "max": 90
+  },
+  "obligations": {
+   "what": "the owed-items check",
+   "max": 20
+  },
+  "opportunity": {
+   "what": "BUILDER's Monday opportunity hunt",
+   "max": 120
+  },
+  "pulse": {
+   "what": "the 8:10 AM board pulse",
+   "max": 30
+  },
+  "reconcile": {
+   "what": "the board and roadmap reconcile",
+   "max": 60
+  },
+  "week": {
+   "what": "the Friday week readout",
+   "max": 60
+  }
+ }
+}

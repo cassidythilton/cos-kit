@@ -64,6 +64,7 @@ if [[ $DRY -eq 1 ]]; then
 fi
 
 log "start $JOB"
+export COS_ROUTINE="sched-$SLOT"
 # Every run leaves a receipt in its job folder, where cos-run receipt looks. A job that dies before writing one gets a
 # failed receipt carrying its exit code and stderr (kept in sched.err). An earlier run's receipt is set aside first,
 # so a crash can't pass it off as this run's result.

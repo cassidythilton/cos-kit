@@ -1,0 +1,407 @@
+#!/usr/bin/env -S python3 -I
+"""cos-health: is everything running? (plan 2026-11-19, change 9). No model runs here.
+
+  cos-health check          what launchd runs every 15 minutes: find problems, open and close them, alert new ones
+  cos-health line [--hours N]   one plain line (and the open problems) for the top of a brief
+  cos-health status         the open problems, as JSON
+
+What it checks, over the last 26 hours:
+  - every Mac schedule (read from ~/Library/LaunchAgents/com.cos.<slot>.plist): it started near its time, finished
+    inside its limit, and didn't fail or miss;
+  - every Grok routine in handbook/expected-runs.json: its heartbeat came (cos-run heartbeat <id> ok|failed);
+  - every delivery to a Bot (pushes ledger): accepted (200), and the Bot's webhook routine reported back;
+  - every job the Mac ran: none ended failed or was cut off without a receipt;
+  - the Mac: on power at night, disk space, GitHub sign-in, the webhook keys, this watchdog's own last run.
+A new problem goes out at once: to the Chief (cos-push chief alert), as a Mac notification, and into the ledger
+(stream health). It stays open until the same process succeeds again; then it's closed and the Chief hears "fixed".
+"""
+import datetime as dt
+import glob
+import hashlib
+import json
+import os
+import plistlib
+import re
+import shutil
+import subprocess
+import sys
+import zoneinfo
+
+HOME = os.path.expanduser("~")
+COS = f"{HOME}/cos"
+LED = os.environ.get("COS_LEDGER_DIR", f"{COS}/state/ledger")
+STATE = os.environ.get("COS_HEALTH_STATE", f"{COS}/state/health.json")
+EXPECTED = os.environ.get("COS_EXPECTED_RUNS", f"{COS}/handbook/expected-runs.json")
+AGENTS = os.environ.get("COS_LAUNCHD_DIR", f"{HOME}/Library/LaunchAgents")
+MT = zoneinfo.ZoneInfo("America/Denver")
+NOW = dt.datetime.fromisoformat(os.environ["COS_HEALTH_NOW"]) if os.environ.get("COS_HEALTH_NOW") else dt.datetime.now(dt.timezone.utc)
+WINDOW = dt.timedelta(hours=26)
+DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+os.environ["PATH"] = f"{COS}/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
+
+
+def ts(s):
+    try:
+        t = dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+    except Exception:
+        return None
+
+
+def rows(stream):
+    out = []
+    try:
+        with open(f"{LED}/{stream}.jsonl") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                t = ts(r.get("ts", ""))
+                if t and NOW - WINDOW - dt.timedelta(hours=6) <= t <= NOW + dt.timedelta(minutes=5):
+                    r["_t"] = t
+                    out.append(r)
+    except FileNotFoundError:
+        pass
+    return out
+
+
+def hm(t):
+    return t.astimezone(MT).strftime("%a %b %-d, %-I:%M %p")
+
+
+def expected():
+    try:
+        with open(EXPECTED) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def slot_times(cal):
+    """launchd StartCalendarInterval entries -> datetimes (MT) in the window."""
+    cal = cal if isinstance(cal, list) else [cal]
+    out = []
+    day = (NOW - WINDOW).astimezone(MT).date()
+    while day <= NOW.astimezone(MT).date():
+        for c in cal:
+            wd = c.get("Weekday")
+            if wd is not None and (day.isoweekday() % 7) != wd % 7:
+                continue
+            t = dt.datetime(day.year, day.month, day.day, c.get("Hour", 0), c.get("Minute", 0), tzinfo=MT)
+            if NOW - WINDOW <= t <= NOW:
+                out.append(t)
+        day += dt.timedelta(days=1)
+    return sorted(set(out))
+
+
+def problem(key, title, detail, fix):
+    return {"key": key, "title": title, "detail": detail, "fix": fix}
+
+
+def check_mac_slots(exp, found):
+    sched = rows("schedule")
+    names = exp.get("mac_slots", {})
+    for path in sorted(glob.glob(f"{AGENTS}/com.cos.*.plist")):
+        slot = os.path.basename(path)[len("com.cos."):-len(".plist")]
+        if slot not in names:
+            continue  # dashboard and zoommirror are checked elsewhere
+        try:
+            with open(path, "rb") as f:
+                cal = plistlib.load(f).get("StartCalendarInterval")
+        except Exception as e:
+            found.append(problem(f"plist:{slot}", f"The schedule file for {names[slot]['what']} can't be read", str(e)[:200], "cos-run fix"))
+            continue
+        if not cal:
+            continue
+        what, limit = names[slot]["what"], dt.timedelta(minutes=names[slot].get("max", 45))
+        mine = [r for r in sched if r.get("slot") == slot]
+        for due in slot_times(cal):
+            due_u = due.astimezone(dt.timezone.utc)
+            if NOW - due_u < dt.timedelta(minutes=20):
+                continue  # give launchd time to start it
+            after = [r for r in mine if due_u - dt.timedelta(minutes=2) <= r["_t"] <= due_u + dt.timedelta(hours=14)]
+            nxt = [d for d in slot_times(cal) if d > due]
+            if nxt:
+                after = [r for r in after if r["_t"] < nxt[0].astimezone(dt.timezone.utc) - dt.timedelta(minutes=2)]
+            msgs = [r.get("msg", "") for r in after]
+            key = f"slot:{slot}:{due.strftime('%Y%m%d%H%M')}"
+            if any(m.startswith("paused through") for m in msgs):
+                continue
+            if not after:
+                found.append(problem(key, f"{what} didn't run ({hm(due)})", "No start in the schedule log. The Mac may have been asleep, off or busy.", "check the Mac was awake; cos-sched " + slot))
+                continue
+            if any(m.startswith("skipped: outside") for m in msgs):
+                found.append(problem(key, f"{what} was missed ({hm(due)})", "The Mac was asleep at the time, so it ran late and was skipped.", "keep the Mac awake and plugged in at that time"))
+                continue
+            fail = [m for m in msgs if " failed" in m]
+            if fail:
+                found.append(problem(key, f"{what} failed ({hm(due)})", fail[0][:300], "cos-run fix with this error"))
+                continue
+            done = [m for m in msgs if m.startswith("pushed to") or m.startswith("no change")]
+            start = [r for r in after if r.get("msg", "").startswith("start")]
+            if start and not done and NOW - start[0]["_t"] > limit:
+                found.append(problem(key, f"{what} started ({hm(due)}) but never finished", f"No result after {int(limit.total_seconds()//60)} minutes.", "cos-run receipt " + slot + "-<date>; then cos-run fix"))
+
+
+def due_times(r):
+    hh, mm = map(int, r["time"].split(":"))
+    out = []
+    day = (NOW - WINDOW).astimezone(MT).date()
+    while day <= NOW.astimezone(MT).date():
+        ok = (day.isoformat() in r.get("dates", [])) or (DAYS[day.weekday()] in r.get("days", []))
+        if ok:
+            t = dt.datetime(day.year, day.month, day.day, hh, mm, tzinfo=MT)
+            if NOW - WINDOW <= t <= NOW:
+                out.append(t)
+        day += dt.timedelta(days=1)
+    return out
+
+
+def armed(exp, rid):
+    """A routine is watched once it has reported in at least once, or from heartbeats_required_from (so a routine whose
+    prompt never got the heartbeat line is caught too). Until then a missing heartbeat isn't a problem."""
+    req = ts((exp.get("heartbeats_required_from") or "") + "T13:00:00+00:00") if exp.get("heartbeats_required_from") else None
+    if req and NOW >= req:
+        return True
+    try:
+        with open(f"{LED}/heartbeats.jsonl") as f:
+            return any(json.loads(l).get("routine") == rid for l in f if rid in l)
+    except FileNotFoundError:
+        return False
+
+
+def check_routines(exp, found):
+    beats = rows("heartbeats")
+    for r in exp.get("routines", []):
+        if not armed(exp, r["id"]):
+            continue
+        for due in due_times(r):
+            due_u = due.astimezone(dt.timezone.utc)
+            grace = dt.timedelta(minutes=r.get("grace", 60))
+            if NOW < due_u + grace:
+                continue
+            got = [b for b in beats if b.get("routine") == r["id"] and due_u - dt.timedelta(minutes=30) <= b["_t"] <= due_u + dt.timedelta(hours=10)]
+            key = f"routine:{r['id']}:{due.strftime('%Y%m%d%H%M')}"
+            if not got:
+                found.append(problem(key, f"{r['bot'].upper()}'s {r['what']} didn't report in ({hm(due)})",
+                                     "No heartbeat: the routine didn't run, failed before its last step, or its prompt lacks the heartbeat line.",
+                                     f"the {r['bot']} Bot checks the routine's last run and fixes it (never pauses it)"))
+            elif all(b.get("status") == "failed" for b in got):
+                found.append(problem(key, f"{r['bot'].upper()}'s {r['what']} failed ({hm(due)})", (got[-1].get("note") or "")[:300],
+                                     f"the {r['bot']} Bot fixes the routine through cos-run (never pauses it)"))
+    known = {r["id"] for r in exp.get("routines", [])} | {w["id"] for w in exp.get("webhooks", [])}
+    for b in beats:
+        if b.get("routine") and b["routine"] not in known:
+            found.append(problem(f"unknown:{b['routine']}", f"A routine reported in that isn't on the list: {b['routine']}",
+                                 "Add it to handbook/expected-runs.json so it's watched.", "KEEPER adds it on Friday"))
+            known.add(b["routine"])
+
+
+def check_pushes(exp, found):
+    beats = rows("heartbeats")
+    hooks = {w["bot"]: w for w in exp.get("webhooks", [])}
+    unacked = {}
+    for p in rows("pushes"):
+        if p["_t"] < NOW - WINDOW:
+            continue
+        bot, job, code = p.get("bot", ""), p.get("job", ""), str(p.get("code", ""))
+        key = f"push:{bot}:{job}:{p['_t'].strftime('%Y%m%d%H%M')}"
+        if code != "200":
+            found.append(problem(key, f"A result for the {bot} Bot wasn't delivered ({hm(p['_t'])})", f"The webhook answered {code or 'nothing'} for job {job}.",
+                                 "check the Bot's webhook routine is on and its key is in the Keychain; cos-push again"))
+            continue
+        w = hooks.get(bot)
+        if not w or p.get("slot") == "alert" or not armed(exp, w["id"]):
+            continue
+        if NOW - p["_t"] < dt.timedelta(minutes=w.get("grace", 30)):
+            continue
+        if not [b for b in beats if b.get("routine") == w["id"] and p["_t"] - dt.timedelta(minutes=1) <= b["_t"] <= p["_t"] + dt.timedelta(hours=3)]:
+            unacked.setdefault((bot, p["_t"].astimezone(MT).date()), []).append(job)
+    for (bot, day), jobs in unacked.items():
+        w = hooks[bot]
+        found.append(problem(f"push-ack:{bot}:{day}", f"The {bot} Bot didn't confirm {len(jobs)} result{'s' if len(jobs) != 1 else ''} it was sent ({day:%a %b %-d})",
+                             "No heartbeat from " + w["what"] + " after: " + ", ".join(jobs[:8]) + (" …" if len(jobs) > 8 else ""),
+                             f"the {bot} Bot reads each with cos-run receipt <job> and checks its webhook routine"))
+
+
+def check_jobs(found):
+    """Jobs that failed or were cut off. Refusals (64-68) are the kit working; they aren't problems."""
+    ends = {}
+    for r in rows("jobs"):
+        if r.get("event") == "end":
+            ends.setdefault(r.get("job"), []).append(r)
+    seen, groups = set(), {}
+    for job, es in ends.items():
+        e = es[-1]
+        if e["_t"] < NOW - WINDOW:
+            continue
+        code = str(e.get("exit", ""))
+        rec = f"{COS}/outbox/{job}/receipt.json"
+        status = ""
+        try:
+            with open(rec) as f:
+                status = (json.load(f).get("receipt") or {}).get("status", "")
+        except Exception:
+            pass
+        bad = code not in ("0", "64", "65", "66", "67", "68", "130", "") or status in ("failed", "interrupted")
+        if not bad or job in seen:
+            continue
+        seen.add(job)
+        summary = ""
+        try:
+            with open(rec) as f:
+                summary = (json.load(f).get("receipt") or {}).get("summary", "")
+        except Exception:
+            pass
+        cause = re.sub(r"[0-9]+", "N", re.sub(r"\(.*?line N?[0-9]*:?", "(", (summary or f"exit {code}")[:90]))
+        groups.setdefault((e.get("lane", ""), cause), []).append((job, e["_t"], summary or f"exit {code}"))
+    for (lane, cause), items in groups.items():
+        first = min(t for _, t, _ in items)
+        jobs = [j for j, _, _ in items]
+        title = (f"A {lane} job failed: {jobs[0]} ({hm(first)})" if len(items) == 1
+                 else f"{len(items)} {lane} jobs failed the same way since {hm(first)}")
+        found.append(problem(f"job:{lane}:{first.strftime('%Y%m%d%H%M')}:{hashlib.sha1(cause.encode()).hexdigest()[:8]}", title,
+                             (items[0][2][:220] + ("  Jobs: " + ", ".join(jobs[:10]) + (" …" if len(jobs) > 10 else "") if len(items) > 1 else "")),
+                             "cos-run fix with this error (the Chief starts it)" if len(items) > 1 else f"the Bot that started it reads cos-run receipt {jobs[0]} and fixes the cause"))
+
+
+def check_mac(found, prev):
+    hour = NOW.astimezone(MT).hour
+    try:
+        batt = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=10).stdout
+        if (hour >= 21 or hour < 6) and "AC Power" not in batt:
+            found.append(problem("mac:power", "The Mac is on battery overnight", "Night work and 6 AM schedules can be missed.", "plug the Mac in"))
+    except Exception:
+        pass
+    free = shutil.disk_usage(HOME).free / 1e9
+    if free < 10:
+        found.append(problem("mac:disk", f"The Mac has {free:.0f} GB free", "Jobs fail when the disk fills.", "clear space; the kit's own outbox can be trimmed"))
+    if os.environ.get("COS_HEALTH_SKIP_GH") != "1":
+        try:
+            if subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=20).returncode != 0:
+                found.append(problem("mac:gh", "GitHub sign-in on the Mac isn't working", "Every GitHub read and write will fail.", "Cassidy runs gh auth login (the one step only he can do)"))
+        except Exception:
+            pass
+        for bot in ("chief", "ops", "steward", "builder", "keeper"):
+            if subprocess.run(["security", "find-generic-password", "-a", "cos", "-s", f"cos-webhook-{bot}"], capture_output=True).returncode != 0:
+                found.append(problem(f"mac:key:{bot}", f"The {bot} Bot's webhook key is missing from the Keychain", "Results can't reach that Bot.", "see INSTALL.md, step 4"))
+    last = ts(prev.get("last_check", "")) if prev else None
+    if last and NOW - last > dt.timedelta(minutes=45):
+        found.append(problem(f"watchdog:gap:{last.strftime('%Y%m%d%H%M')}", f"Monitoring itself stopped for a while (last check {hm(last)})",
+                             "Problems in that gap were found late.", "keep the Mac awake; launchctl list | grep cos.health"))
+
+
+def load_state():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except Exception:
+        return {"open": {}, "last_check": ""}
+
+
+def save_state(st):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(st, f, indent=1)
+    os.replace(tmp, STATE)
+
+
+def ledger(**kv):
+    subprocess.run([f"{COS}/bin/cos-ledger", "health"] + [f"{k}={v}" for k, v in kv.items()], capture_output=True)
+
+
+def alert(new, closed):
+    if not new and not closed:
+        return
+    lines = []
+    for p in new:
+        lines.append(f"PROBLEM: {p['title']}. {p['detail']} Next: {p['fix']}.")
+    for p in closed:
+        lines.append(f"FIXED: {p['title']}.")
+    summary = "System health. " + " ".join(lines)
+    status = "failed" if new else "done"
+    body = {"job": "health-" + NOW.strftime("%Y%m%d-%H%M"), "lane": "health",
+            "receipt": {"status": status, "summary": summary[:3500],
+                        "open_questions": ["Start a fix for each PROBLEM now (cos-run fix, or fix the routine through cos-run; never pause it), then tell Cassidy at the top of the chat in plain words what broke and what you're doing."] if new else []}}
+    path = f"{COS}/state/health-alert.json"
+    with open(path, "w") as f:
+        json.dump(body, f)
+    if os.environ.get("COS_HEALTH_NO_ALERT") == "1":
+        return
+    subprocess.run([f"{COS}/bin/cos-push", "chief", "alert", path], capture_output=True)
+    if new:
+        msg = (new[0]["title"] + (f" (+{len(new) - 1} more)" if len(new) > 1 else "")).replace('"', "'")
+        subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "Chief of staff: system problem"'], capture_output=True)
+
+
+def check():
+    prev = load_state()
+    exp = expected()
+    found = []
+    for fn in (check_mac_slots, check_routines, check_pushes):
+        try:
+            fn(exp, found)
+        except Exception as e:
+            found.append(problem(f"health:{fn.__name__}", "The health check hit an error", f"{fn.__name__}: {e}"[:300], "cos-run fix"))
+    check_jobs(found)
+    check_mac(found, prev)
+    cur = {p["key"]: p for p in found}
+    opened = prev.get("open", {})
+    new = [p for k, p in cur.items() if k not in opened]
+    closed = [p for k, p in opened.items() if k not in cur and not k.startswith(("job:", "watchdog:", "unknown:"))]
+    # A failed job or a gap is a one-time event: it stays open until someone says it's handled, or 26 hours pass.
+    for k, p in opened.items():
+        if k not in cur and k.startswith(("job:", "watchdog:", "unknown:")) and NOW - ts(p["opened"]) < WINDOW:
+            cur[k] = p
+    for p in new:
+        p["opened"] = NOW.isoformat()
+        ledger(event="open", key=p["key"], title=p["title"], detail=p["detail"][:300])
+    for p in closed:
+        ledger(event="closed", key=p["key"], title=p["title"])
+    for k, p in cur.items():
+        p.setdefault("opened", opened.get(k, {}).get("opened", NOW.isoformat()))
+    alert(new, closed)
+    save_state({"open": cur, "last_check": NOW.isoformat()})
+    ledger(event="check", open=str(len(cur)), new=str(len(new)), closed=str(len(closed)))
+    print(json.dumps({"open": len(cur), "new": [p["title"] for p in new], "closed": [p["title"] for p in closed]}, indent=1))
+    return 0
+
+
+def line(hours):
+    st = load_state()
+    last = ts(st.get("last_check", ""))
+    since = NOW - dt.timedelta(hours=hours)
+    checks = [r for r in rows("health") if r.get("event") == "check" and r["_t"] >= since]
+    if not last or NOW - last > dt.timedelta(minutes=45):
+        print(f"Monitoring is down: the last health check was {hm(last) if last else 'never'}. Problems since then aren't being caught.")
+        return 1
+    ok_runs = len([r for r in rows("schedule") if r["_t"] >= since and (r.get("msg", "").startswith("pushed") or r.get("msg", "").startswith("no change"))])
+    ok_runs += len([r for r in rows("heartbeats") if r["_t"] >= since and r.get("status") == "ok"])
+    ok_runs += len([r for r in rows("jobs") if r["_t"] >= since and r.get("event") == "end" and str(r.get("exit")) == "0"])
+    op = list(st.get("open", {}).values())
+    if not op:
+        print(f"All {ok_runs} runs in the last {hours} hours worked. ({len(checks)} health checks, none found a problem.)")
+        return 0
+    print(f"{len(op)} problem{'s' if len(op) != 1 else ''} open ({ok_runs} other runs in the last {hours} hours worked):")
+    for p in op:
+        print(f"- {p['title']}. Next: {p['fix']}.")
+    return 0
+
+
+def main(a):
+    if not a or a[0] in ("-h", "--help"):
+        print(__doc__); return 0
+    if a[0] == "check":
+        return check()
+    if a[0] == "line":
+        h = int(a[a.index("--hours") + 1]) if "--hours" in a else 12
+        return line(h)
+    if a[0] == "status":
+        print(json.dumps(load_state(), indent=1)); return 0
+    print(__doc__); return 64
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -25,7 +25,7 @@ fi
 LA="$HOME/Library/LaunchAgents"; SLOTS="followups pulse reconcile capture week opportunity keeper obligations"
 
 if [[ $UNSCHEDULE -eq 1 ]]; then
-  for s in $SLOTS dashboard zoommirror tcccheck; do launchctl bootout "gui/$(id -u)/com.cos.$s" 2>/dev/null; rm -f "$LA/com.cos.$s.plist"; done
+  for s in $SLOTS dashboard zoommirror tcccheck health; do launchctl bootout "gui/$(id -u)/com.cos.$s" 2>/dev/null; rm -f "$LA/com.cos.$s.plist"; done
   echo "Schedule removed."; exit 0
 fi
 
@@ -80,7 +80,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,claude/lake,claude/codex,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-pr,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-pr,cos-health,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
@@ -119,7 +119,7 @@ backup_then_install() {  # kit-owned file: keep a backup if the installed copy w
   local src="$1" dst="$2"; mkdir -p "$(dirname "$dst")"
   if [[ -f "$dst" ]] && ! cmp -s "$src" "$dst"; then cp "$dst" "$dst.bak-$(date +%Y%m%d%H%M%S)"; fi
   install -m 644 "$src" "$dst"; }
-for f in rules.md board-standard.md engineering-standard.md system-map.md; do backup_then_install "$KIT/handbook/$f" "$COS/handbook/$f"; done
+for f in rules.md board-standard.md engineering-standard.md system-map.md plain-language.md expected-runs.json; do backup_then_install "$KIT/handbook/$f" "$COS/handbook/$f"; done
 [[ -f "$COS/handbook/standing-approvals.json" ]] || install -m 644 "$KIT/handbook/standing-approvals.json" "$COS/handbook/"   # yours once installed: the kit never overwrites it
 for f in people.md workstreams.md sources.md; do [[ -f "$COS/handbook/$f" ]] || printf '# %s\n\nFill this in. The kit never overwrites it.\n' "${f%.md}" > "$COS/handbook/$f"; done
 touch "$COS/state/corrections.jsonl"
@@ -319,6 +319,39 @@ prv cassidythilton OPEN "$H40" cassidythilton; cpr close wisecodeai/data-org#9 "
 prv cassidythilton CLOSED "$H40" cassidythilton; cpr close wisecodeai/data-org#9 "$H40" "$P/cos/outbox/j/why.md"; [[ $? -eq 0 ]] && ! grep -q "pr close" "$P/log" && pass "cos-pr skips a PR that's already closed" || fail "cos-pr closed a closed PR again"
 prv cassidythilton OPEN "$H40" cassidythilton; cpr draft wisecodeai/data-org-notebook#3 "$H40"; [[ $? -eq 0 ]] && grep -q "pr ready 3 --repo wisecodeai/data-org-notebook --undo" "$P/log" && pass "cos-pr turns his own PR back into a draft" || fail "cos-pr draft (see $P/log)"
 rm -rf "$P"
+# Monitoring (Nov 19): cos-health against fake records, at a fixed time, with no alerts sent.
+H="$(mktemp -d)"; mkdir -p "$H/la" "$H/led" "$H/cos/outbox/qa1" "$H/cos/outbox/qa2" "$H/cos/state" "$H/cos/bin"; cp "$COS/bin/cos-ledger" "$H/cos/bin/"
+cat > "$H/la/com.cos.pulse.plist" <<PL
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>Label</key><string>com.cos.pulse</string><key>StartCalendarInterval</key><array><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>10</integer></dict></array></dict></plist>
+PL
+cat > "$H/exp.json" <<'EX'
+{"routines": [{"id": "chief-morning-brief", "bot": "chief", "what": "the morning brief", "days": ["thu"], "time": "06:30", "grace": 60}],
+ "webhooks": [], "mac_slots": {"pulse": {"what": "the 8:10 AM board pulse", "max": 30}}}
+EX
+hc() { HOME="$H" COS_LEDGER_DIR="$H/led" COS_LAUNCHD_DIR="$H/la" COS_EXPECTED_RUNS="$H/exp.json" COS_HEALTH_STATE="$H/state.json" COS_HEALTH_NOW="$1" \
+  COS_HEALTH_SKIP_GH=1 COS_HEALTH_NO_ALERT=1 python3 -I "$COS/bin/cos-health" "${@:2}" 2>&1; }
+hc 2026-11-19T17:00:00+00:00 check >/dev/null; jq -e '.open | to_entries | map(.value.title) | any(test("board pulse didn.t run"))' "$H/state.json" >/dev/null 2>&1 \
+  && pass "cos-health: a schedule that never started is a problem" || fail "cos-health missed a schedule that didn't run"
+printf '%s\n' '{"ts":"2026-11-19T15:10:04Z","slot":"pulse","msg":"start pulse-20261119"}' '{"ts":"2026-11-19T15:12:00Z","slot":"pulse","msg":"pushed to steward"}' > "$H/led/schedule.jsonl"
+o="$(hc 2026-11-19T17:15:00+00:00 check)"; jq -e '.closed | any(test("board pulse"))' <<<"$o" >/dev/null 2>&1 && pass "cos-health: the problem closes when the schedule runs" || fail "cos-health didn't close a fixed schedule ($o)"
+printf '%s\n' '{"ts":"2026-11-19T15:10:04Z","slot":"pulse","msg":"start pulse-20261119"}' '{"ts":"2026-11-19T15:11:00Z","slot":"pulse","msg":"pulse-20261119 failed (exit 1): boom"}' > "$H/led/schedule.jsonl"
+hc 2026-11-19T17:30:00+00:00 check >/dev/null; jq -e '.open | to_entries | map(.value.title) | any(test("board pulse failed"))' "$H/state.json" >/dev/null 2>&1 \
+  && pass "cos-health: a failed schedule is a problem" || fail "cos-health missed a failed schedule"
+HOME="$H" COS_LEDGER_DIR="$H/led" "$COS/bin/cos-run" heartbeat chief-morning-brief maybe >/dev/null 2>&1; [[ $? -eq 64 ]] && pass "heartbeat refuses anything but ok or failed" || fail "heartbeat took a bad status"
+printf '%s\n' '{"ts":"2026-11-18T12:40:00Z","routine":"chief-morning-brief","status":"ok"}' > "$H/led/heartbeats.jsonl"
+o="$(hc 2026-11-19T17:45:00+00:00 check)"; jq -e '.new | any(test("morning brief didn.t report in"))' <<<"$o" >/dev/null 2>&1 && pass "cos-health: a routine that stops reporting in is a problem" || fail "cos-health missed a silent routine ($o)"
+HOME="$H" COS_LEDGER_DIR="$H/led" "$COS/bin/cos-run" heartbeat chief-morning-brief failed "couldn't read GitHub" >/dev/null 2>&1
+tail -1 "$H/led/heartbeats.jsonl" | grep -q '"routine":"chief-morning-brief".*"status":"failed"' && pass "cos-run heartbeat records a routine's report" || fail "heartbeat didn't record"
+printf '%s\n' '{"ts":"2026-11-18T12:40:00Z","routine":"chief-morning-brief","status":"ok"}' '{"ts":"2026-11-19T12:45:00Z","routine":"chief-morning-brief","status":"failed","note":"x"}' > "$H/led/heartbeats.jsonl"
+o="$(hc 2026-11-19T18:00:00+00:00 check)"; jq -e '.new | any(test("morning brief failed"))' <<<"$o" >/dev/null 2>&1 && pass "cos-health: a routine that reports failed is a problem" || fail "cos-health missed a failed routine ($o)"
+o="$(hc 2026-11-19T18:15:00+00:00 check)"; jq -e '.new == []' <<<"$o" >/dev/null 2>&1 && pass "cos-health: an open problem isn't alerted twice" || fail "cos-health alerted the same problem again ($o)"
+for j in qa1 qa2; do echo "{\"receipt\":{\"status\":\"failed\",\"summary\":\"FAILED: the quick-lane model stopped before answering (/x/cos-run: line 10$j: 4242 Killed: 9 agent)\"}}" > "$H/cos/outbox/$j/receipt.json"
+  echo "{\"ts\":\"2026-11-19T17:5${j: -1}:00Z\",\"event\":\"end\",\"job\":\"$j\",\"lane\":\"quick\",\"exit\":\"0\"}" >> "$H/led/jobs.jsonl"; done
+o="$(hc 2026-11-19T18:30:00+00:00 check)"; jq -e '(.new | length) == 1 and (.new[0] | test("2 quick jobs failed the same way"))' <<<"$o" >/dev/null 2>&1 && pass "cos-health: repeat failures come as one problem" || fail "cos-health didn't group repeat failures ($o)"
+hc 2026-11-19T19:30:00+00:00 line | grep -q "^Monitoring is down" && pass "cos-health line says when monitoring itself stopped" || fail "cos-health line hid a stopped watchdog"
+hc 2026-11-19T18:35:00+00:00 line | grep -q "problems open" && pass "cos-health line lists open problems for the brief" || fail "cos-health line"
+rm -rf "$H"
 mkdir -p "$T/cos/outbox/t6"; echo 'gh pr review 746 --repo wisecodeai/data-org --approve --body "looks good"' > "$T/cos/outbox/t6/apply.sh"; S6="$(shasum -a 256 "$T/cos/outbox/t6/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t6 "$S6" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t6/applied.log" ]] && pass "apply refuses a review body that isn't a file in the job folder" || fail "apply ran an inline review body"
 # Replacing a comment's text (Nov 17, #774): only Cassidy's own, old text saved in the job folder and ledgered as the undo.
@@ -1351,6 +1384,22 @@ PL
     plutil -lint "$P" >/dev/null && launchctl bootout "gui/$(id -u)/com.cos.$slot" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null \
       && echo "  ✓ scheduled $slot ($days $hm)" || echo "  ✗ could not load $slot"
   done
+  # The watchdog (Nov 19): cos-health check every 15 minutes, whatever --only says, so nothing runs unwatched.
+  P="$LA/com.cos.health.plist"
+  cat > "$P" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.cos.health</string>
+<key>ProgramArguments</key><array><string>$COS/bin/cos-launch</string><string>cos-health</string><string>check</string></array>
+<key>StartInterval</key><integer>900</integer>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>$COS/state/launchd-health.log</string>
+<key>StandardErrorPath</key><string>$COS/state/launchd-health.log</string>
+</dict></plist>
+PL
+  plutil -lint "$P" >/dev/null && launchctl bootout "gui/$(id -u)/com.cos.health" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null \
+    && echo "  ✓ scheduled health (cos-health check every 15 minutes)" || echo "  ✗ could not load health"
   # Prove a launchd job can read ~/Documents: a one-shot agent runs cos-tcc-check through cos-launch.
   P="$LA/com.cos.tcccheck.plist"
   cat > "$P" <<PL
