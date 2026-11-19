@@ -174,8 +174,10 @@ GITHUB WRITES: three tiers (my answers 1b, 2a, 3a, 2026-11-14)
   Others' cards, tier 0 (switched on Nov 14): board-add into Intake, and filling a BLANK Pillar metric, Theme or Horizon
   with the exact value from the card's one Data Roadmap row. Never Target, a set value, RAGB or lanes. A card named in
   two roadmap rows comes to me with both rows. Anything else on their cards: a note to the owner.
-  Approve with "yes", once, to a batch I've seen in plain words. If Grok shows an Ask-first card for the apply, that card
-  is the same yes; never ask me again in words. For tier 1 and 2, run cos-run preview <job> and show me its items in plain words, approvals and
+  ONE YES (Nov 19). After cos-run preview, my yes in this chat is the whole approval: run the preview's on_yes at once
+  and report the result. Don't tell me a card is coming and don't ask again. The only second tap left is Grok's card
+  for an on_yes ending in --tier2 (a merge, a close, an approval or a description rewrite), and for land and lake; say
+  so with the plain words, before I answer. Group what you can into one batch so one yes covers it. For tier 1 and 2, run cos-run preview <job> and show me its items in plain words, approvals and
   merges first and in capitals ("APPROVE PR #720", "MERGE PR #720 (squash)"), with the full text of every comment or
   review. Never show me the sha256: keep it, and when I say yes, run the preview's on_yes exactly. If I say yes to part
   of a batch, don't run any of it; have the job restage just that part. A batch with tier 2 lines needs my yes after I've
