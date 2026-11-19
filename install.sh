@@ -427,6 +427,12 @@ mkdir -p "$T/cos/bin"; printf '#!/bin/bash\necho "Killed: 9" >&2; exit 137\n' > 
 HOME="$T" "$COS/bin/cos-run" quick qk1 "List my issues" --with "git log -1 --oneline" --in "$T" >/dev/null 2>&1
 jq -e '.receipt.status == "failed" and (.receipt.summary | test("not an empty result"))' "$T/cos/outbox/qk1/receipt.json" >/dev/null 2>&1 \
   && pass "quick lane: a killed model gives a failed receipt with the data, never a blank one" || fail "quick lane left a blank or unclear receipt"
+# Two quick lookups started together (Nov 18-19: the newer model was "Killed: 9" while another ran). This agent dies the
+# same way if another is running and takes longer than the retry's pause, so only the lock gets both through.
+printf '#!/bin/bash\nmkdir "$HOME/cos/state/agent-running" 2>/dev/null || { echo "Killed: 9" >&2; exit 137; }\nsleep 5; rmdir "$HOME/cos/state/agent-running"\necho "{\\"result\\":\\"ok\\",\\"session_id\\":\\"s\\"}"\n' > "$T/cos/bin/agent"; chmod +x "$T/cos/bin/agent"
+QP=(); for j in qk2 qk3; do HOME="$T" "$COS/bin/cos-run" quick "$j" "x" --with "git log -1 --oneline" --in "$T" >/dev/null 2>&1 & QP+=($!); done; wait "${QP[@]}"
+jq -s -e 'length == 2 and all(.[]; .receipt.status == "done")' "$T/cos/outbox/qk2/receipt.json" "$T/cos/outbox/qk3/receipt.json" >/dev/null 2>&1 \
+  && pass "quick lane: two lookups at once both answer (one model at a time)" || fail "quick lane: parallel lookups killed each other: $(jq -c .receipt.status "$T/cos/outbox/qk2/receipt.json" "$T/cos/outbox/qk3/receipt.json" 2>&1 | tr '\n' ' ')"
 rm -f "$T/cos/bin/agent"; mv "$T/cos/bin/gh" "$T/cos/bin/gh.stub" 2>/dev/null
 printf '#!/bin/bash\necho "Post \\"https://api.github.com/graphql\\": dial tcp 1.2.3.4:443: i/o timeout" >&2; exit 1\n' > "$T/cos/bin/gh"; chmod +x "$T/cos/bin/gh"
 HOME="$T" COS_GH_WAITS=0,0,0 PATH="$T/cos/bin:$PATH" "$COS/bin/cos-gh-scan" "$T/cos/outbox/gs1" >/dev/null 2>&1

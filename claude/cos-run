@@ -1213,8 +1213,9 @@ $(cat "$OUT/context.txt")
 Answer in five lines or less. Cite card numbers, file paths or command lines for every claim. If the answer needs more than this, say exactly: ESCALATE: <why>."
   # One quick model at a time (Nov 19). cos-health found 18 quick jobs "Killed: 9" within seconds on Nov 18-19, each
   # started alongside another (the rubric's five at 1:49 AM, q-swat a-g at 10:53 AM): parallel agent runs kill each
-  # other. A lock serializes them (each takes seconds), and a run killed anyway gets one retry.
-  QL="$COS/state/quick-agent.lock"; for i in $(seq 1 180); do shlock -f "$QL" -p $$ && break; sleep 1; done
+  # other. A lock serializes them, and a run killed anyway gets one retry. The wait outlasts the longest quick run
+  # (up to 220s, once 514s, in the ledger). At 180s a job queued behind a long read gave up and started beside it.
+  QL="$COS/state/quick-agent.lock"; for i in $(seq 1 600); do shlock -f "$QL" -p $$ && break; sleep 1; done
   for try in 1 2; do
     (cd "$IN" && agent -p --mode ask --trust --model composer-2.5 --output-format json "$PROMPT") > "$OUT/run.json" 2> "$OUT/run.err" || true
     jq -e '(.result // "") | length > 0' "$OUT/run.json" >/dev/null 2>&1 && break
