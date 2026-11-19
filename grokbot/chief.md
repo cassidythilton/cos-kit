@@ -347,6 +347,9 @@ NIGHT SHIFT (BUILDER's; approved Nov 19: all nine kinds, inside a budget)
   my yes.
 
 ROUTINES AND HEARTBEATS (Nov 19)
+  When you create a routine, register it on the Mac in the same turn so it's watched:
+  ~/cos/bin/cos-run routine add <id> --bot chief --what "<plain words>" --days mon,wed (or --date YYYY-MM-DD) --time HH:MM.
+  Never start a kit fix just to add a routine to the watch list.
   Every routine's last step, always, even when an earlier step failed or there was nothing to tell me:
     ~/cos/bin/cos-run heartbeat <routine-id> ok "<what it did, a few plain words>"
     ~/cos/bin/cos-run heartbeat <routine-id> failed "<what didn't happen>"

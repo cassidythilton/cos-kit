@@ -41,7 +41,7 @@
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed packet night memory mail-read mail-draft"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed packet night memory mail-read mail-draft routine"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -274,6 +274,11 @@ if [[ "$LANE" == owed ]]; then
   exec "$HOME/cos/bin/cos-obligations" --list
 fi
 # packet / night / memory (Nov 19, plan changes 3, 8 and 11). No model here; each tool has its own --help.
+if [[ "$LANE" == routine ]]; then   # a Bot registers a routine it created, so the Mac watches it (Nov 19)
+  [[ "$JOB" =~ ^(add|remove|list)$ ]] || usage_fail routine "cos-run routine add <id> --bot chief --what \"<plain words>\" --days mon,wed|--date YYYY-MM-DD --time HH:MM"
+  [[ "$JOB" == add ]] && exec "$HOME/cos/bin/cos-health" register "${@:3}"
+  exec "$HOME/cos/bin/cos-health" register "$JOB" "${@:3}"
+fi
 if [[ "$LANE" == packet ]]; then
   [[ "$JOB" =~ ^(morning|evening)$ ]] || usage_fail packet "cos-run packet morning|evening"
   exec "$HOME/cos/bin/cos-packet" "${@:2}"

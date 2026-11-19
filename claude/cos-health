@@ -70,12 +70,25 @@ def hm(t):
     return t.astimezone(MT).strftime("%a %b %-d, %-I:%M %p")
 
 
+REGISTERED = os.environ.get("COS_ROUTINES_REGISTERED", f"{COS}/state/routines-registered.json")
+UNLISTED = set()
+
+
 def expected():
+    """The kit's list, plus routines the Bots registered on the Mac (cos-run routine add)."""
     try:
         with open(EXPECTED) as f:
-            return json.load(f)
+            exp = json.load(f)
     except Exception:
-        return {}
+        exp = {}
+    try:
+        with open(REGISTERED) as f:
+            reg = json.load(f).get("routines", [])
+        ids = {r["id"] for r in exp.get("routines", [])}
+        exp.setdefault("routines", []).extend(r for r in reg if r.get("id") not in ids)
+    except Exception:
+        pass
+    return exp
 
 
 def slot_times(cal):
@@ -204,12 +217,10 @@ def check_routines(exp, found):
             elif all(b.get("status") == "failed" for b in got):
                 found.append(problem(key + ":failed", f"{r['bot'].upper()}'s {r['what']} failed ({hm(due)})", (got[-1].get("note") or "")[:300],
                                      f"the {r['bot']} Bot fixes the routine through cos-run (never pauses it)"))
+    # A routine that reports in but isn't on either list is noted for KEEPER, never an alert: the Bot registers it with
+    # cos-run routine add, or KEEPER adds it on Friday.
     known = {r["id"] for r in exp.get("routines", [])} | {w["id"] for w in exp.get("webhooks", [])}
-    for b in beats:
-        if b.get("routine") and b["routine"] not in known:
-            found.append(problem(f"unknown:{b['routine']}", f"A routine reported in that isn't on the list: {b['routine']}",
-                                 "Add it to handbook/expected-runs.json so it's watched.", "KEEPER adds it on Friday"))
-            known.add(b["routine"])
+    UNLISTED.update(b["routine"] for b in beats if b.get("routine") and b["routine"] not in known)
 
 
 def check_pushes(exp, found):
@@ -276,7 +287,7 @@ def check_jobs(found):
         jobs = [j for j, _, _ in items]
         title = (f"A {lane} job failed: {jobs[0]} ({hm(first)})" if len(items) == 1
                  else f"{len(items)} {lane} jobs failed the same way since {hm(first)}")
-        found.append(problem(f"job:{lane}:{first.strftime('%Y%m%d%H%M')}:{hashlib.sha1(cause.encode()).hexdigest()[:8]}", title,
+        found.append(problem(f"job:{lane}:{hashlib.sha1(cause.encode()).hexdigest()[:8]}", title,
                              (items[0][2][:220] + ("  Jobs: " + ", ".join(jobs[:10]) + (" …" if len(jobs) > 10 else "") if len(items) > 1 else "")),
                              "cos-run fix with this error (the Chief starts it)" if len(items) > 1 else f"the Bot that started it reads cos-run receipt {jobs[0]} and fixes the cause"))
 
@@ -363,7 +374,12 @@ def check():
     check_jobs(found)
     check_mac(found, prev)
     cur = {p["key"]: p for p in found}
-    opened = prev.get("open", {})
+    opened = {}
+    for k, v in prev.get("open", {}).items():
+        if k.startswith("unknown:"):
+            continue
+        m = re.match(r"^job:([^:]+):\d{12}:([0-9a-f]{8})$", k)   # older keys carried the first failure's time
+        opened[f"job:{m.group(1)}:{m.group(2)}" if m else k] = v
     new = [p for k, p in cur.items() if k not in opened]
     closed = [p for k, p in opened.items() if k not in cur and not k.startswith(("job:", "watchdog:", "unknown:"))]
     # A failed job or a gap is a one-time event: it stays open until someone says it's handled, or 26 hours pass.
@@ -378,7 +394,7 @@ def check():
     for k, p in cur.items():
         p.setdefault("opened", opened.get(k, {}).get("opened", NOW.isoformat()))
     alert(new, closed)
-    save_state({"open": cur, "last_check": NOW.isoformat()})
+    save_state({"open": cur, "last_check": NOW.isoformat(), "unlisted_routines": sorted(UNLISTED)})
     ledger(event="check", open=str(len(cur)), new=str(len(new)), closed=str(len(closed)))
     print(json.dumps({"open": len(cur), "new": [p["title"] for p in new], "closed": [p["title"] for p in closed]}, indent=1))
     return 0
@@ -396,6 +412,9 @@ def line(hours):
     ok_runs += len([r for r in rows("heartbeats") if r["_t"] >= since and r.get("status") == "ok"])
     ok_runs += len([r for r in rows("jobs") if r["_t"] >= since and r.get("event") == "end" and str(r.get("exit")) == "0"])
     op = list(st.get("open", {}).values())
+    unl = st.get("unlisted_routines") or []
+    if unl:
+        print("Not on the watch list yet (reported in, but not checked for missed runs): " + ", ".join(unl) + ".")
     if not op:
         print(f"All {ok_runs} runs in the last {hours} hours worked. ({len(checks)} health checks, none found a problem.)")
         return 0
@@ -403,6 +422,37 @@ def line(hours):
     for p in op:
         print(f"- {p['title']}. Next: {p['fix']}.")
     return 0
+
+
+def register(a):
+    """cos-health register <id> --bot <bot> --what "<plain words>" (--days mon,tue,... | --date YYYY-MM-DD) --time HH:MM [--grace N]
+    cos-health register remove <id>       cos-health register list"""
+    try:
+        reg = json.load(open(REGISTERED))
+    except Exception:
+        reg = {"about": "Routines the Bots registered with cos-run routine add. cos-health watches them like the kit's list.", "routines": []}
+    if a and a[0] == "list":
+        print(json.dumps(reg, indent=1)); return 0
+    if len(a) >= 2 and a[0] == "remove":
+        reg["routines"] = [r for r in reg["routines"] if r.get("id") != a[1]]
+    else:
+        if not a or not re.match(r"^[a-z0-9][a-z0-9-]{0,60}$", a[0]):
+            print(register.__doc__, file=sys.stderr); return 64
+        opt = {a[i]: a[i + 1] for i in range(1, len(a) - 1, 2)}
+        r = {"id": a[0], "bot": opt.get("--bot", ""), "what": opt.get("--what", "")[:120], "time": opt.get("--time", ""),
+             "grace": int(opt.get("--grace", "60") or 60)}
+        if opt.get("--days"):
+            r["days"] = [d.strip()[:3].lower() for d in opt["--days"].split(",") if d.strip()]
+        if opt.get("--date"):
+            r["dates"] = [opt["--date"]]
+        ok = r["bot"] in ("chief", "ops", "steward", "builder", "keeper") and r["what"] and re.match(r"^\d{2}:\d{2}$", r["time"]) \
+            and (all(d in DAYS for d in r.get("days", [])) and (r.get("days") or all(re.match(r"^\d{4}-\d{2}-\d{2}$", d) for d in r.get("dates", [])) and r.get("dates")))
+        if not ok:
+            print(register.__doc__, file=sys.stderr); return 64
+        reg["routines"] = [x for x in reg["routines"] if x.get("id") != r["id"]] + [r]
+    os.makedirs(os.path.dirname(REGISTERED), exist_ok=True)
+    json.dump(reg, open(REGISTERED, "w"), indent=1)
+    print(json.dumps({"registered": [x["id"] for x in reg["routines"]]})); return 0
 
 
 def main(a):
@@ -413,6 +463,8 @@ def main(a):
     if a[0] == "line":
         h = int(a[a.index("--hours") + 1]) if "--hours" in a else 12
         return line(h)
+    if a[0] == "register":
+        return register(a[1:])
     if a[0] == "status":
         print(json.dumps(load_state(), indent=1)); return 0
     print(__doc__); return 64

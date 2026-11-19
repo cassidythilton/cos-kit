@@ -389,6 +389,10 @@ for j in qa1 qa2; do echo "{\"receipt\":{\"status\":\"failed\",\"summary\":\"FAI
 o="$(hc 2026-11-19T18:30:00+00:00 check)"; jq -e '(.new | length) == 1 and (.new[0] | test("2 quick jobs failed the same way"))' <<<"$o" >/dev/null 2>&1 && pass "cos-health: repeat failures come as one problem" || fail "cos-health didn't group repeat failures ($o)"
 o="$(hc 2026-11-19T19:30:00+00:00 line)"; [[ "$o" == "Monitoring is down"* ]] && pass "cos-health line says when monitoring itself stopped" || fail "cos-health line hid a stopped watchdog"
 hc 2026-11-19T18:35:00+00:00 line | grep -q "problems open" && pass "cos-health line lists open problems for the brief" || fail "cos-health line"
+R="$H/reg.json"; COS_ROUTINES_REGISTERED="$R" python3 -I "$COS/bin/cos-health" register chief-x --bot chief --what "a test" --date 2026-11-19 --time 06:30 >/dev/null 2>&1
+printf '%s\n' '{"ts":"2026-11-19T13:40:00Z","routine":"zz-unlisted","status":"ok"}' >> "$H/led/heartbeats.jsonl"
+o="$(COS_ROUTINES_REGISTERED="$R" hc 2026-11-19T18:40:00+00:00 check)"; jq -e '.new | any(test("test didn.t report in")) and (any(test("zz-unlisted")) | not)' <<<"$o" >/dev/null 2>&1 \
+  && pass "cos-health: a routine a Bot registered is watched; an unlisted one is a note, not an alert" || fail "cos-health register or unlisted handling ($o)"
 rm -rf "$H"
 mkdir -p "$T/cos/outbox/t6"; echo 'gh pr review 746 --repo wisecodeai/data-org --approve --body "looks good"' > "$T/cos/outbox/t6/apply.sh"; S6="$(shasum -a 256 "$T/cos/outbox/t6/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t6 "$S6" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t6/applied.log" ]] && pass "apply refuses a review body that isn't a file in the job folder" || fail "apply ran an inline review body"
