@@ -57,9 +57,9 @@ _nt_calls() { [[ -f "$NH/runner.calls" ]] && wc -l < "$NH/runner.calls" | tr -d 
 # --- parse, files, recipes
 python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$_nt_bin" 2>/dev/null && pass "cos-night parses" || fail "cos-night syntax"
 jq -e '.per_night.usd == 25 and .per_night.minutes == 180 and .per_week.usd == 100 and .per_night.max_jobs == 4
-       and .per_night.max_large == 1 and .kinds.prototype.max_per_week == 2 and .kinds["pr-reviews"].max_prs == 5
+       and .per_night.max_large == 1 and .kinds.prototype.max_per_week == 0 and .kinds["pr-reviews"].max_prs == 5
        and (.kinds | length) == 9' "$_nt_kit/handbook/night-budget.json" >/dev/null 2>&1 \
-  && pass "night-budget.json: \$25 and 3 h a night, \$100 a week, nine kinds" || fail "night-budget.json missing or wrong"
+  && pass "night-budget.json: \$25 and 3 h a night, \$100 a week, nine kinds, prototypes off until Cassidy turns them on" || fail "night-budget.json missing or wrong"
 _nt_missing=""
 for k in meeting-prep call-follow-through board-cleanup pr-reviews data-answer write-up decision-doc system-fix prototype; do
   f="$_nt_kit/claude/briefs/night-$k.md"
@@ -82,7 +82,7 @@ if jq -e '.total_usd <= 25 and .total_min <= 180 and (.items|length) <= 4
 else fail "propose broke a budget rule: $(jq -c '{n: (.items|length), total_usd, total_min, kinds: [.items[].kind]}' <<<"$NP" 2>/dev/null || echo "$NP")"; fi
 jq -e '.text | test("needs your yes") and test("Reply")' <<<"$NP" >/dev/null 2>&1 && pass "propose: plan text asks for his yes" || fail "propose: no plain-words plan"
 
-_nt_newh; _nt_budget '.per_night.max_jobs = 9'
+_nt_newh; _nt_budget '.per_night.max_jobs = 9 | .kinds.prototype.max_per_week = 2'
 nt "$EVE" add prototype "one" >/dev/null; nt "$EVE" add prototype "two" >/dev/null; nt "$EVE" add write-up "w" >/dev/null
 NP="$(nt "$EVE" propose)"
 jq -e '([.items[] | select(.size == "large")] | length) == 1 and ([.waiting[] | select(.why | test("one large"))] | length) == 1' <<<"$NP" >/dev/null 2>&1 \

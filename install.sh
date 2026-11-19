@@ -143,7 +143,7 @@ for s in "$COS"/bin/* "$COS/claude/gate.sh" "$COS/claude/cursor-lake-hook" "$COS
   [[ -d "$s" || "$(basename "$s")" == cos-launch ]] && continue; if head -1 "$s" | grep -q python; then python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"
   else bash -n "$s" && pass "$(basename "$s")" || fail "$(basename "$s") syntax"; fi; done
 for j in "$COS"/claude/*.json "$COS/claude/lake/cli.json" "$COS/claude/codex/cli.json" "$COS"/evals/*.json "$COS/builds-template/.claude/settings.json"; do jq empty "$j" 2>/dev/null && pass "$(basename "$j")" || fail "$(basename "$j") is not valid JSON"; done
-for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
+for s in $SLOTS; do [[ "$s" == pulse || "$s" == obligations || "$s" == packet-* || "$s" == night* || "$s" == memory-clean || -f "$COS/claude/briefs/$s.md" ]] && pass "brief: $s" || fail "brief missing: $s"; done
 
 echo "6. The gate (job mode = blocked, pair mode = asks, hard walls = always blocked)"
 # COS_LEDGER_OFF: these probes are not Mac actions, so they must not land in the real ledger.
