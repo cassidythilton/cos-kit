@@ -38,7 +38,8 @@ else's work) still waits for his yes.
 | 7 | More done without asking (tier 0), each in the evening list with its undo: daily logs on his own cards; edits to Docs the Bots created; comments he dictated word for word; the roadmap-sheet fills the Chief already proposes daily. | Fewer approvals in each list | standing-approvals.json, cos-gh |
 | 9 | Monitoring of every process, with who started what (section below). | A failure reaches him within 15 minutes, in plain words, with a fix already started | cos-health, a run list, heartbeats |
 | 10 | Once done, it stays done (section below). | Nothing he finished comes back unless something new happened | cos-obligations, the packet, a done lane |
-| 8 | Night shift (BUILDER, nightly, 10 PM to 6 AM, Mac plugged in): up to two jobs a night from a queue. Kinds: write-ups for asks made of him (like the rubric: sources, a draft, open questions for the owner); prototypes on a build branch with tests; review drafts for PRs waiting on him; research on a question he dropped in ("tonight: …"). Nothing leaves: Docs stay private drafts in his Drive, PRs stay drafts, Slack stays drafts. The morning brief opens with "While you slept": what was made, a 3-line summary each, one decision each (share, revise, drop). | Something new and finished most mornings | BUILDER playbook, cos-sched, build lane |
+| 11 | Memory manager (section below; approved Nov 19). | Bots stop repeating stale things; one memory, kept tidy | one store on the Mac, KEEPER's weekly cleanup |
+| 8 | Night shift, all nine kinds, inside a budget (section below; approved Nov 19). | Something finished most mornings, at a known cost | cos-sched night, recipes per kind, the existing lanes |
 
 ## Change 6: no agent can send a Slack message
 
@@ -95,6 +96,60 @@ Causes: the Bots keep their own lists and merge them; finishing something in a c
    and then it says what's new.
 5. Counts are never shown without the items: "23 replies you owe" becomes the list, or nothing.
 
+## Change 8: the night shift (approved Nov 19: all kinds, with a budget)
+
+How it runs:
+1. A queue on the Mac. Items come from Cassidy ("tonight: …"), OPS (asks made of him that need a write-up), STEWARD
+   (roadmap items at risk) and BUILDER's weekly opportunity hunt.
+2. The evening brief proposes tonight's jobs, one line each with its size and cost estimate. He says yes, or swaps.
+3. At 10 PM the Mac runs each job as one Claude job through the existing lanes (investigate, draft, build, lake, fix),
+   not as a chain of chat lookups. The Nov 19 rubric took about 11 separate lookups at 2:49 AM; at least 5 were killed
+   within seconds and nobody was told.
+4. Each kind has a recipe: what to read, what done means, and the checker plus second opinion that already guard jobs.
+5. Nothing leaves: private Docs, draft PRs, Slack drafts. The morning brief opens with "While you slept": three lines
+   per item and one decision (share, revise, drop). "Share" stages the outward step for his yes.
+
+The nine kinds, with a size each (estimates from last week's real jobs: median $1.58, 90th percentile $3.66, the
+largest $12.76; the Mac's Claude jobs cost about $490 in the week of Nov 12 to 19):
+
+| Kind | Size | Cap per job |
+|---|---|---|
+| Meeting prep for tomorrow (all meetings in one job) | small | $3, 20 min |
+| Call follow-through (yesterday's calls to draft cards and replies) | small | $3, 20 min |
+| Board and roadmap cleanup (one approval list) | small | $3, 20 min |
+| PR review drafts (up to 5 PRs waiting on him) | medium | $8, 45 min |
+| Data answers (aggregates only, through the lake lane) | medium | $5, 30 min |
+| Write-ups for asks (like the rubric) | medium | $6, 45 min |
+| Decision-doc drafts on his cards | medium | $6, 45 min |
+| Fixes for the system's own failures (fix lane; landing still needs his yes) | medium | $6, 60 min |
+| Prototypes (build lane, tests, draft PR) | large | $12, 2 h; at most two a week |
+
+The budget (handbook/night-budget.json, his file; he changes the numbers, nothing else does):
+- Per night: $25 and 3 hours of work. Per week: $100. Per job: the cap above.
+- Enforced by the Mac, not by a Bot: a job is stopped at its time cap; the next job starts only if the night's money
+  left covers its estimate; spend is read from each job's own cost line and ledgered.
+- A job that hits its cap stops cleanly and says what it got done ("partial: 3 of 5 reviews").
+- Every morning: "Last night: 3 jobs, $11.40, 1 h 35 min." The Friday brief has the week's total against $100.
+- Effort stays proportionate: small kinds run every weeknight they have input; medium kinds fill what's left; one
+  large job at most per night.
+
+## Change 11: memory manager (approved Nov 19)
+
+Memory today lives in at least six places that never reconcile: each Bot's remember block (the Chief's is about 19,000
+characters), the playbooks, the corrections ledger, the handoff notes, Claude Code's memory, and Agent Atlas. Nothing
+merges duplicates, retires old facts or catches contradictions, and stale memory caused the Nov 19 "overdue" message.
+1. Four kinds, kept apart. Rules (how he wants things done; permanent until he changes them). Facts (people, systems,
+   decisions; each with its source, date and a review-by date). Open items: never memorized, always read live from
+   the Mac's one list (change 10). History: stays in the ledgers and Atlas, looked up, not carried.
+2. One store on the Mac (in the kit, under git). Each Bot's remember block is generated from it, only what that Bot
+   needs, under a size cap; the same store feeds Claude Code's memory and the cassidy-mode skill.
+3. New memories are proposals: corrections keep going in through cos-run note; "remember this" from any chat is
+   proposed, then added.
+4. KEEPER's weekly cleanup: merges duplicates; retires facts past their review-by date; re-checks facts against their
+   source (is that PR still open? is that person still the owner?); sends him contradictions to settle; turns a
+   correction that recurs into a check (the rule ladder). One short note: kept, merged, retired. Git keeps the undo.
+5. Measures in the Friday brief: memory size per Bot, contradictions found, stale facts retired.
+
 ## What stays hard (unchanged)
 
 Sending or posting anything (Slack, email, GitHub comments) waits for his yes. Merges, approvals, closes, and anything
@@ -105,7 +160,8 @@ is never touched. A Bot never pushes to someone else's branch.
 
 1. Build 9 (monitoring) and 6 (Slack) first, then 2, 3, 5 and 7 on the Mac, with tests. Then the Grok pastes for 1, 4, 5, 6 and 8.
 2. Week one: KEEPER compares every change in the ledger with a yes or a tier-0 rule; any gap is a stop.
-3. Night shift starts with write-ups only; prototypes join after a week of clean mornings.
+3. Night shift starts with the small and medium kinds; prototypes join after a week of clean mornings, inside the budget.
+4. The memory manager follows monitoring: build the store, generate the five remember blocks, then KEEPER's cleanup.
 
 ## Decisions for Cassidy
 
@@ -113,4 +169,4 @@ is never touched. A Bot never pushes to someone else's branch.
 2. Tier 0 additions in change 7: all four, or which?
 3. Email: same as Slack (Gmail disconnected from Grok, drafts saved by the Mac only), or keep Grok's Gmail with an
    Ask-first rule for sending?
-4. Night shift's first kind of work: write-ups for asks, PR review drafts, prototypes, or research questions?
+Answered Nov 19: the night shift runs all nine kinds inside the budget; the memory manager is approved as proposed.
