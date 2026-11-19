@@ -289,7 +289,7 @@ HOME="$T" perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$COS/bin/cos-run
 w=$!; sleep 1; kill -TERM -- -"$w" 2>/dev/null; wait "$w" 2>/dev/null
 for i in $(seq 1 30); do HOME="$T" "$COS/bin/cos-run" receipt t12i 2>/dev/null | grep -q '"running"' || break; sleep 0.5; done
 [[ "$(grep -c '^stub sub' "$T/linked" 2>/dev/null)" == 2 && -s "$T/cos/outbox/t12i/apply-receipt.json" ]] && pass "an interrupted apply call still finishes its whole batch" || fail "an interrupted apply stopped part way (see $T/linked)"
-HOME="$T" "$COS/bin/cos-run" receipt t12i 2>/dev/null | grep -q '"finished after an interrupted call"' && pass "cos-run receipt shows what an interrupted call finished" || fail "receipt didn't show the interrupted call's result"
+R12="$(HOME="$T" "$COS/bin/cos-run" receipt t12i 2>&1)"; [[ "$R12" == *'"finished after an interrupted call"'* ]] && pass "cos-run receipt shows what an interrupted call finished" || fail "receipt didn't show the interrupted call's result: ${R12:0:300} | $(ls "$T/cos/state/runs" | tr '\n' ' ')"
 printf '#!/bin/bash\necho "stub $*"\n' > "$T/cos/bin/cos-link"
 # cos-pr itself, against a fake gh that answers pr view from PRV and records every call.
 P="$(mktemp -d)"; mkdir -p "$P/bin" "$P/cos/outbox/j" "$P/cos/bin"; echo "why" > "$P/cos/outbox/j/why.md"
