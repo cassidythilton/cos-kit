@@ -160,6 +160,16 @@
    ],
    "time": "08:00",
    "grace": 60
+  },
+  {
+   "id": "chief-exec-briefing",
+   "bot": "chief",
+   "what": "the weekly exec briefing draft",
+   "days": [
+    "fri"
+   ],
+   "time": "11:00",
+   "grace": 90
   }
  ],
  "webhooks": [
