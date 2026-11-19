@@ -959,7 +959,7 @@ gx brief today 2>/dev/null | grep -q '^Done without asking today' && pass "tier 
 # Plain words for a staged batch, and the preview the Chief shows before a yes.
 mkdir -p "$T/cos/outbox/pv1"; printf 'make ragb CARD=712 TO=GREEN\ngh pr merge 720 --repo wisecodeai/data-org --squash\n' > "$T/cos/outbox/pv1/apply.sh"
 PV="$(HOME="$T" "$T/cos/bin/cos-run" preview pv1 2>/dev/null)"
-jq -e --arg s "$(shasum -a 256 "$T/cos/outbox/pv1/apply.sh" | cut -d' ' -f1)" '.preview.github.highest_tier == 2 and (.preview.github.items[0].says | test("RAGB on #712 to GREEN")) and .preview.github.on_yes == ("cos-run apply pv1 " + $s)' <<<"$PV" >/dev/null 2>&1 \
+jq -e --arg s "$(shasum -a 256 "$T/cos/outbox/pv1/apply.sh" | cut -d' ' -f1)" '.preview.github.highest_tier == 2 and (.preview.github.items[0].says | test("RAGB on #712.* to GREEN")) and .preview.github.on_yes == ("cos-run apply pv1 " + $s + " --tier2")' <<<"$PV" >/dev/null 2>&1 \
   && pass "preview: a batch in plain words, each line's tier, and the call to run on his yes" || fail "preview ($PV)"
 HOME="$T" "$T/cos/bin/cos-run" preview nothing-here >/dev/null 2>&1; [[ $? -eq 66 ]] && pass "preview refuses a job with nothing staged" || fail "preview of nothing"
 # cos-share (Nov 17): files for a colleague's branch go on a cassidy/ branch with a draft PR into theirs, only as approved.
