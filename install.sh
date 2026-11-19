@@ -286,7 +286,8 @@ mkdir -p "$T/cos/outbox/t12i"; printf '#!/bin/bash\nsleep 2; echo "stub $*" >> "
 printf 'cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2\ncos-link sub wisecodeai/data-org#1 wisecodeai/data-org#3\n' > "$T/cos/outbox/t12i/apply.sh"
 S12="$(shasum -a 256 "$T/cos/outbox/t12i/apply.sh" | cut -d' ' -f1)"
 HOME="$T" perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$COS/bin/cos-run" apply t12i "$S12" --in "$T" >/dev/null 2>"$T/t12.err" &
-w=$!; sleep 1; kill -TERM -- -"$w" 2>/dev/null; wait "$w" 2>/dev/null; sleep 5
+w=$!; sleep 1; kill -TERM -- -"$w" 2>/dev/null; wait "$w" 2>/dev/null
+for i in $(seq 1 30); do HOME="$T" "$COS/bin/cos-run" receipt t12i 2>/dev/null | grep -q '"running"' || break; sleep 0.5; done
 [[ "$(grep -c '^stub sub' "$T/linked" 2>/dev/null)" == 2 && -s "$T/cos/outbox/t12i/apply-receipt.json" ]] && pass "an interrupted apply call still finishes its whole batch" || fail "an interrupted apply stopped part way (see $T/linked)"
 HOME="$T" "$COS/bin/cos-run" receipt t12i 2>/dev/null | grep -q '"finished after an interrupted call"' && pass "cos-run receipt shows what an interrupted call finished" || fail "receipt didn't show the interrupted call's result"
 printf '#!/bin/bash\necho "stub $*"\n' > "$T/cos/bin/cos-link"

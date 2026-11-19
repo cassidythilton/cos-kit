@@ -195,7 +195,7 @@ LANE="${1:-}"
 # Survive an interrupted call (Nov 18). When Cassidy replies while a call runs, Grok stops the call. So every lane that
 # does work runs in its own session and this process only waits for it: a stop ends the wait, never the job. An apply
 # finishes its whole batch, a quick read finishes and keeps its output. Fast lanes and --async (already detached) skip it.
-if [[ -z "${COS_DETACHED:-}" && " ${ALL_ARGS[*]} " != *" --async "* && ! "$LANE" =~ ^(receipt|preview|note|pause|preflight)$ ]]; then
+if [[ -z "${COS_DETACHED:-}" && " ${ALL_ARGS[*]} " != *" --async "* && ! "$LANE" =~ ^(receipt|preview|seal|note|pause|preflight)$ ]]; then
   RJ="${2:-}"; [[ "$RJ" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || RJ="nojob"
   RD="$HOME/cos/state/runs"; mkdir -p "$RD"; F="$RD/$LANE-$RJ"
   COS_DETACHED=1 nohup perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$0" "$@" > "$F.out" 2> "$F.err" < /dev/null &
@@ -381,7 +381,6 @@ if [[ "$LANE" == "receipt" ]]; then
   for f in "$COS"/state/runs/*-"$JOB".out; do
     [[ -f "$f" ]] || continue; l="$(basename "$f" "-$JOB.out")"
     [[ -f "${f%.out}.pid" ]] || continue  # the waiter cleaned up: it already showed this output
-    rm -f "${f%.out}.pid"
     jq -n --arg j "$JOB" --arg l "$l" --arg o "$(tail -c 6000 "$f")" --arg e "$(tail -c 1500 "${f%.out}.err" 2>/dev/null)" \
       '{job: $j, lane: $l, status: "finished after an interrupted call", output: $o, errors: $e}'
     [[ "$l" == apply && -f "$D/apply-receipt.json" ]] && cat "$D/apply-receipt.json"
