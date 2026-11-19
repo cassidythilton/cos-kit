@@ -316,13 +316,18 @@ def main():
     if '--list' in args:
         items = collect()
         rows = []
+        try:
+            people = json.load(open(os.path.join(STATE, 'names.json'))).get('people', {})
+        except Exception:
+            people = {}
+        who = lambda login: people.get(login, login)
         for k, it in sorted(items.items(), key=lambda kv: kv[1].get('asked_at') or ''):
             ref = f"#{it['number']}" if it['repo'] == 'wisecodeai/data-org' else f"{it['repo'].split('/')[1]} #{it['number']}"
             title = re.split(r':| — | - |\(', it['title'])[0].strip()[:40]
             if it['kind'] == 'reply':
-                rows.append(f"[{ref} · {title}]({it['url']}) — {it['asked_by']} asked you on {it['asked_at'][:10]}; you haven't answered since")
+                rows.append(f"[{ref} · {title}]({it['url']}) — {who(it['asked_by'])} asked you on {it['asked_at'][:10]}; you haven't answered since")
             elif it['kind'] == 'review':
-                rows.append(f"[PR {ref} · {title}]({it['url']}) — {it['author']}'s PR · waiting on your review")
+                rows.append(f"[PR {ref} · {title}]({it['url']}) — {who(it['author'])}'s PR · waiting on your review")
             else:
                 rows.append(f"[{ref} · {title}]({it['url']}) — your card · its PRs merged, ready to finish")
         print(json.dumps({'checked_at': NOW.isoformat(timespec='seconds'), 'open': rows,

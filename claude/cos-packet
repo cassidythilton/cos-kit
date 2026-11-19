@@ -1,0 +1,765 @@
+#!/usr/bin/env -S python3 -I
+"""cos-packet: assemble the morning brief or end-of-day sweep on the Mac, then hand one packet to the Chief.
+
+  cos-packet morning|evening [--dry-run] [--no-push]
+
+Plan changes 3 and 4 (docs/plan-2026-11-19-lean-on-agents.md). The Chief used to gather each brief itself, one Mac
+command at a time. Now the Mac runs every read, one after another, each with a time cap, and a failed read becomes a
+plain line at the top of the packet ("Slack couldn't be read: ..."), never silence. The packet is one page in this
+order: the health line; DECISIONS (at most 5, each answerable yes / no / later); DONE WITHOUT ASKING (evening); OWED
+(the live list, linked lines, never a count alone); SLACK waiting on him; FYI. Names follow handbook/plain-language.md.
+
+Steps (each a separate command, run in this order):
+  health   cos-health line --hours 12 (morning) or 14 (evening)
+  github   cos-run gh-scan scan-brief-<YYYYMMDD>-<HHMM> --state brief
+  owed     cos-run owed list
+  slack    cos-run slack-read sl-<kind>-<YYYYMMDD> "every DM, group DM and thread ... since <last brief>"
+  chats    cos-run atlas atlas-<YYYYMMDD>-<kind> "<time window>"      (Agent Atlas, recent-work mode)
+  capture  cos-run receipt capture-<YYYYMMDD>                          (evening only: the 4 PM daily-log capture)
+Read from files, no command: ~/cos/state/ledger/tier_zero.jsonl and slack_drafts.jsonl (evening: done without asking),
+~/cos/outbox/*/.previewed (staged changes shown to him and not yet applied), ~/cos/state/names.json (short names).
+Calendar isn't readable on the Mac: the morning packet says the Chief adds today's meetings from Google Calendar.
+
+Writes ~/cos/outbox/packet-<kind>-<YYYYMMDD>/packet.md, steps.json and receipt.json, then (unless --no-push)
+cos-push chief packet <receipt.json>. After a good push it records the time in ~/cos/state/packet-last.json, which is
+the "since" for the next packet's Slack and chats reads.
+--dry-run prints the steps it would run and writes nothing.
+
+For tests, every outside command can be swapped (never the real ones in a test):
+  COS_PACKET_RUN     replaces ~/cos/bin/cos-run        COS_PACKET_HEALTH  replaces ~/cos/bin/cos-health
+  COS_PACKET_PUSH    replaces ~/cos/bin/cos-push       COS_PACKET_NOW     the clock (ISO time; no zone = Mountain)
+  COS_PACKET_CAP     one time cap, in seconds, for every step (default: each step's own)
+  COS_PACKET_STAGED_DAYS  how far back a previewed batch still counts (default 3)
+"""
+import datetime as dt, glob, hashlib, json, os, re, signal, subprocess, sys
+from zoneinfo import ZoneInfo
+
+MT = ZoneInfo('America/Denver')
+HOME = os.path.expanduser('~')
+COS = os.path.join(HOME, 'cos')
+BIN = os.path.join(COS, 'bin')
+STATE = os.path.join(COS, 'state')
+LEDGER = os.path.join(STATE, 'ledger')
+OUTBOX = os.path.join(COS, 'outbox')
+LAST = os.path.join(STATE, 'packet-last.json')
+RUN = os.environ.get('COS_PACKET_RUN') or os.path.join(BIN, 'cos-run')
+HEALTH = os.environ.get('COS_PACKET_HEALTH') or os.path.join(BIN, 'cos-health')
+PUSH = os.environ.get('COS_PACKET_PUSH') or os.path.join(BIN, 'cos-push')
+GH = os.environ.get('COS_PACKET_GH') or os.path.join(BIN, 'cos-gh')
+PEOPLE_MD = os.path.join(COS, 'handbook', 'people.md')
+SUMMARY_CAP = 12000
+MAX_DECISIONS = 5
+# Each step's own cap, in seconds. The whole packet stays under about 25 minutes even if every step runs to its cap.
+CAPS = {'health': 30, 'github': 240, 'owed': 180, 'slack': 420, 'chats': 600, 'capture': 30}
+LABEL = {'health': 'The health check', 'github': 'GitHub', 'owed': 'The owed list', 'slack': 'Slack',
+         'chats': "Today's chats (Agent Atlas)", 'capture': "The 4 PM daily-log capture"}
+
+
+def now():
+    v = os.environ.get('COS_PACKET_NOW')
+    if v:
+        t = dt.datetime.fromisoformat(v.replace('Z', '+00:00'))
+        return (t if t.tzinfo else t.replace(tzinfo=MT)).astimezone(MT)
+    return dt.datetime.now(MT)
+
+
+NOW = now()
+DAY = NOW.strftime('%Y%m%d')
+
+
+def when(t, with_day=True):  # "Wed Nov 18, 4:20 PM" in Mountain time, the plain-language form
+    t = t.astimezone(MT)
+    hm = t.strftime('%I:%M %p').lstrip('0')
+    return f"{t.strftime('%a %b')} {t.day}, {hm}" if with_day else hm
+
+
+def day_name(d):  # "Tue Nov 17"
+    return f"{d.strftime('%a %b')} {d.day}"
+
+
+def ts(s):
+    try:
+        t = dt.datetime.fromisoformat(str(s).replace('Z', '+00:00'))
+        return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+    except Exception:
+        return None
+
+
+SECRET = [(re.compile(p), r) for p, r in (
+    (r'gh[pousr]_[A-Za-z0-9_]+', '<redacted>'), (r'github_pat_[A-Za-z0-9_]+', '<redacted>'),
+    (r'xox[bpas]-[A-Za-z0-9-]+', '<redacted>'), (r'sk-[A-Za-z0-9_-]{20,}', '<redacted>'),
+    (r'AKIA[0-9A-Z]{16}', '<redacted>'), (r'[Bb]earer\s+\S+', 'Bearer <redacted>'),
+    (r'https?://[^\s)]*[?&](X-Amz-Signature|sig|signature|token)=[^\s)]*', '<signed link removed>'))]
+
+
+def clean(s, cap=None):  # never a key, token or signed link; one line unless asked
+    s = str(s or '')
+    for rx, r in SECRET:
+        s = rx.sub(r, s)
+    return s[:cap] if cap else s
+
+
+def plain_why(s, cap=160):  # what a person reads: no paths, hashes or job folders
+    s = clean(s)
+    s = re.sub(r'(~|/Users/[^/\s]+)/\S+', '', s)
+    s = re.sub(r'\b[0-9a-f]{40,64}\b', '', s)
+    s = re.sub(r'\s+', ' ', s).strip(' .;:,-')
+    s = re.split(r'(?<=[.!?])\s', s)[0].rstrip(' .;:,')
+    return (s[:cap - 1].rstrip() + '…') if len(s) > cap else s
+
+
+# ---------------------------------------------------------------- names (handbook/plain-language.md)
+def load_names():
+    try:
+        d = json.load(open(os.path.join(STATE, 'names.json')))
+    except Exception:
+        return {}
+    d = d.get('names', d) if isinstance(d, dict) else {}
+    out = {}
+    for k, v in d.items():
+        name = v.get('name') if isinstance(v, dict) else v
+        key = norm_ref(k)
+        if key and isinstance(name, str) and name.strip():
+            out[key] = name.strip()[:40]
+    return out
+
+
+def norm_ref(k):  # "data-org#767", "#767", "wisecodeai/data-org#767", a GitHub URL -> "data-org#767"
+    k = str(k).strip()
+    m = re.search(r'github\.com/wisecodeai/([A-Za-z0-9._-]+)/(?:issues|pull)/(\d+)', k)
+    if m:
+        return f'{m.group(1)}#{m.group(2)}'
+    m = re.fullmatch(r'(?:wisecodeai/)?([A-Za-z0-9._-]+)?#(\d+)', k)
+    if m:
+        return f"{m.group(1) or 'data-org'}#{m.group(2)}"
+    return None
+
+
+NAMES = load_names()
+
+
+def load_people():
+    """GitHub login -> first name: names.json's "people" first, then the Handle column of handbook/people.md."""
+    out = {}
+    try:
+        for l in open(PEOPLE_MD):
+            cells = [c.strip() for c in l.strip().strip('|').split('|')]
+            if len(cells) < 2 or not l.lstrip().startswith('|'):
+                continue
+            m = re.search(r'GitHub\s+([A-Za-z0-9][A-Za-z0-9-]*)', cells[1])
+            if not m:
+                continue
+            nick = re.search(r'\(\s*["“]([^"”]+)["”]', cells[0])
+            first = (nick.group(1) if nick else (cells[0].split() or [''])[0]).strip()
+            if first:
+                out[m.group(1).lower()] = first
+    except Exception:
+        pass
+    try:
+        d = json.load(open(os.path.join(STATE, 'names.json')))
+        for k, v in ((d.get('people') or {}) if isinstance(d, dict) else {}).items():
+            if isinstance(v, str) and v.strip():
+                out[str(k).lower()] = v.strip()
+    except Exception:
+        pass
+    return out
+
+
+PEOPLE = load_people()
+
+
+def person(login):
+    return PEOPLE.get(str(login or '').lower(), login)
+
+
+def people_words(text):
+    """Every known GitHub login becomes the person's first name, outside links' URLs."""
+    if not PEOPLE:
+        return text
+    rx = re.compile(r'(?<![\w/-])(' + '|'.join(re.escape(k) for k in sorted(PEOPLE, key=len, reverse=True)) + r')(?![\w-])', re.I)
+    parts = re.split(r'(\]\([^)]*\))', text)
+    return ''.join(x if x.startswith('](') else rx.sub(lambda m: PEOPLE[m.group(1).lower()], x) for x in parts)
+
+
+TITLES = {}  # titles seen in this run's GitHub scan, for cards named only by number elsewhere
+
+
+def short_name(ref, title=''):
+    if ref in NAMES:
+        return NAMES[ref]
+    title = title or TITLES.get(ref, '')
+    if not title:
+        return ''
+    head = re.split(r':| — | - |\(', title or '')[0].strip()
+    return (head or (title or '').strip() or 'untitled')[:40].rstrip()
+
+
+def link(ref, title, url, whose):  # "[#767 · Ingredient re-parse](link) — whose · where it fits"
+    repo, n = ref.split('#')
+    pr = '/pull/' in (url or '')
+    tag = (f'#{n}' if repo == 'data-org' else f'{repo} #{n}')
+    if pr:
+        tag = 'PR ' + tag
+    nm = short_name(ref, title)
+    s = f'[{tag} · {nm}]({url})' if nm else f'[{tag}]({url})'  # no name on file: the number alone, never a made-up name
+    return s + (f' — {whose}' if whose else '')
+
+
+def card_url(ref):
+    repo, n = ref.split('#')
+    return f'https://github.com/wisecodeai/{repo}/issues/{n}'
+
+
+LINE_LINK = re.compile(r'\[((?:PR )?(?:([A-Za-z0-9._-]+) )?#(\d+)) · ([^\]]*)\]\(([^)]+)\)')
+
+
+def rename(line):  # an owed line already in the plain format gets the shared short name, when there is one
+    def sub(m):
+        ref = norm_ref(m.group(5)) or f"{m.group(2) or 'data-org'}#{m.group(3)}"
+        return f'[{m.group(1)} · {NAMES.get(ref, m.group(4))}]({m.group(5)})'
+    return LINE_LINK.sub(sub, line)
+
+
+# ---------------------------------------------------------------- running a step
+def parse_json(out):
+    out = (out or '').strip()
+    try:
+        return json.loads(out)
+    except Exception:
+        pass
+    i = out.rfind('\n{')  # some lanes print a path line, then the receipt
+    while i != -1:
+        try:
+            return json.loads(out[i + 1:])
+        except Exception:
+            i = out.rfind('\n{', 0, i)
+    j = out.find('{')
+    if j > 0:
+        try:
+            return json.loads(out[j:])
+        except Exception:
+            pass
+    return None
+
+
+def run(step, argv, cap):
+    cap = int(os.environ.get('COS_PACKET_CAP') or cap)
+    env = dict(os.environ)
+    env.setdefault('COS_CALLER', 'sched')
+    env['COS_ROUTINE'] = env.get('COS_ROUTINE') or f'packet-{KIND}'
+    try:
+        p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                             start_new_session=True, stdin=subprocess.DEVNULL)
+    except Exception as e:
+        return {'step': step, 'ok': False, 'why': f"it couldn't start ({type(e).__name__})", 'out': '', 'rc': None}
+    try:
+        out, err = p.communicate(timeout=cap)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGTERM)
+        except Exception:
+            p.kill()
+        try:
+            p.communicate(timeout=5)
+        except Exception:
+            pass
+        mins = cap // 60
+        span = f'{mins} minute{"s" if mins != 1 else ""}' if mins else f'{cap} seconds'
+        return {'step': step, 'ok': False, 'rc': None, 'out': '',
+                'why': f"it didn't finish within {span}. The job may still finish on the Mac; the Chief can ask for its result"}
+    return {'step': step, 'ok': p.returncode == 0, 'rc': p.returncode, 'out': out or '', 'err': clean(err, 2000),
+            'why': '' if p.returncode == 0 else f"it stopped with an error ({first_line(err) or 'exit ' + str(p.returncode)})"}
+
+
+def first_line(s):
+    for l in (s or '').splitlines():
+        l = l.strip()
+        if l:
+            return plain_why(l, 140)
+    return ''
+
+
+def receipt_of(res, job):  # the lane's receipt: its file first, else what it printed
+    r = None
+    f = os.path.join(OUTBOX, job, 'receipt.json') if job else None
+    if f and os.path.exists(f):
+        try:
+            r = json.load(open(f))
+        except Exception:
+            r = None
+    if r is None:
+        r = parse_json(res.get('out'))
+    return r if isinstance(r, dict) else None
+
+
+def failed_receipt(res, r):
+    """A lane that exits 0 but says it failed is still a failure, with its own first line as the reason."""
+    if not res['ok']:
+        return True
+    if r is None:
+        res['ok'] = False
+        res['why'] = 'it returned nothing readable'
+        return True
+    st = str((r.get('receipt') or {}).get('status') or r.get('status') or '').lower()
+    if st in ('failed', 'blocked', 'blocked_preflight', 'error', 'interrupted'):
+        res['ok'] = False
+        res['why'] = f"it reported {st}: {first_line((r.get('receipt') or {}).get('summary')) or 'no reason given'}"
+        return True
+    if st == 'partial':
+        res['partial'] = True
+        res['why'] = f"only part of it was read: {first_line((r.get('receipt') or {}).get('summary'))}"
+    return False
+
+
+# ---------------------------------------------------------------- the window since the last brief
+def last_brief():
+    try:
+        seen = [t for t in (ts(v) for v in json.load(open(LAST)).values()) if t and t < NOW]
+        if seen:
+            return max(seen).astimezone(MT)
+    except Exception:
+        pass
+    if KIND == 'evening':
+        return NOW.replace(hour=5, minute=45, second=0, microsecond=0)
+    back = 3 if NOW.weekday() == 0 else 1  # Monday morning looks back to Friday's sweep
+    return (NOW - dt.timedelta(days=back)).replace(hour=16, minute=12, second=0, microsecond=0)
+
+
+# ---------------------------------------------------------------- the steps
+def plan():
+    since = last_brief()
+    hhmm = NOW.strftime('%H%M')
+    window = 'today' if KIND == 'evening' else f'since {when(since)} MT'
+    steps = [
+        ('health', [HEALTH, 'line', '--hours', '12' if KIND == 'morning' else '14'], None),
+        ('github', [RUN, 'gh-scan', f'scan-brief-{DAY}-{hhmm}', '--state', 'brief'], f'scan-brief-{DAY}-{hhmm}'),
+        ('owed', [RUN, 'owed', 'list'], None),
+        ('slack', [RUN, 'slack-read', f'sl-{KIND}-{DAY}-{hhmm}',
+                   f"every DM, group DM and thread Cassidy is in with activity since {when(since)} MT; say which are waiting on him"],
+         f'sl-{KIND}-{DAY}-{hhmm}'),
+        ('chats', [RUN, 'atlas', f'atlas-{DAY}-{KIND}-{hhmm}', window], f'atlas-{DAY}-{KIND}-{hhmm}'),
+    ]
+    if KIND == 'evening':
+        steps.append(('capture', [RUN, 'receipt', f'capture-{DAY}'], f'capture-{DAY}'))
+    return steps, since
+
+
+def gather():
+    steps, since = plan()
+    got = {}
+    for name, argv, job in steps:
+        res = run(name, argv, CAPS[name])
+        res['job'] = job
+        if name == 'health':
+            # A "Monitoring is down" line exits 1, and it is the health line itself, not a failed read.
+            text = '\n'.join(l.rstrip() for l in res['out'].splitlines() if l.strip())
+            if text:
+                res['ok'], res['why'], res['text'] = True, '', clean(text, 1500)
+            elif res['ok']:
+                res['ok'], res['why'] = False, 'it printed nothing'
+        elif name == 'owed':
+            r = parse_json(res['out'])
+            if res['ok'] and not (isinstance(r, dict) and isinstance(r.get('open'), list)):
+                res['ok'], res['why'] = False, 'it returned nothing readable'
+            res['data'] = r if isinstance(r, dict) else {}
+        elif name == 'capture':
+            r = parse_json(res['out'])
+            top = str((r or {}).get('status') or '').lower()
+            if top == 'not found' or (not res['ok'] and r is None):
+                res['ok'], res['why'] = False, "there's no capture result for today (it may not have run)"
+            elif top.startswith('running') or top.startswith('finished after'):
+                res['ok'], res['why'] = False, "it's still running, so today's logs aren't in this packet"
+            elif res['ok'] or r is not None:
+                res['ok'] = True
+                failed_receipt(res, r)
+            res['data'] = r or {}
+        else:
+            r = receipt_of(res, job) if res['ok'] else None
+            if res['ok']:
+                failed_receipt(res, r)
+            res['data'] = r or {}
+        got[name] = res
+    return got, since
+
+
+# ---------------------------------------------------------------- reading the parts
+def gh_rows(res):
+    """scan.json's need and fyi rows: (kind, ref, title, detail, url)."""
+    if not res.get('data'):
+        return [], []
+    arts = (res['data'].get('receipt') or {}).get('artifacts') or []
+    cands = [a for a in arts if str(a).endswith('scan.json')] + [os.path.join(OUTBOX, res.get('job') or '-', 'scan.json')]
+    for f in cands:
+        try:
+            s = json.load(open(f))
+            return [tuple(x) for x in s.get('need', [])], [tuple(x) for x in s.get('fyi', [])]
+        except Exception:
+            continue
+    return [], []
+
+
+def who_from(detail):
+    m = re.match(r'(?:by )?([A-Za-z0-9-]+)', detail or '')
+    return m.group(1) if m else 'someone'
+
+
+def gh_line(row):
+    kind, ref, title, detail, url = (list(row) + [''] * 5)[:5]
+    ref = norm_ref(ref) or norm_ref(url) or ref
+    by = who_from(detail)
+    snippet = ''
+    m = re.search(r':\s(.+)$', detail or '')
+    if m:
+        snippet = f' "{clean(m.group(1), 100).strip()}"'
+    when_txt = re.sub(r':\s.+$', '', detail or '').strip()
+    whose = {
+        'review requested': f"{by}'s PR · waiting on your review",
+        'changes requested on your PR': 'your PR · changes were requested',
+        'unresolved thread on your PR': f'your PR · {when_txt}, an open review thread{snippet}',
+        'mentioned you': f'{when_txt}, mentioned you{snippet}',
+        'new on your item': f'yours · {when_txt}{snippet}',
+        'new activity': f'{when_txt}{snippet}',
+        'your open PR': f'your PR · {detail}',
+    }.get(kind, f'{kind}: {detail}')
+    try:
+        return people_words(link(ref, title, url, clean(whose, 260)))
+    except Exception:
+        return clean(f'{ref} {title} — {whose}', 300)
+
+
+def plain_dates(line):  # "asked you on 2026-11-06" -> "asked you on Fri Nov 6"
+    def sub(m):
+        try:
+            return day_name(dt.date.fromisoformat(m.group(0)))
+        except ValueError:
+            return m.group(0)
+    return re.sub(r'\b\d{4}-\d{2}-\d{2}\b', sub, line)
+
+
+def owed_lines(res):
+    return [people_words(rename(clean(l, 400))) for l in (res.get('data') or {}).get('open', []) if isinstance(l, str) and l.strip()]
+
+
+STAGED_ERRS = []
+CARD_IN_SAYS = re.compile(r'(?:PR )?(?:([a-z0-9]+(?:[-._][a-z0-9]+)+) )?#(\d+)(?: · (.+?))?(?=\s\(|\s(?:to|in|on|as|from|blocked|a sub-issue|lane)\b|[,;:]|$)')
+
+
+def linkify(says):
+    """cos-gh's '#767 · Ingredient re-parse' becomes the sanctioned linked form."""
+    def sub(m):
+        repo, n, nm = m.group(1) or 'data-org', m.group(2), (m.group(3) or '').strip()
+        ref = f'{repo}#{n}'
+        pr = m.group(0).startswith('PR ')
+        url = f"https://github.com/wisecodeai/{repo}/{'pull' if pr else 'issues'}/{n}"
+        tag = ('PR ' if pr else '') + (f'#{n}' if repo == 'data-org' else f'{repo} #{n}')
+        nm = NAMES.get(ref) or nm or short_name(ref)
+        return f'[{tag} · {nm}]({url})' if nm else f'[{tag}]({url})'
+    return CARD_IN_SAYS.sub(sub, says)
+
+
+def staged_batches():
+    """Outbox jobs whose apply.sh or sheet.json was shown to him (cos-run preview) at its current content, not yet applied."""
+    days = int(os.environ.get('COS_PACKET_STAGED_DAYS') or 3)
+    out = []
+    for prev in glob.glob(os.path.join(OUTBOX, '*', '.previewed')):
+        d = os.path.dirname(prev)
+        job = os.path.basename(d)
+        if job.startswith('packet-'):
+            continue
+        mt = dt.datetime.fromtimestamp(os.path.getmtime(prev), MT)
+        if NOW - mt > dt.timedelta(days=days):
+            continue
+        shown = open(prev).read().split('\n')
+        waiting = []
+        for f, kind, done in (('apply.sh', 'apply', 'apply-receipt.json'), ('sheet.json', 'sheet', 'sheet-applied.json')):
+            p = os.path.join(d, f)
+            if not os.path.exists(p) or os.path.exists(os.path.join(d, done)):
+                continue
+            sha = hashlib.sha256(open(p, 'rb').read()).hexdigest()
+            if f'{kind} {sha}' in shown:
+                waiting.append(kind)
+        if not waiting:
+            continue
+        try:
+            r = json.load(open(os.path.join(d, 'receipt.json')))
+        except Exception:
+            r = {}
+        rec = r.get('receipt') or {}
+        na = rec.get('needs_approval') or []
+        na0 = na[0] if na and isinstance(na[0], dict) else {}
+        why = plain_why(na0.get('why') or rec.get('summary') or '', 150)
+        text = ' '.join(str(x.get('target', '')) for x in na if isinstance(x, dict)) or str(rec.get('summary') or '')
+        refs = []
+        for m in re.finditer(r'(?:wisecodeai/)?([a-z][A-Za-z0-9._-]+)?#(\d+)', text):
+            ref = f"{m.group(1) or 'data-org'}#{m.group(2)}"
+            if ref not in refs:
+                refs.append(ref)
+        what = ' and the Data Roadmap sheet' if 'sheet' in waiting and 'apply' in waiting else (' on the Data Roadmap sheet' if waiting == ['sheet'] else '')
+        says = []
+        if 'apply' in waiting:
+            res = run('plain', [GH, job, 'plain', os.path.join(d, 'apply.sh')], 60)
+            j = parse_json(res['out']) if res['ok'] else None
+            items = [i.get('says') for i in (j or {}).get('items', []) if isinstance(i, dict) and i.get('says')]
+            if items:
+                says += [linkify(plain_why(x, 200)) for x in items]
+            else:
+                STAGED_ERRS.append(f"The plain words for a staged change couldn't be read: {res['why'] or 'it returned nothing readable'}. "
+                                   "It is still listed, from its own summary")
+                says = []
+        if 'sheet' in waiting:
+            try:
+                for w in json.load(open(os.path.join(d, 'sheet.json'))).get('writes', []):
+                    col = w.get('col_name') or f"column {w.get('col')}"
+                    says.append(clean(f"the {w.get('tab')} sheet, \"{w.get('row_name')}\" row, {col}: \"{w.get('old')}\" becomes \"{w.get('new')}\"", 240))
+            except Exception:
+                pass
+        out.append({'job': job, 'mt': mt, 'refs': refs[:2], 'why': why, 'what': what, 'says': says})
+    return sorted(out, key=lambda x: x['mt'])
+
+
+def done_today():
+    """Evening: what the Bots did without asking today (tier 0) and the Slack drafts saved for him."""
+    def rows(stream):
+        try:
+            for l in open(os.path.join(LEDGER, f'{stream}.jsonl')):
+                try:
+                    r = json.loads(l)
+                except Exception:
+                    continue
+                t = ts(r.get('ts'))
+                if t and t.astimezone(MT).date() == NOW.date() and t <= NOW:
+                    yield r
+        except FileNotFoundError:
+            return
+    t0 = list(rows('tier_zero'))
+    undone = {r.get('ref') for r in t0 if r.get('decision') == 'undone'}
+    lines, undo = [], []
+    for r in t0:
+        if r.get('decision') != 'done':
+            continue
+        ref = norm_ref(r.get('card') or '') or None
+        a = str(r.get('action') or '').split()
+        verb, rest = (a[0], a[2:]) if len(a) > 1 else ((a[0] if a else ''), [])
+        what = {
+            'field': lambda: f"set its {rest[0]} to {' '.join(rest[1:]) or 'blank'}" if rest else 'set a field',
+            'label': lambda: f"{'added' if rest[:1] == ['add'] else 'removed'} the {' '.join(rest[1:])} label",
+            'assignee': lambda: f"{'added' if rest[:1] == ['add'] else 'removed'} {' '.join(rest[1:])} as assignee",
+            'board-add': lambda: 'added it to the board',
+            'create': lambda: 'created it',
+            'lane': lambda: f"moved it to the {' '.join(rest)} lane",
+            'milestone': lambda: f"set its milestone to {' '.join(rest)}",
+            'link': lambda: 'linked it ' + ' '.join(rest),
+        }.get(verb, lambda: ' '.join(a))()
+        t = ts(r.get('ts')).astimezone(MT)
+        tail = ' (since undone)' if r.get('ref') in undone else ', you can undo it'
+        head = link(ref, '', card_url(ref), '') if ref else 'GitHub'
+        lines.append(f'{head} — {people_words(plain_dates(clean(what, 160)))}, {when(t, False)}{tail}')
+        if r.get('undo') and r.get('ref') not in undone:
+            undo.append(f"{ref or r.get('job')}: {clean(str(r['undo']).replace('<job>', str(r.get('job') or '<job>')), 200)}")
+    for r in rows('slack_drafts'):
+        if str(r.get('status')) not in ('done', 'saved'):
+            continue
+        t = ts(r.get('ts')).astimezone(MT)
+        lines.append(f"Saved a Slack draft to {clean(r.get('to'), 60)}, {when(t, False)}: \"{clean(r.get('first_line'), 120)}\" — "
+                     "it's waiting in your Slack Drafts; nothing was sent")
+    return lines, undo
+
+
+# ---------------------------------------------------------------- the page
+def decisions(got):
+    out, seen, held = [], set(), []
+
+    def add(url, text):
+        if url and url in seen:
+            return
+        seen.add(url)
+        (out if len(out) < MAX_DECISIONS else held).append(text)
+
+    for b in staged_batches():
+        if b['says']:
+            more = len(b['says']) - 3
+            body = '; '.join(b['says'][:3]) + (f'; and {more} more line{"s" if more != 1 else ""} in the same batch' if more > 0 else '')
+            add('job:' + b['job'], f"Make this staged change: {body}? You saw it {when(b['mt'])}.")
+            continue
+        cards = ', '.join(link(r, '', card_url(r), '') for r in b['refs'])
+        why = f": {b['why']}" if b['why'] else ''
+        on = f' on {cards}' if cards else ''
+        add('job:' + b['job'], f"Make the staged change{on}{b['what']}{why}? You saw it {when(b['mt'])}.")
+    if KIND == 'evening':
+        cap = got.get('capture') or {}
+        rec = (cap.get('data') or {}).get('receipt') or {}
+        summ = str(rec.get('summary') or '')
+        if cap.get('ok') and summ.strip() and not summ.strip().startswith('NO CHANGE') \
+                and os.path.exists(os.path.join(OUTBOX, f'capture-{DAY}', 'apply.sh')) \
+                and not os.path.exists(os.path.join(OUTBOX, f'capture-{DAY}', 'apply-receipt.json')):
+            add(f'job:capture-{DAY}', f"Post today's daily logs on your cards ({plain_why(summ, 120)})? The Chief shows you the text first.")
+    cutoff = NOW.date() - dt.timedelta(days=2)
+    for l in owed_lines(got.get('owed') or {}):
+        m = re.search(r'asked you on (\d{4}-\d{2}-\d{2})', l)
+        if not m:
+            continue
+        d = dt.date.fromisoformat(m.group(1))
+        if d > cutoff:
+            continue
+        u = re.search(r'\]\(([^)]+)\)', l)
+        l2 = l.replace(f'asked you on {m.group(1)}', f'asked you on {day_name(d)}')
+        add(u.group(1) if u else l, f'Draft a reply on {l2}? A yes saves a draft for you; nothing is posted.')
+    need, _ = gh_rows(got.get('github') or {})
+    for row in need:
+        if row[0] == 'review requested':
+            add(row[4], f'Review {gh_line(row)}? A yes starts a review draft for you to read.')
+    return out, held
+
+
+def assemble(got, since):
+    need, fyi = gh_rows(got.get('github') or {})
+    for row in need + fyi:
+        r = norm_ref(row[1]) if len(row) > 2 else None
+        if r and row[2]:
+            TITLES.setdefault(r, row[2])
+    title = 'Morning brief' if KIND == 'morning' else 'End-of-day sweep'
+    L = [f'# {title} packet, {when(NOW)} MT', '',
+         'Data from Cassidy\'s Mac, already in the plain format. Copy the lines; don\'t recompose them.', '']
+    order = ['health', 'github', 'owed', 'slack', 'chats'] + (['capture'] if KIND == 'evening' else [])
+    fails = [f"{LABEL[s]} couldn't be read: {got[s]['why']}." for s in order if s in got and not got[s]['ok']]
+    dec, held = decisions(got)  # before the top lines: reading staged changes can add one
+    fails += [e + '.' for e in STAGED_ERRS]
+    fails += [f"{LABEL[s]} was only partly read: {got[s]['why'].split(': ', 1)[-1]}." for s in order
+              if s in got and got[s]['ok'] and got[s].get('partial')]
+    if fails:
+        L += ['## What couldn\'t be read', ''] + [f'- {f}' for f in fails] + ['']
+    L += ['## Health', '', got['health'].get('text') if got.get('health', {}).get('ok') else
+          "The health line couldn't be read (see above), so this packet can't say whether everything ran.", '']
+
+    L += ['## Decisions', '']
+    if dec:
+        L += ['Answer like "1-yes 2-no 3-later".', ''] + [f'{i}. {d} (yes / no / later)' for i, d in enumerate(dec, 1)]
+    else:
+        L += ['Nothing needs your yes right now.']
+    L += ['']
+
+    undo = []
+    if KIND == 'evening':
+        done, undo = done_today()
+        L += ['## Done without asking', '']
+        L += [f'- {d}' for d in done] or ['- Nothing today.']
+        L += ['']
+
+    L += ['## Owed', '']
+    if got.get('owed', {}).get('ok'):
+        ow = owed_lines(got['owed'])
+        at = ts((got['owed'].get('data') or {}).get('checked_at'))
+        L += [f'- {plain_dates(l)}' for l in ow] or [f"- Nothing owed. Checked live against GitHub{' at ' + when(at, False) if at else ''}."]
+    else:
+        L += ["- The owed list couldn't be read (see above). Nothing here means not known, not nothing owed."]
+    L += ['']
+
+    L += ['## Slack waiting on you', '']
+    sl = got.get('slack') or {}
+    other = []
+    if sl.get('ok'):
+        items = ((sl.get('data') or {}).get('receipt') or {}).get('items') or []
+        wait = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            where = clean(it.get('where'), 80) or 'Slack'
+            w = clean(it.get('when'), 40)
+            label = f'{where}, {w}' if w else where
+            ln = f"[{label}]({it['link']})" if it.get('link') and str(it['link']).startswith('https://') else label
+            row = f"{ln} — {plain_why(it.get('what'), 200)}"
+            (wait if it.get('waiting_on_cassidy') else other).append(row)
+        L += [f'- {w}' for w in wait] or [f'- Nothing in Slack is waiting on you since {when(since)}.']
+    else:
+        L += ["- Slack couldn't be read (see above)."]
+    L += ['']
+
+    L += ['## FYI', '']
+    if KIND == 'morning':
+        L += ["- Today's meetings: the Chief adds these from Google Calendar (the Mac can't read the calendar)."]
+    if held:
+        L += ['- Held for the next brief (at most five decisions at a time):'] + [f'  - {h}' for h in held]
+    need, fyi = gh_rows(got.get('github') or {})
+    gh = [gh_line(r) for r in need if r[0] != 'review requested'] + [gh_line(r) for r in fyi]
+    if gh:
+        L += [f'- GitHub since the last brief:'] + [f'  - {g}' for g in gh[:15]]
+        if len(gh) > 15:
+            L += ['  - More GitHub activity is in the scan; the Chief can ask for it.']
+    elif got.get('github', {}).get('ok'):
+        L += ['- GitHub: nothing new since the last brief.']
+    if other:
+        L += ['- Slack, nothing needed from you:'] + [f'  - {o}' for o in other[:8]]
+    ch = got.get('chats') or {}
+    if ch.get('ok'):
+        s = clean(((ch.get('data') or {}).get('receipt') or {}).get('summary'), 2500).strip()
+        label = "Today's chats" if KIND == 'evening' else f'Chats since {when(since)}'
+        L += [f'- {label} (from Agent Atlas):'] + ['  ' + l for l in (s.splitlines() or ['none'])]
+    if KIND == 'evening' and got.get('capture', {}).get('ok'):
+        s = str(((got['capture'].get('data') or {}).get('receipt') or {}).get('summary') or '').strip()
+        L += ['- The 4 PM daily-log capture: ' + ('nothing to log today.' if s.startswith('NO CHANGE') or not s
+                                                 else plain_why(s, 300))]
+    L += ['']
+    if undo:
+        # Last, so the 12,000-character cap trims this before anything Cassidy reads.
+        L += ['## For the Chief only (never show Cassidy): how to undo today\'s changes', ''] + [f'- {u}' for u in undo] + ['']
+    return '\n'.join(L).rstrip() + '\n', fails
+
+
+def dry_run():
+    steps, since = plan()
+    print(f'cos-packet {KIND}, {when(NOW)} MT (dry run: nothing runs, nothing is written)')
+    print(f'last brief: {when(since)} MT')
+    for name, argv, _ in steps:
+        cap = int(os.environ.get('COS_PACKET_CAP') or CAPS[name])
+        print(f'  {name:8} cap {cap:>4}s  ' + ' '.join(json.dumps(a) if ' ' in a else a for a in argv))
+    print(f'  staged   {GH} <job> plain <apply.sh>, for each previewed batch not yet applied (cap 60s each)')
+    print(f'  files    {LEDGER}/tier_zero.jsonl, slack_drafts.jsonl, {OUTBOX}/*/.previewed, {STATE}/names.json')
+    print(f'  writes   {OUTBOX}/packet-{KIND}-{DAY}/packet.md, receipt.json')
+    print(f'  push     {PUSH} chief packet <receipt.json>' if '--no-push' not in sys.argv else '  push     (skipped: --no-push)')
+    return 0
+
+
+def main(argv):
+    global KIND
+    args = [a for a in argv if not a.startswith('--')]
+    flags = {a for a in argv if a.startswith('--')}
+    if not args or args[0] not in ('morning', 'evening') or flags - {'--dry-run', '--no-push'} or len(args) > 1:
+        print('usage: cos-packet morning|evening [--dry-run] [--no-push]', file=sys.stderr)
+        return 64
+    KIND = args[0]
+    if '--dry-run' in flags:
+        return dry_run()
+    got, since = gather()
+    page, fails = assemble(got, since)
+    job = f'packet-{KIND}-{DAY}'
+    out = os.path.join(OUTBOX, job)
+    os.makedirs(out, exist_ok=True)
+    open(os.path.join(out, 'packet.md'), 'w').write(page)
+    json.dump({k: {x: v.get(x) for x in ('step', 'ok', 'rc', 'why', 'job', 'partial')} for k, v in got.items()},
+              open(os.path.join(out, 'steps.json'), 'w'), indent=1)
+    summary = page if len(page) <= SUMMARY_CAP else page[:SUMMARY_CAP - 60].rsplit('\n', 1)[0] + '\n\n(cut here: the full packet is on the Mac)\n'
+    rec = {'job': job, 'lane': 'packet',
+           'receipt': {'status': 'partial' if fails else 'done', 'summary': summary, 'open_questions': []}}
+    rp = os.path.join(out, 'receipt.json')
+    json.dump(rec, open(rp, 'w'), indent=1)
+    print(page)
+    if '--no-push' in flags:
+        print(f'(not pushed: --no-push) {rp}', file=sys.stderr)
+        return 0
+    p = subprocess.run([PUSH, 'chief', 'packet', rp], capture_output=True, text=True)
+    if p.returncode != 0:
+        print(f'push to the Chief failed: {first_line(p.stderr) or p.returncode}. The packet is at {rp}', file=sys.stderr)
+        return 1
+    try:
+        d = json.load(open(LAST))
+    except Exception:
+        d = {}
+    d[KIND] = NOW.isoformat(timespec='seconds')
+    os.makedirs(STATE, exist_ok=True)
+    json.dump(d, open(LAST, 'w'), indent=1)
+    return 0
+
+
+KIND = 'morning'
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

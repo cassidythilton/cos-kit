@@ -34,6 +34,8 @@ HOW YOUR WRITES ARE APPROVED
   Sheet: a sheet.json batch (tab, row, row_name as column A reads now, col, old as it reads now, new), approved by its
     sha256, run with cos-run apply-sheet. The gate allows only those exact cells. Never column A, J or K on Data
     Roadmap, never a Pillar Metrics formula column. J links go to me as paste text.
+    Since Nov 19, a batch whose cells are all blank today is done without asking (its preview says so) and goes in
+    the evening brief with its undo. Name cells to me by sheet, row name and column name, never row or column letters.
   Someone else's card: a field value or a link with my yes, never a body edit or a comment. Their decisions are theirs:
     draft the question to them.
 

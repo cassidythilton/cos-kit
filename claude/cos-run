@@ -28,6 +28,9 @@
 #   cos-run slack-draft <job-id> <draft.json>                                     saves ONE draft in Cassidy's Slack Drafts; never sends
 #   cos-run done        <data-org#700> "<how>"                                  Cassidy finished it: closed on the one owed list, comes back only if something new happens
 #   cos-run owed        list                                                      what he owes, checked live against GitHub, in plain words
+#   cos-run packet      morning|evening                                           rebuild the brief packet by hand (the Mac makes it at 5:45 and 4:12)
+#   cos-run night       add|propose|approve|status|report ...                     the night shift queue and budget (run is launchd only)
+#   cos-run memory      propose|accept|reject|retire|list|show|status|render ...  the one memory store
 #   cos-run heartbeat   <routine-id> ok|failed ["<what>"]                       a Grok routine reports in (cos-health watches for it)
 #   cos-run preflight   <lane> [job-id]                                           what that lane needs, checked now; no model, no receipt
 #   add --async to investigate, atlas, draft, build, eval, fix, land or lake: returns at once, runs detached, pushes the receipt to the Chief
@@ -36,7 +39,7 @@
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed packet night memory"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -180,6 +183,22 @@ Examples:
   cos-run slack-draft sd-steve-20261120 ~/cos/outbox/sd-steve-20261120/draft.json
 H
 ;;
+    packet|night|memory) cat <<'H'
+cos-run packet morning|evening        the brief packet, rebuilt by hand (the Mac's schedule makes it at 5:45 AM and 4:12 PM)
+cos-run night add <kind> "<what>"     queue a night-shift job; kinds: cos-run night kinds
+cos-run night propose                 tonight's plan, inside the budget, in plain words
+cos-run night approve <ids|all>       Cassidy's yes to tonight's plan; nothing runs without it
+cos-run night status | report         the queue, or the "While you slept" report
+cos-run memory propose "<text>" --kind rule|fact --bots chief|all --source "<where>" [--review-by YYYY-MM-DD]
+cos-run memory accept|reject <id>     on Cassidy's word only
+cos-run memory list | status | render <bot>
+
+Examples:
+  cos-run night add meeting-prep "Tomorrow: 9:00 Team check-in (David, Melanie); 1:00 Datasembly with Greta"
+  cos-run night propose
+  cos-run memory propose "Cassidy sends every message himself" --kind rule --bots all --source "Cassidy, Nov 19"
+H
+;;
     done|owed) cat <<'H'
 cos-run done <card or PR> "<how it was finished>"   Cassidy says it's done: closed on the one owed list
 cos-run owed list                                   what he owes, checked live against GitHub, as linked plain lines
@@ -251,6 +270,19 @@ fi
 if [[ "$LANE" == owed ]]; then
   [[ "$JOB" == list ]] || usage_fail owed "cos-run owed list"
   exec "$HOME/cos/bin/cos-obligations" --list
+fi
+# packet / night / memory (Nov 19, plan changes 3, 8 and 11). No model here; each tool has its own --help.
+if [[ "$LANE" == packet ]]; then
+  [[ "$JOB" =~ ^(morning|evening)$ ]] || usage_fail packet "cos-run packet morning|evening"
+  exec "$HOME/cos/bin/cos-packet" "${@:2}"
+fi
+if [[ "$LANE" == night ]]; then
+  [[ "$JOB" =~ ^(add|propose|approve|status|report|kinds)$ ]] || usage_fail night "cos-run night add|propose|approve|status|report (the run itself starts only from the Mac's schedule)"
+  exec "$HOME/cos/bin/cos-night" "${@:2}"
+fi
+if [[ "$LANE" == memory ]]; then
+  [[ "$JOB" =~ ^(propose|accept|reject|retire|pin|unpin|list|show|status|render|history)$ ]] || usage_fail memory "cos-run memory propose|accept|reject|retire|list|show|status|render (import, clean and undo are Cassidy's or the schedule's)"
+  exec "$HOME/cos/bin/cos-memory" "${@:2}"
 fi
 # heartbeat (Nov 19): a Grok routine's last step, so cos-health knows it ran. No model, nothing else.
 if [[ "$LANE" == heartbeat ]]; then
@@ -771,7 +803,7 @@ if [[ "$LANE" == preview ]]; then
   fi
   if [[ -f "$P/sheet.json" ]]; then
     S="$(shasum -a 256 "$P/sheet.json" | cut -d' ' -f1)"
-    RES="$(jq --slurpfile s "$P/sheet.json" --arg y "cos-run apply-sheet $JOB $S" '. + {sheet: {tier: 1, items: [$s[0].writes[] | "the \(.tab) sheet, \"\(.row_name)\" row, \(.col_name // ("column " + .col)): \"\(.old)\" becomes \"\(.new)\""], on_yes: $y}}' <<<"$RES")"
+    RES="$(jq --slurpfile s "$P/sheet.json" --arg blank "$(jq -r '.roadmap_blank_fills // false' "$COS/handbook/standing-approvals.json" 2>/dev/null || echo false)" --arg y "cos-run apply-sheet $JOB $S" '. + {sheet: {tier: (if ($s[0].writes | all(.old == "")) and ($blank == "true") then 0 else 1 end), says: (if ($s[0].writes | all(.old == "")) and ($blank == "true") then "Blank cells only: done without asking (standing approval roadmap_blank_fills); listed in the evening brief" else "Needs Cassidy'"'"'s yes" end), items: [$s[0].writes[] | "the \(.tab) sheet, \"\(.row_name)\" row, \(.col_name // ("column " + .col)): \"\(.old)\" becomes \"\(.new)\""], on_yes: $y}}' <<<"$RES")"
     echo "sheet $S" >> "$P/.previewed"
   fi
   jq --arg j "$JOB" '{job: $j, show_cassidy: "the items, in plain words; never the sha256", preview: .}' <<<"$RES"; exit 0
@@ -1197,6 +1229,9 @@ case "$LANE" in
                WORKDIR="$BUILDS/$SLUG"; BUILD_BASE="$(git -C "$WORKDIR" rev-parse HEAD)" ;;
   *) echo "unknown lane: $LANE" >&2; exit 64 ;;
 esac
+# A whole-job cap in dollars (Nov 19, the night shift's budget): the model gets about 60% of it, because the review
+# round and checker take up to half the model's budget again on top.
+if [[ "${COS_JOB_CAP_USD:-}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then BUDGET="$(awk -v c="$COS_JOB_CAP_USD" 'BEGIN{x=c*0.6; if (x<1) x=1; printf "%.2f", x}')"; fi
 LANE_PROMPT="$COS/claude/lane.md"; [[ "$LANE" == "build" ]] && LANE_PROMPT="$COS/claude/build-lane.md"
 # Only the eval lane sets COS_LANE_PROMPT (a proposed prompt under test). The gate and settings still apply in full.
 [[ "$LANE" == "investigate" && -n "${COS_LANE_PROMPT:-}" && -f "${COS_LANE_PROMPT}" ]] && LANE_PROMPT="$COS_LANE_PROMPT"

@@ -94,9 +94,9 @@
    "grace": 60
   },
   {
-   "id": "ops-morning-brief",
-   "bot": "ops",
-   "what": "OPS's morning feed",
+   "id": "builder-night-propose",
+   "bot": "builder",
+   "what": "tonight's night-shift proposal",
    "days": [
     "mon",
     "tue",
@@ -104,7 +104,41 @@
     "thu",
     "fri"
    ],
-   "time": "06:45",
+   "time": "15:45",
+   "grace": 60
+  },
+  {
+   "id": "builder-night-report",
+   "bot": "builder",
+   "what": "the \"While you slept\" report",
+   "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri"
+   ],
+   "time": "06:00",
+   "grace": 60
+  },
+  {
+   "id": "chief-postgres-nov20",
+   "bot": "chief",
+   "what": "the Friday follow-up with Nicholas on the Postgres auto load",
+   "dates": [
+    "2026-11-20"
+   ],
+   "time": "09:00",
+   "grace": 60
+  },
+  {
+   "id": "chief-reparse-nov23",
+   "bot": "chief",
+   "what": "the check on Nicholas's re-parse estimate",
+   "dates": [
+    "2026-11-23"
+   ],
+   "time": "09:00",
    "grace": 60
   }
  ],
@@ -173,6 +207,26 @@
   "week": {
    "what": "the Friday week readout",
    "max": 60
+  },
+  "packet-morning": {
+   "what": "the 5:45 AM brief packet",
+   "max": 40
+  },
+  "packet-evening": {
+   "what": "the 4:12 PM sweep packet",
+   "max": 40
+  },
+  "night": {
+   "what": "the night shift",
+   "max": 420
+  },
+  "night-report": {
+   "what": "the 6 AM \"While you slept\" report",
+   "max": 15
+  },
+  "memory-clean": {
+   "what": "the Friday memory cleanup",
+   "max": 15
   }
  }
 }

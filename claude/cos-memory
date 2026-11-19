@@ -1,0 +1,773 @@
+#!/usr/bin/env -S python3 -I
+"""cos-memory: the one memory store for Cassidy's Bots (plan 2026-11-19, change 11). No model runs here.
+
+  cos-memory propose "<text>" --kind rule|fact --bots chief,ops|all --source "<where>" [--review-by YYYY-MM-DD]
+                     [--replaces <id>] [--pin]
+  cos-memory accept <id> [<id> ...]      proposed -> active (an accepted --replaces retires the old entry)
+  cos-memory reject <id> [<id> ...]      proposed -> retired
+  cos-memory pin|unpin <id> [<id> ...]   a pinned entry is always in the block (the hard lines)
+  cos-memory retire <id> [<id> ...] [--reason R]  active -> retired (a rule he takes back, a fact that's no longer true)
+  cos-memory import [--force] [--remember-dir DIR] [--corrections FILE]
+                                         one time: seed proposals from the five remember blocks and the corrections
+  cos-memory render <bot> [--out FILE|-] that Bot's remember block, rules first, under 6000 characters
+  cos-memory clean [--dry-run]           weekly: merge duplicates, retire expired facts, flag contradictions,
+                                         list facts that point at a GitHub card or PR; writes a receipt
+  cos-memory status                      counts per Bot and sizes
+  cos-memory list [--status S] [--kind K] [--bot B]
+  cos-memory show <id>
+  cos-memory history [-n N]              the store's change log (one git commit per change)
+  cos-memory undo                        reverses the last change (a new commit, so the undo can be undone too)
+
+The store is ~/cos/memory/entries.jsonl: one JSON object per line, in its own git repo, created on first use. Every
+change is one commit. Kinds: rule (how Cassidy wants things done) and fact (people, systems, decisions; each has a
+review-by date). Open items and history are refused: open items are read live, history is looked up.
+See docs/memory-manager.md in the kit.
+"""
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+COS = f"{HOME}/cos"
+STORE = os.environ.get("COS_MEMORY_DIR", f"{COS}/memory")
+ENTRIES = f"{STORE}/entries.jsonl"
+APPLY = f"{COS}/grok-live/apply"
+OUTBOX = f"{COS}/outbox"
+TODAY = dt.date.fromisoformat(os.environ["COS_MEMORY_TODAY"]) if os.environ.get("COS_MEMORY_TODAY") else dt.date.today()
+CAP = 6000
+GROK_BOTS = ["chief", "ops", "steward", "builder", "keeper"]
+BOTS = GROK_BOTS + ["claude"]
+KINDS = ["rule", "fact"]
+STATUSES = ["active", "retired", "proposed"]
+REFUSED_KINDS = {
+    "open": "Open items aren't memorized. They're read live from the Mac's one list, so they're never stale.",
+    "open-item": "Open items aren't memorized. They're read live from the Mac's one list, so they're never stale.",
+    "item": "Open items aren't memorized. They're read live from the Mac's one list, so they're never stale.",
+    "todo": "Open items aren't memorized. They're read live from the Mac's one list, so they're never stale.",
+    "task": "Open items aren't memorized. They're read live from the Mac's one list, so they're never stale.",
+    "history": "History isn't memorized. It stays in the ledgers and Agent Atlas and is looked up when needed.",
+    "event": "History isn't memorized. It stays in the ledgers and Agent Atlas and is looked up when needed.",
+}
+FACT_DAYS = 90  # default review-by for an imported fact
+SECRET = re.compile(r"(ghp_|gho_|github_pat_|xox[abps]-|\bsk-[A-Za-z0-9]|AKIA[0-9A-Z]{8}|[Bb]earer\s+\S{12}|"
+                    r"api2\.cursor\.sh/automations|X-Amz-Signature|[?&]sig=)")
+GIT = ["git", "-c", "user.name=cos-memory", "-c", "user.email=cos-memory@localhost", "-c", "commit.gpgsign=false",
+       "-c", "core.hooksPath=/dev/null", "-c", "init.defaultBranch=main"]
+
+
+def die(msg, code=2):
+    print(f"cos-memory: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+# ---------------------------------------------------------------- store
+
+def git(*args, check=True):
+    p = subprocess.run(GIT + list(args), cwd=STORE, capture_output=True, text=True)
+    if check and p.returncode != 0:
+        die(f"git {args[0]} failed: {(p.stderr or p.stdout).strip()[:300]}", 1)
+    return p
+
+
+def ensure_store():
+    if os.path.isdir(f"{STORE}/.git"):
+        return
+    os.makedirs(STORE, exist_ok=True)
+    git("init", "-q")
+    with open(f"{STORE}/.gitignore", "w") as f:
+        f.write(".lock\n")
+    if not os.path.exists(ENTRIES):
+        open(ENTRIES, "w").close()
+    with open(f"{STORE}/README.md", "w") as f:
+        f.write("# Cassidy's Bot memory store\n\nWritten only by `cos-memory` (in ~/cos/kit/claude). One entry per line in "
+                "entries.jsonl. Every change is a commit; `cos-memory undo` reverses the last one.\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "create the memory store")
+
+
+class Lock:
+    def __enter__(self):
+        ensure_store()
+        self.f = open(f"{STORE}/.lock", "w")
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *a):
+        fcntl.flock(self.f, fcntl.LOCK_UN)
+        self.f.close()
+
+
+def load():
+    out = []
+    if not os.path.exists(ENTRIES):
+        return out
+    with open(ENTRIES) as f:
+        for n, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                die(f"entries.jsonl line {n} isn't valid JSON; fix it or run cos-memory undo", 1)
+    return out
+
+
+def save(entries, message):
+    tmp = ENTRIES + ".tmp"
+    with open(tmp, "w") as f:
+        for e in entries:
+            f.write(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n")
+    os.replace(tmp, ENTRIES)
+    git("add", "entries.jsonl")
+    if git("diff", "--cached", "--quiet", check=False).returncode == 0:
+        return False
+    git("commit", "-q", "-m", message[:200])
+    return True
+
+
+def new_id(kind, text, taken):
+    base = hashlib.sha1(f"{kind}\n{text}".encode()).hexdigest()
+    p = kind[0]
+    for n in range(6, 41):
+        i = f"{p}-{base[:n]}"
+        if i not in taken:
+            return i
+    die("couldn't make a unique id", 1)
+
+
+def find(entries, i):
+    hits = [e for e in entries if e["id"] == i]
+    if not hits:
+        hits = [e for e in entries if e["id"].startswith(i)] if len(i) >= 4 else []
+    if len(hits) != 1:
+        die(f"no single entry matches id {i!r}")
+    return hits[0]
+
+
+def bots_of(e):
+    return GROK_BOTS + ["claude"] if e["bots"] == "all" else e["bots"]
+
+
+def parse_bots(s):
+    s = (s or "").strip().lower()
+    if s == "all":
+        return "all"
+    bots = [b.strip() for b in s.split(",") if b.strip()]
+    bad = [b for b in bots if b not in BOTS]
+    if not bots or bad:
+        die(f"--bots must be 'all' or a comma list of {', '.join(BOTS)} (got {s!r})")
+    return sorted(set(bots), key=BOTS.index)
+
+
+def merge_bots(a, b):
+    if a == "all" or b == "all":
+        return "all"
+    m = sorted(set(a) | set(b), key=BOTS.index)
+    return "all" if set(GROK_BOTS) <= set(m) else m
+
+
+def check_text(text):
+    text = " ".join((text or "").split())
+    if not text:
+        die("the text is empty")
+    if SECRET.search(text):
+        die("that text looks like it holds a key, token or signed URL; memory never stores those")
+    if len(text) > 1200:
+        die(f"that text is {len(text)} characters; keep one memory under 1200 (split it into several)")
+    return text
+
+
+def check_kind(kind):
+    k = (kind or "").strip().lower()
+    if k in REFUSED_KINDS:
+        die(f"not stored: {REFUSED_KINDS[k]}")
+    if k not in KINDS:
+        die(f"--kind must be rule or fact (got {kind!r})")
+    return k
+
+
+def check_date(s, what):
+    try:
+        return dt.date.fromisoformat(s).isoformat()
+    except Exception:
+        die(f"{what} must be YYYY-MM-DD (got {s!r})")
+
+
+# ---------------------------------------------------------------- text helpers
+
+STOP = set("""a an the and or but if of to in on at by for from with as is are was were be been being it its this that
+these those i me my he him his she her they them their we our you your do does did so than then there here not no
+can could will would should shall may might must about into over under up down out only also just all any each every
+when what which who whom whose why how before after while because via per one two new old cassidy cassidys""".split())
+POLAR = [
+    (re.compile(r"\bnever\b"), re.compile(r"\balways\b")),
+    (re.compile(r"\b(is|are|stays?|turned|switched|set) off\b"), re.compile(r"\b(is|are|stays?|turned|switched|set) on\b")),
+    (re.compile(r"\bdisabled?\b"), re.compile(r"\benabled?\b")),
+    (re.compile(r"\b(don't|do not|doesn't|does not)\b"), re.compile(r"\b(always|must)\b")),
+]
+POLAR_WORDS = {"never", "always", "off", "on", "disable", "disabled", "enable", "enabled", "dont", "don't", "must"}
+
+
+def norm(text):
+    t = text.lower().replace("’", "'")
+    t = re.sub(r"[^a-z0-9#' ]+", " ", t)
+    return " ".join(t.split())
+
+
+def tokens(text, drop_polar=False):
+    toks = {w.strip("'") for w in norm(text).split()}
+    toks = {w for w in toks if w and w not in STOP and len(w) > 1}
+    if drop_polar:
+        toks -= POLAR_WORDS
+    return toks
+
+
+def jaccard(a, b):
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def near_dup(a, b):
+    if norm(a) == norm(b):
+        return True
+    ta, tb = tokens(a), tokens(b)
+    return min(len(ta), len(tb)) >= 4 and jaccard(ta, tb) >= 0.85
+
+
+def contradicts(a, b):
+    """Conservative: same subject (content words overlap a lot) and one says never/off/don't where the other says
+    always/on/must. Flag only; a person settles it."""
+    if jaccard(tokens(a, True), tokens(b, True)) < 0.5:
+        return None
+    la, lb = norm(a).replace("dont", "don't"), norm(b).replace("dont", "don't")
+    for neg, pos in POLAR:
+        if (neg.search(la) and not neg.search(lb) and pos.search(lb) and not pos.search(la)) or \
+           (neg.search(lb) and not neg.search(la) and pos.search(la) and not pos.search(lb)):
+            return f"{neg.pattern} vs {pos.pattern}".replace("\\b", "")
+    return None
+
+
+GH = re.compile(r"(github\.com/[\w.-]+/[\w.-]+/(issues|pull)/\d+|(^|[\s(\[])([\w.-]+)?#\d+\b)")
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_propose(a):
+    kind = check_kind(a.kind)
+    text = check_text(a.text)
+    bots = parse_bots(a.bots)
+    source = " ".join((a.source or "").split())
+    if not source:
+        die("--source is required: say where this came from (a chat, a correction, a card)")
+    if SECRET.search(source):
+        die("the source looks like it holds a key, token or signed URL")
+    review_by = None
+    if kind == "fact":
+        review_by = check_date(a.review_by, "--review-by") if a.review_by else (TODAY + dt.timedelta(days=FACT_DAYS)).isoformat()
+    elif a.review_by:
+        die("rules don't take --review-by; they stand until Cassidy changes them")
+    with Lock():
+        entries = load()
+        if a.replaces:
+            old = find(entries, a.replaces)
+            replaces = old["id"]
+        else:
+            replaces = None
+        for e in entries:
+            if e["status"] != "retired" and e["kind"] == kind and near_dup(e["text"], text):
+                die(f"already there as {e['id']} ({e['status']}): {e['text'][:120]}", 3)
+        e = {"id": new_id(kind, text, {x["id"] for x in entries}), "kind": kind, "text": text, "bots": bots,
+             "source": source, "added": TODAY.isoformat(), "review_by": review_by, "status": "proposed"}
+        if replaces:
+            e["replaces"] = replaces
+        if a.pin:
+            e["pin"] = True
+        entries.append(e)
+        save(entries, f"propose {e['id']}: {text[:80]}")
+    print(f"proposed {e['id']} ({kind}, for {bots if bots == 'all' else ','.join(bots)}). "
+          f"Accept with: cos-memory accept {e['id']}")
+
+
+def cmd_accept(a, to):
+    with Lock():
+        entries = load()
+        done = []
+        for i in a.ids:
+            e = find(entries, i)
+            if e["status"] != "proposed":
+                die(f"{e['id']} is {e['status']}, not proposed")
+            e["status"] = to
+            e["decided"] = TODAY.isoformat()
+            if to == "retired":
+                e["retired_reason"] = "rejected"
+            elif e.get("replaces"):
+                old = find(entries, e["replaces"])
+                if old["status"] == "active":
+                    old["status"] = "retired"
+                    old["retired_reason"] = f"replaced by {e['id']}"
+                    old["decided"] = TODAY.isoformat()
+            done.append(e["id"])
+        verb = "accept" if to == "active" else "reject"
+        save(entries, f"{verb} {', '.join(done)}"[:200])
+    print(f"{verb}ed: {', '.join(done)}")
+
+
+def cmd_pin(a, on):
+    with Lock():
+        entries = load()
+        done = []
+        for i in a.ids:
+            e = find(entries, i)
+            if on:
+                e["pin"] = True
+            else:
+                e.pop("pin", None)
+            done.append(e["id"])
+        save(entries, f"{'pin' if on else 'unpin'} {', '.join(done)}"[:200])
+    print(f"{'pinned' if on else 'unpinned'}: {', '.join(done)}")
+
+
+def cmd_retire(a):
+    with Lock():
+        entries = load()
+        done = []
+        for i in a.ids:
+            e = find(entries, i)
+            if e["status"] != "active":
+                die(f"{e['id']} is {e['status']}, not active")
+            e["status"] = "retired"
+            e["retired_reason"] = a.reason or "retired by hand"
+            e["decided"] = TODAY.isoformat()
+            done.append(e["id"])
+        save(entries, f"retire {', '.join(done)}"[:200])
+    print(f"retired: {', '.join(done)}")
+
+
+# ---- import
+
+LINE = re.compile(r"^- \((\d{4}-\d{2}-\d{2})\)\s*(?:\[([^\]]*)\]\s*)?(.*)$")
+CUT = "[cut off by search]"
+ONE_OFF = re.compile(r"\b(waiver|waived|this morning|tonight|today's|tomorrow|this week|came in (done|failed))\b", re.I)
+STAMPED = re.compile(r"^(\w{3} \d{1,2}, \d{4},? \d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2})")
+HISTORY = re.compile(r"^I (sent|ran|logged|posted|did|told|asked|checked|moved|wrote)\b")
+OPEN_ITEM = re.compile(r"\b(open follow-?ups?|open items?|to-?do|still missing|still open|is pending|next step)\b", re.I)
+SAID_BY_HIM = re.compile(r"^Cassidy(?:'s)? (\(|lasting rule|rule)")
+RULE_HINT = re.compile(r"\b(never|always|don't|do not|must|only|should|rule|wants?|every|before|when|no more|"
+                       r"needs? (his|cassidy's)|keep|use|ask|refer|explain|show|answer|follow|stays?|goes|go only|"
+                       r"approv\w*|I am|I'm|you are|my team|order of authority)\b", re.I)
+SPLIT_AT = 450
+HARD_LINE = re.compile(r"(never (send|use or repeat|repeat|put a password|make calendar)|access is never authorization|"
+                       r"only (prepare )?drafts|drafts only|he/him|is the only door|only Bot that runs commands|"
+                       r"never merges?)", re.I)
+
+
+def kind_of(text, correction=False):
+    if correction:
+        return "fact" if re.match(r"[\w.-]+#\d+", text) else "rule"
+    if SAID_BY_HIM.match(text):
+        return "rule"
+    return "rule" if RULE_HINT.search(text) else "fact"
+
+
+def split_text(text):
+    """Split a long memory at sentence ends into pieces of about SPLIT_AT characters. A piece that would stand
+    alone without its subject (it/this/that/they in its first six words) stays joined to the one before."""
+    if len(text) <= SPLIT_AT:
+        return [text]
+    sents = re.split(r"(?<=[.;])\s+(?=[A-Z\"'(])", text)
+    pieces, cur = [], ""
+    for s in sents:
+        lone = re.search(r"\b(it|its|this|that|they|them|these|those)\b", " ".join(s.split()[:6]), re.I)
+        if cur and len(cur) + 1 + len(s) > SPLIT_AT and not lone:
+            pieces.append(cur)
+            cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur:
+        pieces.append(cur)
+    return pieces
+
+
+def cmd_import(a):
+    rdir = a.remember_dir or f"{COS}/grok-live/after"
+    corr = a.corrections or f"{COS}/state/ledger/corrections.jsonl"
+    raw = []  # (date, bots, text, source, flags)
+    for bot in GROK_BOTS:
+        p = f"{rdir}/{bot}-remember.md"
+        if not os.path.exists(p):
+            print(f"  (no {p}; skipped)")
+            continue
+        shared = False
+        with open(p) as f:
+            for n, line in enumerate(f, 1):
+                line = line.rstrip("\n")
+                if line.startswith("## ") and "shared" in line.lower():
+                    shared = True
+                m = LINE.match(line)
+                if not m:
+                    continue
+                date, tag, text = m.group(1), (m.group(2) or ""), m.group(3).strip()
+                flags = []
+                if CUT in text:
+                    text = text.replace(CUT, "").strip()
+                    flags.append("cut off when it was exported; the end is missing")
+                is_shared = shared or "shared" in tag.lower() or tag.lower().startswith("via ")
+                raw.append((date, "all" if is_shared else [bot], text,
+                            f"{bot}-remember.md line {n}", flags, False))
+    if os.path.exists(corr):
+        with open(corr) as f:
+            for n, line in enumerate(f, 1):
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                b = (r.get("bot") or "").lower()
+                b = "chief" if b == "cos-run" else b
+                if b not in BOTS:
+                    b = "chief"
+                raw.append(((r.get("ts") or TODAY.isoformat())[:10], [b], (r.get("note") or "").strip(),
+                            f"corrections.jsonl {(r.get('id') or str(n))[:10]}", [], True))
+    else:
+        print(f"  (no {corr}; skipped)")
+
+    with Lock():
+        entries = load()
+        if any(e.get("imported") for e in entries) and not a.force:
+            die("import already ran (entries marked imported exist). It's one time; use --force to run it again")
+        taken = {e["id"] for e in entries}
+        added, dups, skipped, notes = [], [], [], []
+        for date, bots, text, source, flags, correction in raw:
+            if not text:
+                continue
+            if SECRET.search(text):
+                skipped.append(("holds something that looks like a key or token", source, "(text not shown)"))
+                continue
+            if OPEN_ITEM.search(text):
+                skipped.append(("open item: read live, not memorized", source, text))
+                continue
+            if ONE_OFF.search(text) or STAMPED.match(text):
+                skipped.append(("dated one-off: stays in the ledger", source, text))
+                continue
+            if HISTORY.match(text):
+                skipped.append(("history: looked up in the ledgers, not memorized", source, text))
+                continue
+            parts = split_text(text)
+            kind = kind_of(text, correction)
+            for k, part in enumerate(parts, 1):
+                src = source + (f" (part {k} of {len(parts)})" if len(parts) > 1 else "")
+                part = check_text_soft(part)
+                if not part:
+                    continue
+                twin = next((e for e in entries if e["status"] != "retired" and e["kind"] == kind
+                             and near_dup(e["text"], part)), None)
+                if twin:
+                    twin["bots"] = merge_bots(twin["bots"], bots)
+                    twin["source"] = f"{twin['source']}; {src}"[:600]
+                    dups.append((src, twin["id"]))
+                    continue
+                e = {"id": new_id(kind, part, taken), "kind": kind, "text": part, "bots": bots, "source": src,
+                     "added": date, "status": "proposed", "imported": TODAY.isoformat(),
+                     "review_by": (TODAY + dt.timedelta(days=FACT_DAYS)).isoformat() if kind == "fact" else None}
+                if kind == "rule" and HARD_LINE.search(part):
+                    e["pin"] = True
+                maybe = next((x for x in entries if x["status"] != "retired"
+                              and jaccard(tokens(x["text"]), tokens(part)) >= 0.6), None)
+                fl = list(flags)
+                if maybe:
+                    fl.append(f"may say the same as {maybe['id']}; accept one, reject the other")
+                if fl:
+                    e["notes"] = fl
+                    notes.append((e["id"], "; ".join(fl)))
+                taken.add(e["id"])
+                entries.append(e)
+                added.append(e)
+        save(entries, f"import: {len(added)} proposals, {len(dups)} duplicates folded, {len(skipped)} not imported")
+    rules = sum(1 for e in added if e["kind"] == "rule")
+    print(f"Imported {len(added)} proposals ({rules} rules, {len(added) - rules} facts). "
+          f"{len(dups)} duplicates folded into an earlier entry. {len(skipped)} not imported.")
+    if dups:
+        print("\nDuplicates (folded in, their Bots added to the first one):")
+        for src, i in dups:
+            print(f"  {src} -> {i}")
+    if skipped:
+        print("\nNOT imported:")
+        for why, src, text in skipped:
+            print(f"  [{why}] {src}: {text[:160]}")
+    if notes:
+        print("\nImported but needs a look:")
+        for i, why in notes:
+            print(f"  {i}: {why}")
+    print("\nNothing is active yet. Review with: cos-memory list --status proposed; then cos-memory accept <id> ...")
+
+
+def check_text_soft(text):
+    text = " ".join(text.split())
+    return text[:1200] if text else ""
+
+
+# ---- render
+
+def block(bot, entries):
+    mine = [e for e in entries if e["status"] == "active" and bot in bots_of(e)]
+    # pinned first (never dropped for size), then newest first
+    order = lambda e: (bool(e.get("pin")), e["added"], e["id"])
+    rules = sorted([e for e in mine if e["kind"] == "rule"], key=order, reverse=True)
+    facts = sorted([e for e in mine if e["kind"] == "fact"], key=order, reverse=True)
+    head = (f"# What {bot.upper()} remembers\n"
+            f"Made {TODAY.isoformat()} from the memory store on Cassidy's Mac. Paste this whole block in place of the "
+            "old one.\nRules are how Cassidy wants things done; when two disagree, the newer one wins. Facts can go "
+            "stale: each says when it was last checked. Open items are never kept here; read them live.\n")
+    rl = [f"- {e['text']}" for e in rules]
+    fl = [f"- {e['text']} (as of {e['added']})" for e in facts]
+    left = []
+
+    def build(r, f, more):
+        parts = [head, "\n## Rules\n" + ("\n".join(r) if r else "- (none yet)")]
+        if f:
+            parts.append("\n\n## Facts\n" + "\n".join(f))
+        if more:
+            parts.append(f"\n\n({more} more left out to stay under {CAP} characters.)")
+        return "".join(parts) + "\n"
+
+    # Drop the oldest unpinned facts first, then the oldest unpinned rules, until it fits. Pinned entries stay.
+    text = build(rl, fl, 0)
+    while len(text) > CAP:
+        if fl and not facts[len(fl) - 1].get("pin"):
+            left.append(facts[len(fl) - 1]["id"])
+            fl = fl[:-1]
+        elif rl and not rules[len(rl) - 1].get("pin"):
+            left.append(rules[len(rl) - 1]["id"])
+            rl = rl[:-1]
+        else:
+            break  # only pinned entries left; the block stays over the cap and render says so
+        text = build(rl, fl, len(left))
+    return text, len(rules), len(facts), left
+
+
+def cmd_render(a):
+    bot = a.bot.lower()
+    if bot not in BOTS:
+        die(f"bot must be one of {', '.join(BOTS)}")
+    ensure_store()
+    text, nr, nf, left = block(bot, load())
+    if a.out == "-":
+        sys.stdout.write(text)
+        return
+    out = a.out or f"{APPLY}/{bot}-remember-{TODAY.strftime('%Y%m%d')}.md"
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "w") as f:
+        f.write(text)
+    print(f"wrote {out}: {len(text)} characters, {nr} rules, {nf} facts" +
+          (f"; left out for size: {', '.join(left)}" if left else ""))
+    if len(text) > CAP:
+        print(f"over the {CAP}-character cap with pinned entries alone; unpin or retire some", file=sys.stderr)
+        sys.exit(1)
+
+
+# ---- clean
+
+def cmd_clean(a):
+    with Lock():
+        entries = load()
+        active = [e for e in entries if e["status"] == "active"]
+        merged, retired, contra, gh = [], [], [], []
+        # 1. duplicates: keep the newer text, take the union of Bots, retire the other
+        for i, x in enumerate(active):
+            if x["status"] != "active":
+                continue
+            for y in active[i + 1:]:
+                if y["status"] != "active" or x["kind"] != y["kind"] or not near_dup(x["text"], y["text"]):
+                    continue
+                keep, drop = (y, x) if (y["added"], y["id"]) >= (x["added"], x["id"]) else (x, y)
+                keep["bots"] = merge_bots(keep["bots"], drop["bots"])
+                keep.setdefault("merged_from", []).append(drop["id"])
+                drop["status"] = "retired"
+                drop["retired_reason"] = f"merged into {keep['id']}"
+                drop["decided"] = TODAY.isoformat()
+                merged.append((drop["id"], keep["id"], keep["text"]))
+                if drop is x:
+                    break
+        # 2. facts past their review-by date
+        for e in entries:
+            if e["status"] == "active" and e["kind"] == "fact" and e.get("review_by") and e["review_by"] < TODAY.isoformat():
+                e["status"] = "retired"
+                e["retired_reason"] = f"past its review-by date ({e['review_by']})"
+                e["decided"] = TODAY.isoformat()
+                retired.append((e["id"], e["review_by"], e["text"]))
+        live = [e for e in entries if e["status"] == "active"]
+        # 3. contradictions (flag only)
+        for i, x in enumerate(live):
+            for y in live[i + 1:]:
+                why = contradicts(x["text"], y["text"])
+                if why:
+                    contra.append((x, y, why))
+        # 4. facts that point at a GitHub card or PR: a later step re-checks them against GitHub
+        for e in live:
+            if e["kind"] == "fact" and (GH.search(e["source"]) or GH.search(e["text"])):
+                gh.append(e)
+        proposed = [e for e in entries if e["status"] == "proposed"]
+        changed = False
+        if not a.dry_run:
+            changed = save(entries, f"clean {TODAY.isoformat()}: merged {len(merged)}, retired {len(retired)}")
+
+    kept = len([e for e in entries if e["status"] == "active"])
+    summary = (f"Memory cleanup, {TODAY.strftime('%a %b %-d')}: kept {kept}, merged {len(merged)} duplicates, "
+               f"retired {len(retired)} stale facts; {len(contra)} possible contradictions and "
+               f"{len(proposed)} proposals need Cassidy.")
+    questions = []
+    for x, y, why in contra:
+        questions.append(f"These two may disagree ({why}). Which one stands? 1) {x['text'][:200]} [{x['id']}, "
+                         f"{x['added']}] 2) {y['text'][:200]} [{y['id']}, {y['added']}]")
+    if proposed:
+        questions.append(f"{len(proposed)} new memories are waiting for a yes or no (cos-memory list --status proposed).")
+    lines = [summary, ""]
+    if merged:
+        lines.append("Merged (same thing said twice; the newer wording kept):")
+        lines += [f"  {d} -> {k}: {t[:140]}" for d, k, t in merged]
+    if retired:
+        lines.append("Retired (facts past their review-by date):")
+        lines += [f"  {i} (review by {r}): {t[:140]}" for i, r, t in retired]
+    if contra:
+        lines.append("Needs Cassidy (may disagree):")
+        lines += [f"  {x['id']} vs {y['id']}: {why}" for x, y, why in contra]
+    if gh:
+        lines.append("To re-check against GitHub (the fact points at a card or PR):")
+        lines += [f"  {e['id']}: {e['text'][:140]}" for e in gh]
+    if a.dry_run:
+        lines.append("(dry run: nothing changed, no receipt written)")
+    print("\n".join(lines))
+    if a.dry_run:
+        return
+    job = f"memory-clean-{TODAY.strftime('%Y%m%d')}"
+    d = f"{OUTBOX}/{job}"
+    os.makedirs(d, exist_ok=True)
+    head = subprocess.run(GIT + ["rev-parse", "--short", "HEAD"], cwd=STORE, capture_output=True, text=True).stdout.strip()
+    receipt = {
+        "job": job, "lane": "memory",
+        "receipt": {
+            "status": "done", "summary": summary, "open_questions": questions,
+            "artifacts": [ENTRIES] if changed else [],
+            "evidence": [{"claim": "every change is one commit in the memory store; cos-memory undo reverses it",
+                          "source": f"git -C {STORE} show {head}", "verified": True}],
+            "decisions": [], "needs_approval": [],
+            "memory": {"kept": kept,
+                       "merged": [{"retired": d_, "into": k} for d_, k, _ in merged],
+                       "retired": [{"id": i, "review_by": r} for i, r, _ in retired],
+                       "contradictions": [{"a": x["id"], "b": y["id"], "why": w} for x, y, w in contra],
+                       "recheck_github": [{"id": e["id"], "source": e["source"]} for e in gh],
+                       "proposed_waiting": len(proposed)},
+        },
+    }
+    with open(f"{d}/receipt.json", "w") as f:
+        json.dump(receipt, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"receipt: {d}/receipt.json")
+
+
+# ---- status, list, show, history, undo
+
+def cmd_status(a):
+    ensure_store()
+    entries = load()
+    by = {s: sum(1 for e in entries if e["status"] == s) for s in STATUSES}
+    print(f"store: {ENTRIES} ({os.path.getsize(ENTRIES)} bytes); {by['active']} active, {by['proposed']} proposed, "
+          f"{by['retired']} retired")
+    soon = (TODAY + dt.timedelta(days=14)).isoformat()
+    due = [e for e in entries if e["status"] == "active" and e["kind"] == "fact" and (e.get("review_by") or "9") <= soon]
+    print(f"facts due for review within 14 days: {len(due)}")
+    print(f"{'bot':8} {'rules':>5} {'facts':>5} {'proposed':>8} {'block':>6}  (cap {CAP})")
+    for bot in BOTS:
+        mine = [e for e in entries if bot in bots_of(e)]
+        r = sum(1 for e in mine if e["status"] == "active" and e["kind"] == "rule")
+        f = sum(1 for e in mine if e["status"] == "active" and e["kind"] == "fact")
+        p = sum(1 for e in mine if e["status"] == "proposed")
+        text, _, _, left = block(bot, entries)
+        print(f"{bot:8} {r:5} {f:5} {p:8} {len(text):6}" + (f"  {len(left)} left out for size" if left else ""))
+
+
+def cmd_list(a):
+    ensure_store()
+    for e in load():
+        if a.status and e["status"] != a.status:
+            continue
+        if a.kind and e["kind"] != a.kind:
+            continue
+        if a.bot and a.bot not in bots_of(e):
+            continue
+        bots = "all" if e["bots"] == "all" else ",".join(e["bots"])
+        print(f"{e['id']}  {e['status']:8} {e['kind']:4} [{bots}] {e['text']}")
+
+
+def cmd_show(a):
+    ensure_store()
+    print(json.dumps(find(load(), a.id), indent=2, ensure_ascii=False))
+
+
+def cmd_history(a):
+    ensure_store()
+    print(git("log", f"-{a.n}", "--date=format:%Y-%m-%d %H:%M", "--pretty=%h  %ad  %s").stdout.rstrip())
+
+
+def cmd_undo(a):
+    with Lock():
+        if git("rev-list", "--count", "HEAD").stdout.strip() == "1":
+            die("nothing to undo: the store has only its first commit")
+        subj = git("log", "-1", "--pretty=%s").stdout.strip()
+        git("revert", "--no-edit", "HEAD")
+    print(f"undone: {subj}")
+
+
+# ---------------------------------------------------------------- main
+
+def main(argv):
+    import argparse
+    p = argparse.ArgumentParser(prog="cos-memory", description=__doc__.split("\n")[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("propose")
+    s.add_argument("text")
+    s.add_argument("--kind", required=True)
+    s.add_argument("--bots", required=True)
+    s.add_argument("--source", required=True)
+    s.add_argument("--review-by")
+    s.add_argument("--replaces")
+    s.add_argument("--pin", action="store_true")
+    for name in ("accept", "reject", "pin", "unpin"):
+        s = sub.add_parser(name)
+        s.add_argument("ids", nargs="+")
+    s = sub.add_parser("retire")
+    s.add_argument("ids", nargs="+")
+    s.add_argument("--reason")
+    s = sub.add_parser("import")
+    s.add_argument("--force", action="store_true")
+    s.add_argument("--remember-dir")
+    s.add_argument("--corrections")
+    s = sub.add_parser("render")
+    s.add_argument("bot")
+    s.add_argument("--out")
+    s = sub.add_parser("clean")
+    s.add_argument("--dry-run", action="store_true")
+    sub.add_parser("status")
+    s = sub.add_parser("list")
+    s.add_argument("--status", choices=STATUSES)
+    s.add_argument("--kind", choices=KINDS)
+    s.add_argument("--bot", choices=BOTS)
+    s = sub.add_parser("show")
+    s.add_argument("id")
+    s = sub.add_parser("history")
+    s.add_argument("-n", type=int, default=20)
+    sub.add_parser("undo")
+    a = p.parse_args(argv)
+    {"propose": cmd_propose, "accept": lambda a: cmd_accept(a, "active"), "reject": lambda a: cmd_accept(a, "retired"),
+     "retire": cmd_retire, "pin": lambda a: cmd_pin(a, True), "unpin": lambda a: cmd_pin(a, False), "import": cmd_import, "render": cmd_render, "clean": cmd_clean, "status": cmd_status,
+     "list": cmd_list, "show": cmd_show, "history": cmd_history, "undo": cmd_undo}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

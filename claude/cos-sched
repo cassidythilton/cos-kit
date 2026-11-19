@@ -26,7 +26,12 @@ capture     | 1-5 16:00 | 15-21 | steward | investigate
 week        | 5 10:00   | 9-15  | steward | investigate
 opportunity | 1 08:30   | 7-13  | builder | investigate
 keeper      | 5 13:00   | 12-18 | keeper  | investigate
-obligations | 1-5 08:00,10:00,12:00,14:00,16:00 | 7-17 | ops | script'
+obligations | 1-5 08:00,10:00,12:00,14:00,16:00 | 7-17 | ops | script
+packet-morning | 1-5 05:45 | 5-8 | chief | packet
+packet-evening | 1-5 16:12 | 15-19 | chief | packet
+night       | 0-4 22:00 | 21-23 | builder | night
+night-report | 1-5 06:00 | 5-9 | chief | nightreport
+memory-clean | 5 12:30 | 11-17 | keeper | memory'
 
 if [[ "$SLOT" == list ]]; then echo "$TABLE"; exit 0; fi
 row="$(printf '%s\n' "$TABLE" | awk -F'|' -v s="$SLOT" '{k=$1; gsub(/ /,"",k)} k==s')"
@@ -80,6 +85,18 @@ if [[ "$SLOT" == capture || "$SLOT" == week ]]; then
 fi
 if [[ "$LANE" == script ]]; then
   COS_CALLER=sched cos-obligations --act >/dev/null 2>"$ERR" || rc=$?
+elif [[ "$LANE" == packet ]]; then    # the brief packet (Nov 19): cos-packet pushes to the Chief itself
+  COS_CALLER=sched cos-packet "${SLOT#packet-}" >/dev/null 2>"$ERR" || rc=$?
+elif [[ "$LANE" == night ]]; then     # the night shift (Nov 19): runs approved jobs inside the budget; the 6 AM report tells
+  COS_CALLER=sched cos-night run > "$OUTD/night-run.json" 2>"$ERR" || rc=$?
+  [[ $rc -eq 75 ]] && log "night shift refused: the Mac is on battery"
+  jq -n --arg s "$(jq -r '.summary // .text // "ran"' "$OUTD/night-run.json" 2>/dev/null | head -c 600)" --arg j "$JOB" \
+    '{receipt: {status: "done", summary: ("NO CHANGE " + $s)}, lane: "night", job: $j}' > "$R" 2>/dev/null || true
+elif [[ "$LANE" == nightreport ]]; then
+  COS_CALLER=sched cos-night report >/dev/null 2>"$ERR" || rc=$?
+  Y="$(date -v-1d +%Y%m%d)"; [[ -f "$COS/outbox/night-$Y/receipt.json" ]] && cp "$COS/outbox/night-$Y/receipt.json" "$R"
+elif [[ "$LANE" == memory ]]; then    # KEEPER's weekly memory cleanup (Nov 19); writes this job folder's receipt itself
+  COS_CALLER=sched cos-memory clean >/dev/null 2>"$ERR" || rc=$?
 elif [[ "$LANE" == quick ]]; then
   COS_CALLER=sched cos-run quick "$JOB" "Summarize this morning's board pulse for Cassidy in three lines: the headline numbers vs yesterday, the cards most at risk (Shipping with no RAGB or untouched, RED with no fresh log), how many owners need a nudge, and each open card in No Status with its owner (they place it in a lane; never a bot on another owner's card). If nothing changed since yesterday's row in board-health, answer exactly: NO CHANGE" \
     --with "board-pulse --record" >/dev/null 2>"$ERR" || rc=$?
@@ -102,6 +119,9 @@ E="$(scrub "$(tail -c 400 "$ERR" 2>/dev/null | tr '\n\r\t' '   ')" | sed -E -e '
 [[ -f "$R" ]] || jq -n --arg j "$JOB" --arg s "FAILED: $JOB stopped (exit $rc) before writing a receipt. Error: ${E:-nothing on stderr}. Full log: $ERR" \
   '{receipt: {status: "failed", summary: $s}, lane: "sched", job: $j}' > "$R"
 
+# The packet pushed itself; the night run reports at 6 AM.
+if [[ "$LANE" == packet ]]; then (( rc == 0 )) && log "pushed to chief (by cos-packet)"; exit 0; fi
+if [[ "$LANE" == night ]]; then (( rc == 0 )) && log "done: night shift ran; the report goes out at 6 AM"; exit 0; fi
 # Silent when nothing changed: don't spend a bot turn on it.
 if jq -e '(.receipt.summary // "") | test("^\\s*NO CHANGE")' "$R" >/dev/null 2>&1; then log "no change; not pushed"; exit 0; fi
 cos-push "$BOT" "$SLOT" "$R" && log "pushed to $BOT" || log "push to $BOT failed"

@@ -1,3 +1,14 @@
+# Grok pastes: PENDING 2026-11-19 (lean on the agents)
+
+Plan: docs/plan-2026-11-19-lean-on-agents.md (changes 1, 4, 5, 6, 8, 9, 10 and 11 on the Grok side). Six files in
+`~/cos/grok-live/apply/`, in the order of settings-20261119.md: chief-lean-20261119.md (re-saves
+cassidy-chief-of-staff-rules and chief-playbook whole; routine heartbeats; new brief and sweep prompts),
+ops-lean-20261119.md, steward-lean-20261119.md and keeper-lean-20261119.md (whole-body re-saves: live matched the kit),
+builder-lean-20261119.md (targeted: live builder-playbook has Cassidy's own #651 edit), then settings-20261119.md
+(Slack and Gmail disconnected, Ask-first rules, Execution to Always allow, in that order). Generated from `grokbot/*.md`
+on Nov 19; if you change a bot file before they're pasted, regenerate them. Supersedes S1 below (the seal lines are in
+the re-saved chief-playbook).
+
 # Grok paste: PENDING 2026-11-17 (cos-run seal)
 
 One paste, in the Chief's chat. It carries only the two `cos-run seal` lines from `grokbot/chief.md`. Until it's

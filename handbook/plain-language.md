@@ -13,7 +13,7 @@ file, and so do the Mac's packets and previews. KEEPER checks a sample of messag
 
 | Thing | Format | Example |
 |---|---|---|
-| A card (issue) | [#n · short name](link) — whose · where it fits | [#767 · Ingredient re-parse](https://github.com/wisecodeai/data-org/issues/767) — your card with Evgeny · November roadmap item, due Tue Nov 25 |
+| A card (issue) | [#n · short name](link) — whose · where it fits | [#767 · Ingredient re-parse](https://github.com/wisecodeai/data-org/issues/767) — your card with Evgeny · November roadmap item, due Wed Nov 25 |
 | A PR | [PR #n · short name](link) — whose · what it waits on | [PR #805 · Intake sweep fix](https://github.com/wisecodeai/data-org/pull/805) — your PR · waiting on David's approval |
 | Another repo's card | [repo #n · short name](link) — whose · where it fits | [food-enrichment #220 · Denominator definition](https://github.com/wisecodeai/food-enrichment/issues/220) — Nicholas's card |
 | A roadmap sheet cell | the Data Roadmap sheet, "row name" row, column name | the Data Roadmap sheet, "Label facts" row, Owner column |
@@ -48,6 +48,6 @@ one card.
 
 Good: I'll fix one more thing in the same change. On the Data Roadmap sheet, the "Ingredient re-parse" row points to
 the wrong card: it names [#778 · Test golden sets](https://github.com/wisecodeai/data-org/issues/778) — your card with
-Melanie, when it should name [#767 · Ingredient re-parse](https://github.com/wisecodeai/data-org/issues/767) — your card
-with Evgeny · November roadmap item, due Tue Nov 25. Both fixes will come to you as one approval.
+Matt, when it should name [#767 · Ingredient re-parse](https://github.com/wisecodeai/data-org/issues/767) — your card
+with Evgeny · November roadmap item, due Wed Nov 25. Both fixes will come to you as one approval.
 What you need to do: nothing yet.

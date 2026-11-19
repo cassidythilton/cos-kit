@@ -1,0 +1,55 @@
+{
+ "_about": "Cassidy's file: the night shift's budget. He changes the numbers; nothing else does. cos-night reads it every time it plans or runs. Money is US dollars; time is minutes of work. Prototypes start at 0 a week; Cassidy sets max_per_week to 2 after a week of clean night-shift mornings (plan rollout step 3).",
+ "per_night": {
+  "usd": 25,
+  "minutes": 180,
+  "max_jobs": 4,
+  "max_large": 1
+ },
+ "per_week": {
+  "usd": 100
+ },
+ "window": {
+  "no_new_jobs_after": "05:00"
+ },
+ "kinds": {
+  "meeting-prep": {
+   "usd": 3,
+   "minutes": 20
+  },
+  "call-follow-through": {
+   "usd": 3,
+   "minutes": 20
+  },
+  "board-cleanup": {
+   "usd": 3,
+   "minutes": 20
+  },
+  "pr-reviews": {
+   "usd": 8,
+   "minutes": 45,
+   "max_prs": 5
+  },
+  "data-answer": {
+   "usd": 5,
+   "minutes": 30
+  },
+  "write-up": {
+   "usd": 6,
+   "minutes": 45
+  },
+  "decision-doc": {
+   "usd": 6,
+   "minutes": 45
+  },
+  "system-fix": {
+   "usd": 6,
+   "minutes": 60
+  },
+  "prototype": {
+   "usd": 12,
+   "minutes": 120,
+   "max_per_week": 0
+  }
+ }
+}

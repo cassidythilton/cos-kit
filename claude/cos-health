@@ -138,7 +138,7 @@ def check_mac_slots(exp, found):
             if fail:
                 found.append(problem(key, f"{what} failed ({hm(due)})", fail[0][:300], "cos-run fix with this error"))
                 continue
-            done = [m for m in msgs if m.startswith("pushed to") or m.startswith("no change")]
+            done = [m for m in msgs if m.startswith("pushed to") or m.startswith("no change") or m.startswith("done:")]
             start = [r for r in after if r.get("msg", "").startswith("start")]
             if start and not done and NOW - start[0]["_t"] > limit:
                 found.append(problem(key, f"{what} started ({hm(due)}) but never finished", f"No result after {int(limit.total_seconds()//60)} minutes.", "cos-run receipt " + slot + "-<date>; then cos-run fix"))

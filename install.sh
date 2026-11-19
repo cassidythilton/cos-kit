@@ -22,7 +22,7 @@ if [[ $SANDBOX -eq 1 ]]; then
   [[ -n "$realhome" && "$HOME" != "$realhome" && "$HOME" != "$realhome/" ]] || { echo "--sandbox needs HOME set to a throwaway folder, not your real home" >&2; exit 64; }
   [[ $SCHEDULE -eq 0 && $UNSCHEDULE -eq 0 && $ONLINE -eq 0 ]] || { echo "--sandbox can't schedule, unschedule or go online" >&2; exit 64; }
 fi
-LA="$HOME/Library/LaunchAgents"; SLOTS="followups pulse reconcile capture week opportunity keeper obligations"
+LA="$HOME/Library/LaunchAgents"; SLOTS="followups pulse reconcile capture week opportunity keeper obligations packet-morning packet-evening night night-report memory-clean"
 
 if [[ $UNSCHEDULE -eq 1 ]]; then
   for s in $SLOTS dashboard zoommirror tcccheck health; do launchctl bootout "gui/$(id -u)/com.cos.$s" 2>/dev/null; rm -f "$LA/com.cos.$s.plist"; done
@@ -80,7 +80,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,claude/lake,claude/codex,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-pr,cos-health,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-pr,cos-health,cos-packet,cos-night,cos-memory,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
@@ -120,7 +120,8 @@ backup_then_install() {  # kit-owned file: keep a backup if the installed copy w
   if [[ -f "$dst" ]] && ! cmp -s "$src" "$dst"; then cp "$dst" "$dst.bak-$(date +%Y%m%d%H%M%S)"; fi
   install -m 644 "$src" "$dst"; }
 for f in rules.md board-standard.md engineering-standard.md system-map.md plain-language.md expected-runs.json; do backup_then_install "$KIT/handbook/$f" "$COS/handbook/$f"; done
-[[ -f "$COS/handbook/standing-approvals.json" ]] || install -m 644 "$KIT/handbook/standing-approvals.json" "$COS/handbook/"   # yours once installed: the kit never overwrites it
+[[ -f "$COS/handbook/standing-approvals.json" ]] || install -m 644 "$KIT/handbook/standing-approvals.json" "$COS/handbook/"
+[[ -f "$COS/handbook/night-budget.json" ]] || install -m 644 "$KIT/handbook/night-budget.json" "$COS/handbook/"   # his file, like standing-approvals   # yours once installed: the kit never overwrites it
 for f in people.md workstreams.md sources.md; do [[ -f "$COS/handbook/$f" ]] || printf '# %s\n\nFill this in. The kit never overwrites it.\n' "${f%.md}" > "$COS/handbook/$f"; done
 touch "$COS/state/corrections.jsonl"
 mkdir -p "$COS/state/ledger"
@@ -1475,6 +1476,8 @@ PL
   fi
 fi
 
+echo "14. Packets, night shift, memory (Nov 19)"
+for tf in test-packet.sh test-night.sh test-memory.sh; do [[ -f "$KIT/claude/tests/$tf" ]] && . "$KIT/claude/tests/$tf"; done
 echo; echo "Result: $ok passed, $bad failed."
 [[ $bad -eq 0 ]] || { echo "Fix the failures above before going further."; exit 1; }
 cat <<'EOF'
