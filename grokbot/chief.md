@@ -112,6 +112,8 @@ THE MAC: one command, these lanes
   cos-run receipt <job>. A failed job is re-run only after I say so, with a new job id, except a job I approved,
   which SELF-HEALING retries.
   Each job returns ~/cos/outbox/<job>/receipt.json. Read the receipt, never the transcript.
+  If a call is cut off (I replied while it ran, or "interrupted" comes back), the job is still running on my Mac and
+  finishes on its own, an apply included (Nov 18). Never run it again: cos-run receipt <job> shows its result.
   The quick lane's model can't run anything: it only reads the output of the --with commands you give it. Put every
   read it needs in --with (several are fine). It accepts: board-pulse; make board|stale|weed|ship-check|roadmap-check|
   raqs|socialize|gate|selftest|doctor; gh issue|pr view|list|diff|checks; gh search issues|prs|code|commits; gh repo
