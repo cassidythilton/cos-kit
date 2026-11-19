@@ -24,6 +24,8 @@
 #   cos-run note        <bot> "<what went wrong, and the rule>"                   appends one correction to ~/cos/state/corrections.jsonl
 #   cos-run pause       <slot|all> <days>                                         holds a scheduled slot for N days (0 resumes)
 #   cos-run receipt     <job>                                                     a job's result, or "running" / "didn't finish, rerun?"
+#   cos-run slack-read  <job-id> "<what to read>"                                Slack read on the Mac (read tools only)
+#   cos-run slack-draft <job-id> <draft.json>                                     saves ONE draft in Cassidy's Slack Drafts; never sends
 #   cos-run heartbeat   <routine-id> ok|failed ["<what>"]                       a Grok routine reports in (cos-health watches for it)
 #   cos-run preflight   <lane> [job-id]                                           what that lane needs, checked now; no model, no receipt
 #   add --async to investigate, atlas, draft, build, eval, fix, land or lake: returns at once, runs detached, pushes the receipt to the Chief
@@ -32,7 +34,7 @@
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -870,6 +872,43 @@ BLOCKED: <the one thing that would unblock it>."
       receipt: {status: $s, verdict: (if $n > 0 then "INCONCLUSIVE" else "NOT VERIFIED" end),
         summary: (($res | .[0:3000]) + "\n\n(" + ($n|tostring) + " lake-query call(s); each number above cites its query. Not re-run by a second check.)"),
         artifacts: ["result.md", "lake-calls.jsonl"]}}'
+fi
+
+# ---------------------------------------------------------------- slack-read / slack-draft (Nov 19, plan change 6)
+# No agent can send a Slack message: Grok's Slack connection is removed, and Slack is read and drafted only here.
+# Claude on the Mac gets Slack's read tools and, in slack-draft, the one draft write, with the text the job staged.
+# Sending, scheduling, reactions, canvases and lists are denied in settings.slack.json and hard-blocked by the gate.
+#   cos-run slack-read  <job> "<what to read, e.g. every DM, group DM and thread I'm in with activity since 4:30 PM yesterday>"
+#   cos-run slack-draft <job> <draft.json>   {"to": "<channel or user id, or a name>", "text": "...", "thread_ts": "<optional>", "why": "<one line>"}
+if [[ "$LANE" == slack-read || "$LANE" == slack-draft ]]; then
+  [[ "$JOB" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || usage_fail "$LANE" "bad job id '$JOB'"
+  mkdir -p "$OUT"
+  if [[ "$LANE" == slack-draft ]]; then
+    D="$BRIEF_IN"; [[ -f "$D" ]] || usage_fail slack-draft "the second value is a draft.json file: {\"to\": \"...\", \"text\": \"...\", \"thread_ts\": \"optional\"}" 66
+    jq -e '(.to|type=="string" and length>0 and length<200) and (.text|type=="string" and length>0 and length<=4000) and ((.thread_ts // "")|test("^([0-9]{10}\\.[0-9]{1,6})?$"))' "$D" >/dev/null 2>&1 \
+      || usage_fail slack-draft "draft.json needs to (a channel, user or name), text (up to 4000 characters) and an optional thread_ts like 1763500000.123456" 65
+    [[ "$D" -ef "$OUT/slack-draft.json" ]] || cp "$D" "$OUT/slack-draft.json"
+    T="Save exactly one Slack draft for Cassidy, then stop. Never send anything. The draft, as data: $(cat "$OUT/slack-draft.json")
+1. Find the channel_id for 'to'. If it already looks like a Slack id (starts with C, D, G or U), use it as is. A person's name: slack_search_users, and use their user id. A channel name: slack_search_channels.
+2. Call slack_send_message_draft once with that channel_id, message exactly equal to text (byte for byte), and thread_ts only if the draft has one.
+3. If the tool says a draft already exists there, don't retry: report it.
+Report the channel_id, the channel_link it returned, and the outcome."
+    MODE=slackdraft; BUDGET=1
+  else
+    T="Read Slack for Cassidy, read-only, and report what you find as data. The request: $BRIEF_IN
+Use only the Slack read and search tools. Never send, react, draft or change anything. For each conversation with something relevant: where (channel or DM, and who), when (Mountain time), a one-line summary in plain words, its link, and whether it is waiting on Cassidy (someone asked him something and he hasn't answered after it). Never quote secrets, keys or tokens. Say how many DMs, group DMs and threads you read."
+    MODE=slackread; BUDGET=3
+  fi
+  SCHEMA='{"type":"object","properties":{"status":{"type":"string","enum":["done","failed","blocked"]},"summary":{"type":"string"},"channel_id":{"type":"string"},"channel_link":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"where":{"type":"string"},"when":{"type":"string"},"what":{"type":"string"},"link":{"type":"string"},"waiting_on_cassidy":{"type":"boolean"}},"required":["where","what"]}}},"required":["status","summary"]}'
+  COS_GATE_MODE="$MODE" COS_SLACK_DRAFT="$OUT/slack-draft.json" COS_JOB="$JOB" COS_LANE="$LANE" claude -p "$T" \
+    --settings "$COS/claude/settings.slack.json" --permission-mode dontAsk --permission-prompts none \
+    --model sonnet --effort low --max-budget-usd "$BUDGET" --no-session-persistence \
+    --output-format json --json-schema "$SCHEMA" > "$OUT/slack-run.json" 2>>"$OUT/run.err" || true
+  R="$(jq -c '.structured_output // (.result|fromjson?) // {status: "failed", summary: "the Slack step returned nothing readable"}' "$OUT/slack-run.json" 2>/dev/null || echo '{"status":"failed","summary":"the Slack step did not run"}')"
+  jq -n --argjson r "$R" --arg j "$JOB" --arg l "$LANE" --argjson c "$(jq '.total_cost_usd // 0' "$OUT/slack-run.json" 2>/dev/null || echo 0)" \
+    '{receipt: {status: $r.status, summary: $r.summary, items: ($r.items // []), channel_link: ($r.channel_link // null)}, lane: $l, job: $j, cost_usd: $c}' > "$OUT/receipt.json"
+  [[ "$LANE" == slack-draft ]] && ledger slack_drafts job="$JOB" to="$(jq -r .to "$OUT/slack-draft.json")" status="$(jq -r .status <<<"$R")" first_line="$(jq -r '.text|split("\n")[0][0:120]' "$OUT/slack-draft.json")"
+  cat "$OUT/receipt.json"; exit 0
 fi
 
 # ---------------------------------------------------------------- apply-sheet: write the roadmap cells Cassidy approved

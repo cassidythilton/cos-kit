@@ -111,7 +111,7 @@ if [[ $SANDBOX -eq 0 ]] && { [[ ! -d "$ZM" ]] || ! cmp -s "$KIT/claude/zoom-mirr
   cp "$KIT/claude/zoom-mirror.applescript" "$ZM/Contents/Resources/" && codesign -f -s - "$ZM" 2>/dev/null
   echo "  ! ZoomMirror.app was (re)built: run  open ~/cos/bin/ZoomMirror.app  once and click Allow for Documents"
 fi
-install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,settings.fix.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
+install -m 644 "$KIT"/claude/{agents.json,receipt.schema.json,settings.investigate.json,settings.draft.json,settings.build.json,settings.sheet.json,settings.fix.json,settings.slack.json,lane.md,build-lane.md,verifier.md} "$COS/claude/"
 install -m 644 "$KIT"/claude/briefs/*.md "$COS/claude/briefs/"
 install -m 644 "$KIT"/evals/*.json "$COS/evals/"
 rm -rf "$COS/builds-template.new" && cp -R "$KIT/builds-template" "$COS/builds-template.new" && rm -rf "$COS/builds-template" && mv "$COS/builds-template.new" "$COS/builds-template"
@@ -197,6 +197,21 @@ got="$(g Write "" pair "$HOME/.claude/skills/cassidy-mode/SKILL.md")"; [[ "$got"
 got="$(g Write "" job "$COS/outbox/x/a.md")"; [[ "$got" == allow ]] && pass "job · allow · writing in the job folder" || fail "job folder write blocked ($got)"
 got="$(printf '{"tool_name":"mcp__claude_ai_Slack__slack_send_message","tool_input":{}}' | COS_GATE_MODE=job "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?)"
 [[ "$got" == 2 ]] && pass "job · block · Slack send" || fail "Slack send not blocked in job mode"
+# No agent sends a message, in any mode (Nov 19): every send-like Slack or mail tool is a hard block, pair mode included.
+mg() { local ti="${3:-}"; [[ -n "$ti" ]] || ti='{}'; printf '{"tool_name":"%s","tool_input":%s}' "$1" "$ti" | COS_LEDGER_OFF=1 COS_GATE_MODE="$2" COS_SLACK_DRAFT="${4:-}" "$COS/claude/gate.sh" >/dev/null 2>&1; echo $?; }
+for t in mcp__claude_ai_Slack__slack_send_message mcp__claude_ai_Slack__slack_schedule_message mcp__claude_ai_Gmail__send_email mcp__claude_ai_Gmail__reply_to_email mcp__x__chat_post_message; do
+  for m in job pair slackdraft slackread; do [[ "$(mg "$t" "$m")" == 2 ]] && pass "$m · block · $t" || fail "$m mode let $t through"; done; done
+SDT="$(mktemp)"; echo '{"to":"D123","text":"Hi Steve, can you approve the app?","thread_ts":""}' > "$SDT"
+[[ "$(mg mcp__claude_ai_Slack__slack_send_message_draft slackdraft '{"channel_id":"D123","message":"Hi Steve, can you approve the app?"}' "$SDT")" == 0 ]] && pass "slackdraft · allow · the staged draft, word for word" || fail "the staged Slack draft was blocked"
+[[ "$(mg mcp__claude_ai_Slack__slack_send_message_draft slackdraft '{"channel_id":"D123","message":"Hi Steve, something else"}' "$SDT")" == 2 ]] && pass "slackdraft · block · a draft with different text" || fail "a changed Slack draft got through"
+[[ "$(mg mcp__claude_ai_Slack__slack_send_message_draft slackread '{"channel_id":"D123","message":"Hi Steve, can you approve the app?"}' "$SDT")" == 2 ]] && pass "slackread · block · any draft" || fail "slack-read could save a draft"
+[[ "$(mg mcp__claude_ai_Slack__slack_send_message_draft job '{"channel_id":"D123","message":"x"}')" == 2 ]] && pass "job · block · a Slack draft outside the Slack lane" || fail "a job saved a Slack draft"
+[[ "$(mg mcp__claude_ai_Slack__slack_read_thread slackread)" == 0 ]] && pass "slackread · allow · reading a thread" || fail "slack-read couldn't read"
+[[ "$(mg mcp__claude_ai_Slack__slack_add_reaction slackread)" == 2 ]] && pass "slackread · block · a reaction" || fail "slack-read could react"
+rm -f "$SDT"
+bad_allow="$(jq -r '.permissions.allow[]?' "$KIT"/claude/settings.*.json | grep -iE '(slack|gmail|mail).*(send|schedule|post|reply)' | grep -viE 'draft$' || true)"
+[[ -z "$bad_allow" ]] && pass "no lane's settings allow sending a message" || fail "a settings file allows a send: $bad_allow"
+jq -e '.permissions.deny | index("mcp__claude_ai_Slack__slack_send_message") and index("mcp__claude_ai_Slack__slack_schedule_message")' "$KIT/claude/settings.slack.json" >/dev/null && pass "the Slack lanes deny send and schedule outright" || fail "settings.slack.json doesn't deny send"
 rm -f /tmp/cos-gate.$$
 # Sheet mode: only the approved cell and value pass.
 SBT="$(mktemp)"; echo '{"spreadsheet":"1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM","writes":[{"tab":"Data Roadmap","row":7,"row_name":"x","col":"D","old":"2026-11-25","new":"2026-11-30"}]}' > "$SBT"
@@ -343,7 +358,7 @@ printf '%s\n' '{"ts":"2026-11-18T12:40:00Z","routine":"chief-morning-brief","sta
 o="$(hc 2026-11-19T17:45:00+00:00 check)"; jq -e '.new | any(test("morning brief didn.t report in"))' <<<"$o" >/dev/null 2>&1 && pass "cos-health: a routine that stops reporting in is a problem" || fail "cos-health missed a silent routine ($o)"
 HOME="$H" COS_LEDGER_DIR="$H/led" "$COS/bin/cos-run" heartbeat chief-morning-brief failed "couldn't read GitHub" >/dev/null 2>&1
 tail -1 "$H/led/heartbeats.jsonl" | grep -q '"routine":"chief-morning-brief".*"status":"failed"' && pass "cos-run heartbeat records a routine's report" || fail "heartbeat didn't record"
-printf '%s\n' '{"ts":"2026-11-18T12:40:00Z","routine":"chief-morning-brief","status":"ok"}' '{"ts":"2026-11-19T12:45:00Z","routine":"chief-morning-brief","status":"failed","note":"x"}' > "$H/led/heartbeats.jsonl"
+printf '%s\n' '{"ts":"2026-11-18T12:40:00Z","routine":"chief-morning-brief","status":"ok"}' '{"ts":"2026-11-19T13:45:00Z","routine":"chief-morning-brief","status":"failed","note":"x"}' > "$H/led/heartbeats.jsonl"
 o="$(hc 2026-11-19T18:00:00+00:00 check)"; jq -e '.new | any(test("morning brief failed"))' <<<"$o" >/dev/null 2>&1 && pass "cos-health: a routine that reports failed is a problem" || fail "cos-health missed a failed routine ($o)"
 o="$(hc 2026-11-19T18:15:00+00:00 check)"; jq -e '.new == []' <<<"$o" >/dev/null 2>&1 && pass "cos-health: an open problem isn't alerted twice" || fail "cos-health alerted the same problem again ($o)"
 for j in qa1 qa2; do echo "{\"receipt\":{\"status\":\"failed\",\"summary\":\"FAILED: the quick-lane model stopped before answering (/x/cos-run: line 10$j: 4242 Killed: 9 agent)\"}}" > "$H/cos/outbox/$j/receipt.json"

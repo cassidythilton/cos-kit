@@ -184,11 +184,12 @@ def check_routines(exp, found):
             got = [b for b in beats if b.get("routine") == r["id"] and due_u - dt.timedelta(minutes=30) <= b["_t"] <= due_u + dt.timedelta(hours=10)]
             key = f"routine:{r['id']}:{due.strftime('%Y%m%d%H%M')}"
             if not got:
+                key += ":missing"
                 found.append(problem(key, f"{r['bot'].upper()}'s {r['what']} didn't report in ({hm(due)})",
                                      "No heartbeat: the routine didn't run, failed before its last step, or its prompt lacks the heartbeat line.",
                                      f"the {r['bot']} Bot checks the routine's last run and fixes it (never pauses it)"))
             elif all(b.get("status") == "failed" for b in got):
-                found.append(problem(key, f"{r['bot'].upper()}'s {r['what']} failed ({hm(due)})", (got[-1].get("note") or "")[:300],
+                found.append(problem(key + ":failed", f"{r['bot'].upper()}'s {r['what']} failed ({hm(due)})", (got[-1].get("note") or "")[:300],
                                      f"the {r['bot']} Bot fixes the routine through cos-run (never pauses it)"))
     known = {r["id"] for r in exp.get("routines", [])} | {w["id"] for w in exp.get("webhooks", [])}
     for b in beats:

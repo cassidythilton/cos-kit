@@ -87,6 +87,30 @@ fi
 dctx_re='(Data-Org-Repos/data-org/(\.worktrees/[^/]+/)?context/|cos/repos/data-org/(\.worktrees/[^/]+/)?context/|cos/data-org-main/context/)'
 if [[ "$tool" =~ ^(Edit|Write|MultiEdit)$ ]] && [[ "$path" =~ $dctx_re ]]; then hard "editing data-org context/ (read-only; file a context-request)"; fi
 
+# ---- HARD (Nov 19): no agent ever sends, schedules, posts or replies with a message, in any mode, pair included.
+# Cassidy sends every message himself, from his own Slack and Gmail drafts. Saving a draft is the only message write.
+if [[ "$tool" == mcp__* ]]; then
+  tl="$(printf '%s' "$tool" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$tl" =~ (slack|gmail|mail|outlook|teams|message|chat) ]] && [[ "$tl" =~ (send|schedule|post|reply|forward|publish|broadcast) ]] && [[ ! "$tl" =~ draft$ ]]; then
+    hard "sending a message ($tool). Agents only save drafts; Cassidy sends"
+  fi
+fi
+
+# ---- Slack modes (cos-run slack-read, slack-draft): read tools only; slack-draft may save exactly the approved draft.
+if [[ "$MODE" == slackread || "$MODE" == slackdraft ]]; then
+  case "$tool" in
+    *Slack__slack_read_*|*Slack__slack_search_*|*Slack__slack_list_user_channels|*Slack__slack_get_reactions|*Slack__slack_list_channel_members) gate_log allow "slack read"; exit 0 ;;
+    *Slack__slack_send_message_draft)
+      [[ "$MODE" == slackdraft && -f "${COS_SLACK_DRAFT:-}" ]] || hard "a Slack draft outside cos-run slack-draft"
+      txt="$(printf '%s' "$input" | jq -r '.tool_input.message // .tool_input.text // ""')"
+      th="$(printf '%s' "$input" | jq -r '.tool_input.thread_ts // ""')"
+      if jq -e --arg t "$txt" --arg h "$th" '.text == $t and ((.thread_ts // "") == $h)' "$COS_SLACK_DRAFT" >/dev/null 2>&1; then gate_log allow "approved slack draft"; exit 0; fi
+      hard "a Slack draft whose text or thread differs from the staged one" ;;
+    Read) exit 0 ;;
+    *) hard "Slack lanes only read Slack and save the one staged draft" ;;
+  esac
+fi
+
 # ---- Sheet mode (cos-run apply-sheet): only the exact cells and values Cassidy approved, by the batch's sha256.
 if [[ "$MODE" == sheet ]]; then
   case "$tool" in
