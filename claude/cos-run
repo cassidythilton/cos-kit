@@ -1215,7 +1215,15 @@ Answer in five lines or less. Cite card numbers, file paths or command lines for
   # started alongside another (the rubric's five at 1:49 AM, q-swat a-g at 10:53 AM): parallel agent runs kill each
   # other. A lock serializes them, and a run killed anyway gets one retry. The wait outlasts the longest quick run
   # (up to 220s, once 514s, in the ledger). At 180s a job queued behind a long read gave up and started beside it.
-  QL="$COS/state/quick-agent.lock"; for i in $(seq 1 600); do shlock -f "$QL" -p $$ && break; sleep 1; done
+  # No lock, no model: a job still waiting after that (a deep queue) fails closed with the data, never runs beside one.
+  QL="$COS/state/quick-agent.lock"; QW="${COS_LOCK_WAIT:-600}"; QGOT=0
+  for i in $(seq 1 "$QW"); do shlock -f "$QL" -p $$ && { QGOT=1; break; }; sleep 1; done
+  if [[ $QGOT -ne 1 ]]; then
+    jq -n --arg j "$JOB" --arg w "$QW" --rawfile ctx "$OUT/context.txt" \
+      '{lane: "quick", job: $j, receipt: {status: "failed",
+        summary: ("FAILED: quick lane busy. Another quick model held the lock for " + $w + "s, so the model never ran (two at once kill each other). Send it again. The command output follows; it is the real data, not an empty result.\n\n" + ($ctx | .[0:12000]))}}' > "$OUT/receipt.json"
+    finish; exit 0
+  fi
   for try in 1 2; do
     (cd "$IN" && agent -p --mode ask --trust --model composer-2.5 --output-format json "$PROMPT") > "$OUT/run.json" 2> "$OUT/run.err" || true
     jq -e '(.result // "") | length > 0' "$OUT/run.json" >/dev/null 2>&1 && break

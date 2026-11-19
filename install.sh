@@ -433,6 +433,15 @@ printf '#!/bin/bash\nmkdir "$HOME/cos/state/agent-running" 2>/dev/null || { echo
 QP=(); for j in qk2 qk3; do HOME="$T" "$COS/bin/cos-run" quick "$j" "x" --with "git log -1 --oneline" --in "$T" >/dev/null 2>&1 & QP+=($!); done; wait "${QP[@]}"
 jq -s -e 'length == 2 and all(.[]; .receipt.status == "done")' "$T/cos/outbox/qk2/receipt.json" "$T/cos/outbox/qk3/receipt.json" >/dev/null 2>&1 \
   && pass "quick lane: two lookups at once both answer (one model at a time)" || fail "quick lane: parallel lookups killed each other: $(jq -c .receipt.status "$T/cos/outbox/qk2/receipt.json" "$T/cos/outbox/qk3/receipt.json" 2>&1 | tr '\n' ' ')"
+# A deep queue: a live quick model holds the lock past the wait. The job fails closed ("quick lane busy", with its data),
+# never starts a model beside the one running, and leaves the lock alone.
+printf '#!/bin/bash\ntouch "$HOME/cos/state/agent-ran"; echo "{\\"result\\":\\"ok\\",\\"session_id\\":\\"s\\"}"\n' > "$T/cos/bin/agent"; chmod +x "$T/cos/bin/agent"
+sleep 60 & LIVE=$!; echo "$LIVE" > "$T/cos/state/quick-agent.lock"; rm -f "$T/cos/state/agent-ran"
+COS_LOCK_WAIT=2 HOME="$T" "$COS/bin/cos-run" quick qk4 "x" --with "git log -1 --oneline" --in "$T" >/dev/null 2>&1
+jq -e '.receipt.status == "failed" and (.receipt.summary | test("quick lane busy") and test("not an empty result"))' "$T/cos/outbox/qk4/receipt.json" >/dev/null 2>&1 \
+  && [[ ! -e "$T/cos/state/agent-ran" && "$(cat "$T/cos/state/quick-agent.lock")" == "$LIVE" ]] \
+  && pass "quick lane: no lock after the wait, no model (fails closed: quick lane busy)" || fail "quick lane ran a model without the lock, or left an unclear receipt"
+kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null; rm -f "$T/cos/state/quick-agent.lock" "$T/cos/state/agent-ran"
 rm -f "$T/cos/bin/agent"; mv "$T/cos/bin/gh" "$T/cos/bin/gh.stub" 2>/dev/null
 printf '#!/bin/bash\necho "Post \\"https://api.github.com/graphql\\": dial tcp 1.2.3.4:443: i/o timeout" >&2; exit 1\n' > "$T/cos/bin/gh"; chmod +x "$T/cos/bin/gh"
 HOME="$T" COS_GH_WAITS=0,0,0 PATH="$T/cos/bin:$PATH" "$COS/bin/cos-gh-scan" "$T/cos/outbox/gs1" >/dev/null 2>&1
