@@ -192,6 +192,18 @@ ALL_ARGS=("$@")
 for a in "$@"; do [[ "$a" == --help || "$a" == -h ]] && { lane_help "${1:-}"; exit 0; }; done
 LANE="${1:-}"
 [[ " $LANES_ALL " == *" $LANE "* && -n "$LANE" ]] || { [[ -n "$LANE" ]] && echo "unknown lane: $LANE" >&2; lane_help ""; exit 64; }
+# Survive an interrupted call (Nov 18). When Cassidy replies while a call runs, Grok stops the call. So every lane that
+# does work runs in its own session and this process only waits for it: a stop ends the wait, never the job. An apply
+# finishes its whole batch, a quick read finishes and keeps its output. Fast lanes and --async (already detached) skip it.
+if [[ -z "${COS_DETACHED:-}" && " ${ALL_ARGS[*]} " != *" --async "* && ! "$LANE" =~ ^(receipt|preview|note|pause|preflight)$ ]]; then
+  RJ="${2:-}"; [[ "$RJ" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || RJ="nojob"
+  RD="$HOME/cos/state/runs"; mkdir -p "$RD"; F="$RD/$LANE-$RJ"
+  COS_DETACHED=1 nohup perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$0" "$@" > "$F.out" 2> "$F.err" < /dev/null &
+  c=$!; echo "$c" > "$F.pid"
+  trap 'echo "cos-run: this call was interrupted, but the $LANE job keeps running on the Mac and finishes on its own. Read its result with: cos-run receipt $RJ (never run it again)" >&2; exit 130' INT TERM HUP
+  wait "$c"; rc=$?
+  cat "$F.out"; cat "$F.err" >&2; rm -f "$F.pid"; exit "$rc"
+fi
 # Tier-0 GitHub writes live in one small script with no model. It writes its own ledger rows and receipts.
 [[ "$LANE" == gh ]] && exec "$HOME/cos/bin/cos-gh" "${@:2}"
 JOB="${2:-}"; [[ -n "$JOB" ]] || usage_fail "$LANE" "missing the job id"
@@ -362,6 +374,19 @@ if [[ "$LANE" == "receipt" ]]; then
         summary: ("Didn'"'"'t finish: the job stopped before writing a receipt (the Mac may have restarted, or the job was killed). Rerun?" + (if $again != "" then " " + $again else "" end))},
         rerun: (if $again != "" then $again else null end), log_tail: $tail}'; exit 1
   fi
+  # A call that was interrupted while it waited (see "Survive an interrupted call"): running, or what it printed.
+  for f in "$COS"/state/runs/*-"$JOB".pid; do
+    [[ -f "$f" ]] && kill -0 "$(cat "$f")" 2>/dev/null && { jq -n --arg j "$JOB" --arg l "$(basename "$f" "-$JOB.pid")" '{job: $j, lane: $l, status: "running", note: "Still finishing after the call was interrupted. Ask again in a minute; never run it again."}'; exit 0; }
+  done
+  for f in "$COS"/state/runs/*-"$JOB".out; do
+    [[ -f "$f" ]] || continue; l="$(basename "$f" "-$JOB.out")"
+    [[ -f "${f%.out}.pid" ]] || continue  # the waiter cleaned up: it already showed this output
+    rm -f "${f%.out}.pid"
+    jq -n --arg j "$JOB" --arg l "$l" --arg o "$(tail -c 6000 "$f")" --arg e "$(tail -c 1500 "${f%.out}.err" 2>/dev/null)" \
+      '{job: $j, lane: $l, status: "finished after an interrupted call", output: $o, errors: $e}'
+    [[ "$l" == apply && -f "$D/apply-receipt.json" ]] && cat "$D/apply-receipt.json"
+    exit 0
+  done
   [[ -f "$D/receipt.json" ]] && { cat "$D/receipt.json"; exit 0; }
   jq -n --arg j "$JOB" '{job: $j, status: "not found"}'; exit 66
 fi
