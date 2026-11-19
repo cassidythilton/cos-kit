@@ -5,6 +5,11 @@ You edit one file, `apps/data-dashboard/briefing.yaml`, in this draft worktree (
 `cassidy/732-data-dashboard-app`). Cassidy Hilton (he/him) reviews and approves it. You never approve, publish, commit
 for him or push: the kit stages the push, and nothing leaves the Mac until his yes.
 
+Publishing happens in Cassidy's dashboard session, not here: it applies your diff, runs the three checks (YAML parse,
+`build.py --verdicts-only`, the preview), and pushes only on his word. The live page reads `payload.json`, which only the
+`--verdicts-only` rebuild regenerates, and it shows a briefing only when `status: approved`. A push to the branch
+deploys the live page, so nothing here is ever committed for him or pushed.
+
 ## Who reads it, and why it matters
 - Primary reader: Peter (CEO). He holds the data org accountable for better data coverage. In one minute he wants
   what's working, what's not, what we're doing about it, and what's next. Then he drills into the detail.
