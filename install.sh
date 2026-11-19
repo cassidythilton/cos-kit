@@ -267,7 +267,7 @@ cos-link sub wisecodeai/data-org#654 @1
 cos-link blocked-by @1 wisecodeai/food-enrichment#220
 AP
 S2="$(shasum -a 256 "$T/cos/outbox/t2/apply.sh" | cut -d' ' -f1)"
-echo "apply $S2" >> "$T/cos/outbox/t2/.previewed"; HOME="$T" "$COS/bin/cos-run" apply t2 "$S2" --in "$T" >/dev/null 2>&1
+echo "apply $S2" >> "$T/cos/outbox/t2/.previewed"; HOME="$T" "$COS/bin/cos-run" apply t2 "$S2" --tier2 --in "$T" >/dev/null 2>&1
 L2="$T/cos/outbox/t2/applied.log"
 grep -q 'URL=https://github.com/wisecodeai/data-org/issues/999' "$L2" 2>/dev/null && grep -q 'CARD=999 FIELD' "$L2" && grep -q 'stub sub wisecodeai/data-org#654 wisecodeai/data-org#999' "$L2" && grep -q 'stub blocked-by wisecodeai/data-org#999 wisecodeai/food-enrichment#220' "$L2" \
   && pass "apply creates a card, then boards, sets and links it as @1" || fail "apply create/link batch (see $L2)"
@@ -275,6 +275,10 @@ grep -q 'URL=https://github.com/wisecodeai/data-org/issues/999' "$L2" 2>/dev/nul
 mkdir -p "$T/cos/outbox/t2b"; echo "cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2" > "$T/cos/outbox/t2b/apply.sh"; S2b="$(shasum -a 256 "$T/cos/outbox/t2b/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t2b "$S2b" --in "$T" >/dev/null 2>&1; [[ $? -eq 67 && ! -e "$T/cos/outbox/t2b/applied.log" ]] && pass "apply refuses a batch nobody previewed" || fail "apply ran an unpreviewed batch"
 cp "$COS/bin/cos-gh" "$T/cos/bin/" 2>/dev/null; HOME="$T" COS_PLAIN_NO_TITLES=1 "$COS/bin/cos-run" preview t2b >/dev/null 2>&1; HOME="$T" "$COS/bin/cos-run" apply t2b "$S2b" --in "$T" >/dev/null 2>&1; [[ -s "$T/cos/outbox/t2b/applied.log" ]] && pass "apply runs the batch after cos-run preview showed it" || fail "apply refused a previewed batch"
+# One yes ends it (Nov 19): only a tier-2 batch (merge, close, approval) needs --tier2, and Grok asks once more for that.
+mkdir -p "$T/cos/outbox/t2c"; echo "gh pr merge 720 --repo wisecodeai/data-org --squash" > "$T/cos/outbox/t2c/apply.sh"; S2c="$(shasum -a 256 "$T/cos/outbox/t2c/apply.sh" | cut -d' ' -f1)"; echo "apply $S2c" > "$T/cos/outbox/t2c/.previewed"
+HOME="$T" "$COS/bin/cos-run" apply t2c "$S2c" --in "$T" >/dev/null 2>&1; [[ $? -eq 65 && ! -e "$T/cos/outbox/t2c/applied.log" ]] && pass "a merge batch needs --tier2 (one more tap)" || fail "a merge ran without --tier2"
+HOME="$T" COS_PLAIN_NO_TITLES=1 "$COS/bin/cos-run" preview t2c 2>/dev/null | grep -q -- "--tier2" && pass "the preview's on_yes carries --tier2 for a merge batch" || fail "preview didn't mark the tier-2 batch"
 echo 'gh issue create --repo someone/else --title "x" --body-file /tmp/x.md' > "$T/cos/outbox/t3/apply.sh"; S3="$(shasum -a 256 "$T/cos/outbox/t3/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t3 "$S3" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t3/applied.log" ]] && pass "apply refuses a card outside wisecodeai or a body outside the job folder" || fail "apply created a card it shouldn't"
 # PR work on approval: a comment-only review, an approval, a merge and an issue label, each from the job folder.
@@ -290,7 +294,7 @@ gh issue edit 767 --repo wisecodeai/data-org --title "Re-parse ingredient lists 
 cos-link unblock wisecodeai/data-org#767 wisecodeai/data-org#728
 AP
 S5="$(shasum -a 256 "$T/cos/outbox/t5/apply.sh" | cut -d' ' -f1)"
-echo "apply $S5" >> "$T/cos/outbox/t5/.previewed"; HOME="$T" "$COS/bin/cos-run" apply t5 "$S5" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^\$ \(gh\|cos-link\)' "$T/cos/outbox/t5/applied.log" 2>/dev/null)" == 8 ]] \
+echo "apply $S5" >> "$T/cos/outbox/t5/.previewed"; HOME="$T" "$COS/bin/cos-run" apply t5 "$S5" --tier2 --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^\$ \(gh\|cos-link\)' "$T/cos/outbox/t5/applied.log" 2>/dev/null)" == 8 ]] \
   && pass "apply runs approved PR reviews, comments, a merge, issue edits (labels, title, body), a link removal and a review request" || fail "apply refused an approved PR write"
 mkdir -p "$T/cos/outbox/t8"; echo 'gh issue edit 767 --repo wisecodeai/data-org --body-file /tmp/x.md' > "$T/cos/outbox/t8/apply.sh"; S8="$(shasum -a 256 "$T/cos/outbox/t8/apply.sh" | cut -d' ' -f1)"
 HOME="$T" "$COS/bin/cos-run" apply t8 "$S8" --in "$T" >/dev/null 2>&1; [[ $? -ne 0 && ! -e "$T/cos/outbox/t8/applied.log" ]] && pass "apply refuses a new issue body from outside the job folder" || fail "apply took a body from outside the job folder"
@@ -302,7 +306,7 @@ printf '#!/bin/bash\necho "stub $*"\n' > "$T/cos/bin/cos-pr"; chmod +x "$T/cos/b
 mkdir -p "$T/cos/outbox/t9"; echo "Superseded by #594; its issue is closed." > "$T/cos/outbox/t9/why.md"
 printf 'cos-pr close wisecodeai/data-org#453 %s %s\ncos-pr draft wisecodeai/data-org-notebook#3 %s\ncos-pr reopen wisecodeai/data-org#453\n' "$H40" "$T/cos/outbox/t9/why.md" "$H40" > "$T/cos/outbox/t9/apply.sh"
 S9="$(shasum -a 256 "$T/cos/outbox/t9/apply.sh" | cut -d' ' -f1)"
-echo "apply $S9" >> "$T/cos/outbox/t9/.previewed"; HOME="$T" "$COS/bin/cos-run" apply t9 "$S9" --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^stub \(close\|draft\|reopen\)' "$T/cos/outbox/t9/applied.log" 2>/dev/null)" == 3 ]] \
+echo "apply $S9" >> "$T/cos/outbox/t9/.previewed"; HOME="$T" "$COS/bin/cos-run" apply t9 "$S9" --tier2 --in "$T" >/dev/null 2>&1; [[ "$(grep -c '^stub \(close\|draft\|reopen\)' "$T/cos/outbox/t9/applied.log" 2>/dev/null)" == 3 ]] \
   && pass "apply runs an approved cos-pr close, draft and reopen" || fail "apply refused an approved cos-pr line"
 for badline in "gh pr close 453 --repo wisecodeai/data-org" "gh pr close 453 --repo wisecodeai/data-org --delete-branch" \
   "cos-pr close wisecodeai/data-org#453 $H40 /tmp/why.md" "cos-pr close wisecodeai/data-org#453 $H40 $T/cos/outbox/t9/why.md --delete-branch" \
@@ -318,7 +322,7 @@ HOME="$T" "$COS/bin/cos-run" apply t11 "$S11" --in "$T" >/dev/null 2>&1; [[ $? -
 mkdir -p "$T/cos/outbox/t12i"; printf '#!/bin/bash\nsleep 2; echo "stub $*" >> "%s/linked"\n' "$T" > "$T/cos/bin/cos-link"; chmod +x "$T/cos/bin/cos-link"
 printf 'cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2\ncos-link sub wisecodeai/data-org#1 wisecodeai/data-org#3\n' > "$T/cos/outbox/t12i/apply.sh"
 S12="$(shasum -a 256 "$T/cos/outbox/t12i/apply.sh" | cut -d' ' -f1)"
-echo "apply $S12" >> "$T/cos/outbox/t12i/.previewed"; HOME="$T" perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$COS/bin/cos-run" apply t12i "$S12" --in "$T" >/dev/null 2>"$T/t12.err" &
+echo "apply $S12" >> "$T/cos/outbox/t12i/.previewed"; HOME="$T" perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' "$COS/bin/cos-run" apply t12i "$S12" --tier2 --in "$T" >/dev/null 2>"$T/t12.err" &
 w=$!; sleep 1; kill -TERM -- -"$w" 2>/dev/null; wait "$w" 2>/dev/null
 for i in $(seq 1 30); do HOME="$T" "$COS/bin/cos-run" receipt t12i 2>/dev/null | grep -q '"running"' || break; sleep 0.5; done
 [[ "$(grep -c '^stub sub' "$T/linked" 2>/dev/null)" == 2 && -s "$T/cos/outbox/t12i/apply-receipt.json" ]] && pass "an interrupted apply call still finishes its whole batch" || fail "an interrupted apply stopped part way (see $T/linked)"
@@ -401,12 +405,12 @@ cp "$COS/bin/cos-ledger" "$T/cos/bin/"
 mkdir -p "$T/cos/outbox/t12" "$T/cos/outbox/t13" "$T/cos/outbox/t14"; echo "new text" > "$T/cos/outbox/t12/c.md"; echo "new text" > "$T/cos/outbox/t13/c.md"
 echo "newer text" > "$T/cos/outbox/t12/c2.md"; U12="gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@$T/cos/outbox/t12/comment-111"
 printf '%s\n' "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@$T/cos/outbox/t12/c.md" "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@$T/cos/outbox/t12/c2.md" > "$T/cos/outbox/t12/apply.sh"; S12="$(shasum -a 256 "$T/cos/outbox/t12/apply.sh" | cut -d' ' -f1)"
-echo "apply $S12" >> "$T/cos/outbox/t12/.previewed"; HOME="$T" COS_LEDGER_DIR="$T/led" "$COS/bin/cos-run" apply t12 "$S12" --in "$T" >/dev/null 2>&1
+echo "apply $S12" >> "$T/cos/outbox/t12/.previewed"; HOME="$T" COS_LEDGER_DIR="$T/led" "$COS/bin/cos-run" apply t12 "$S12" --tier2 --in "$T" >/dev/null 2>&1
 [[ "$(cat "$T/cos/outbox/t12/comment-111.before.md" 2>/dev/null)" == "old text" && "$(cat "$T/cos/outbox/t12/comment-111.before-2.md" 2>/dev/null)" == "new text" ]] && grep -q "comments/111 -F body=@$T/cos/outbox/t12/c2.md" "$T/patch.log" 2>/dev/null \
   && jq -se --arg a "$U12.before.md" --arg b "$U12.before-2.md" 'map(select(.kind == "comment-edit") | .undo) == [$a, $b]' "$T/led/applies.jsonl" >/dev/null 2>&1 \
   && pass "apply replaces Cassidy's own comment, saves the old text and ledgers the undo (twice in one batch)" || fail "apply comment replace (see $T/cos/outbox/t12/applied.log)"
 echo "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/222 -F body=@$T/cos/outbox/t13/c.md" > "$T/cos/outbox/t13/apply.sh"; S13="$(shasum -a 256 "$T/cos/outbox/t13/apply.sh" | cut -d' ' -f1)"
-echo "apply $S13" >> "$T/cos/outbox/t13/.previewed"; HOME="$T" COS_LEDGER_DIR="$T/led" "$COS/bin/cos-run" apply t13 "$S13" --in "$T" >/dev/null 2>&1
+echo "apply $S13" >> "$T/cos/outbox/t13/.previewed"; HOME="$T" COS_LEDGER_DIR="$T/led" "$COS/bin/cos-run" apply t13 "$S13" --tier2 --in "$T" >/dev/null 2>&1
 ! grep -q "comments/222" "$T/patch.log" 2>/dev/null && grep -q "^FAILED: the comment must be cassidythilton's" "$T/cos/outbox/t13/applied.log" 2>/dev/null \
   && pass "apply refuses to replace someone else's comment" || fail "apply replaced a comment that isn't Cassidy's"
 echo "gh api -X PATCH repos/wisecodeai/data-org/issues/comments/111 -F body=@/tmp/x.md" > "$T/cos/outbox/t14/apply.sh"; S14="$(shasum -a 256 "$T/cos/outbox/t14/apply.sh" | cut -d' ' -f1)"
@@ -767,7 +771,7 @@ cp "$COS/bin/cos-push-draft" "$T/cos/bin/"
 HOME="$T" "$COS/bin/cos-run" draft dp1 "Edit the PR" --base cassidy/pr >/dev/null 2>&1
 DS="$(jq -r .draft.sha256 "$T/cos/outbox/dp1/receipt.json" 2>/dev/null)"; BS="$(jq -r .batch.sha256 "$T/cos/outbox/dp1/receipt.json" 2>/dev/null)"
 grep -qx "cos-push-draft dp1 $DS" "$T/cos/outbox/dp1/apply.sh" 2>/dev/null && pass "draft on a cassidy/ branch stages its push with the diff's sha256" || fail "draft didn't stage its push"
-echo "apply $BS" >> "$T/cos/outbox/dp1/.previewed"; HOME="$T" "$COS/bin/cos-run" apply dp1 "$BS" --in "$T" >/dev/null 2>&1
+echo "apply $BS" >> "$T/cos/outbox/dp1/.previewed"; HOME="$T" "$COS/bin/cos-run" apply dp1 "$BS" --tier2 --in "$T" >/dev/null 2>&1
 [[ "$(git -C "$T/origin.git" log -1 --format=%s cassidy/pr)" == "Edit the PR" ]] && pass "the approved batch pushes the draft onto the PR branch (fast-forward)" || fail "the approved push didn't reach the branch"
 HOME="$T" "$COS/bin/cos-run" draft dp2 "Edit again" --base cassidy/pr >/dev/null 2>&1
 echo tampered >> "$T/cos/repos/data-org/.worktrees/cos-dp2/doc.md"; git -C "$T/cos/repos/data-org/.worktrees/cos-dp2" commit -qam t 2>/dev/null

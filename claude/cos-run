@@ -303,7 +303,7 @@ COS="$HOME/cos"; REPO="$COS/repos/data-org"; MAIN="$COS/data-org-main"; NBREPO="
 ZOOM=""; for z in "$COS/zoom" "$HOME/Documents/Zoom"; do [[ -d "$z" && -r "$z" ]] && { ZOOM="$z"; break; }; done
 # Best-effort. A ledger failure must not change the lane's exit code.
 ledger() { "$HOME/cos/bin/cos-ledger" "$@" >/dev/null 2>&1 || true; }
-IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0; BASE=""; LAKE_ENV="dev"; SCAN_STATE=""; DOC=""; DOC_CARD=""
+IN=""; RESUME=(); WITH=(); SLUG=""; BUILDS="$HOME/builds"; ASYNC=0; TIER2=0; BASE=""; LAKE_ENV="dev"; SCAN_STATE=""; DOC=""; DOC_CARD=""
 while [[ $# -gt 0 ]]; do
   [[ "$1" =~ ^--(in|base|resume|with|slug|env|state|doc|card|from)$ && $# -lt 2 ]] && usage_fail "$LANE" "$1 needs a value"
   case "$1" in
@@ -321,6 +321,7 @@ while [[ $# -gt 0 ]]; do
     --slug) SLUG="$2"; shift 2 ;;
     --env) LAKE_ENV="$2"; shift 2; [[ "$LAKE_ENV" =~ ^(dev|uat|prod)$ ]] || usage_fail "$LANE" "--env is dev, uat or prod" ;;
     --async) ASYNC=1; shift ;;
+    --tier2) [[ "$LANE" == apply ]] || usage_fail "$LANE" "--tier2 is only for apply"; TIER2=1; shift ;;
     --from) [[ "$2" =~ ^[a-z0-9][a-z0-9-]{0,60}$ ]] || usage_fail "$LANE" "--from is the routine that started this call, as in handbook/expected-runs.json"
             export COS_ROUTINE="$2"; shift 2 ;;
     *) usage_fail "$LANE" "unknown option: $1" ;;
@@ -800,7 +801,9 @@ if [[ "$LANE" == preview ]]; then
   RES='{}'
   if [[ -f "$P/apply.sh" ]]; then
     S="$(shasum -a 256 "$P/apply.sh" | cut -d' ' -f1)"
-    RES="$(jq --argjson b "$("$COS/bin/cos-gh" "$JOB" plain "$P/apply.sh")" --arg y "cos-run apply $JOB $S" '. + {github: ($b + {on_yes: $y})}' <<<"$RES")"
+    PLAIN="$("$COS/bin/cos-gh" "$JOB" plain "$P/apply.sh")"
+    Y="cos-run apply $JOB $S"; [[ "$(jq -r '.highest_tier' <<<"$PLAIN")" == 2 ]] && Y="$Y --tier2"
+    RES="$(jq --argjson b "$PLAIN" --arg y "$Y" '. + {github: ($b + {on_yes: $y})}' <<<"$RES")"
     echo "apply $S" >> "$P/.previewed"
   fi
   if [[ -f "$P/sheet.json" ]]; then
@@ -1106,6 +1109,12 @@ if [[ "$LANE" == "apply" ]]; then
   [[ $n -le 40 ]] || { echo "refusing: $n writes in one batch (max 40)" >&2; exit 65; }
   # Shown first (Nov 19): a batch runs only after cos-run preview showed it in plain words, at this exact sha256.
   grep -qx "apply $SHA" "$OUT/.previewed" 2>/dev/null || { echo "refusing: show Cassidy this batch first with cos-run preview $JOB, then use its on_yes" >&2; ledger applies job="$JOB" sha="$SHA" status=refused why=not-previewed; exit 67; }
+  # One yes is the end of it (Nov 19), except tier 2: a batch with a merge, close, approval, issue-body rewrite or
+  # promote runs only with --tier2, which Grok's Ask-first rule stops for one more tap. Everything else runs on his yes.
+  HT="$(COS_PLAIN_NO_TITLES=1 "$COS/bin/cos-gh" "$JOB" plain "$SCRIPT" 2>/dev/null | jq -r '.highest_tier // 2' 2>/dev/null || echo 2)"
+  if [[ "$HT" == 2 && $TIER2 -ne 1 ]]; then
+    echo "refusing: this batch has a merge, close, approval or other tier-2 line. Run it as: cos-run apply $JOB $SHA --tier2" >&2; exit 65
+  fi
   STATUS=done; ok=0; CREATED=()
   cd "$IN"
   while IFS= read -r line || [[ -n "$line" ]]; do
