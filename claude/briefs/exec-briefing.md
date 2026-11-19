@@ -34,12 +34,13 @@ for him or push: the kit stages the push, and nothing leaves the Mac until his y
   board update and the offsite).
 - Slack, read only, with the Slack read tools: #data-team (C0BMLSDDNDT), the dashboard group (C0CG1MNG5MH), the V1 and
   available-foods group (C0C6EF4FX39), the AWS group (C0CJ44VFBAA). Never post, react or draft.
-- Call transcripts in ~/cos/zoom/ (the Mac's mirror of his Zoom folder): this week's files, by modified date. Cite them
+- Call transcripts in ~/cos/zoom/ (the Mac's mirror of his Zoom folder): the last seven days' files, by modified date. Cite them
   by title and timestamp, and never quote more than a few words.
 
 ## What to write
 Edit only these keys in `briefing.yaml`:
-- `week_of`: the Monday of this week, as 'YYYY-MM-DD', quoted.
+- `week_of`: the Monday the briefing is for (the day it runs, normally a Monday), as 'YYYY-MM-DD', quoted. The items cover
+  the seven days before it.
 - `drafted_by`: "Claude, from <your sources>".
 - `approved_by: null` and `status: draft`. Always. Cassidy flips them himself.
 - `working`, `not_working`, `next_two_weeks`: 2 to 5 items each. Each item has `text` and `source`, plus these flags:

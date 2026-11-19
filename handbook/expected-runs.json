@@ -166,9 +166,9 @@
    "bot": "chief",
    "what": "the weekly exec briefing draft",
    "days": [
-    "fri"
+    "mon"
    ],
-   "time": "11:00",
+   "time": "06:15",
    "grace": 90
   }
  ],
