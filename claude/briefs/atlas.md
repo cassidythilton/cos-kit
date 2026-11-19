@@ -1,6 +1,6 @@
 Task: Agent Atlas lookup. Cassidy named a past chat, agent or project. Find it and report on it, read-only.
 
-Use cos-atlas, his read-only CLI over the Agent Atlas index (~/Documents/Cursor Projects/agent-atlas/, refreshed every
+Use cos-atlas, his read-only CLI (call it exactly as ~/cos/bin/cos-atlas, as below; other spellings of the path are refused) over the Agent Atlas index (~/Documents/Cursor Projects/agent-atlas/, refreshed every
 10 minutes while the app runs). It's the same tool his Claude Code and Cursor agents use (~/.claude/skills/agent-atlas).
   ~/cos/bin/cos-atlas find <words> [--days N]      chats by name, project or branch; falls back to full history
   ~/cos/bin/cos-atlas show <id|words>              where, when, stats, commits, overview, resume command, transcript

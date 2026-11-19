@@ -4,6 +4,9 @@
   cos-obligations            collect and print the ledger (read-only)
   cos-obligations --act      collect, then do the standing-approved work and stage the rest
   cos-obligations --selftest check the policy file and the standing-action patterns (no network)
+  cos-obligations --done <id or repo#n> "<how>"   Cassidy finished it (in a chat): closed everywhere, and it comes
+                             back only if something new happens after now (a new ask, a new commit to review)
+  cos-obligations --list     the open items in plain words, checked live just now (what a brief shows; never a count alone)
 
 Run by cos-sched on workdays. Never by a bot, never inside a job (the gate blocks it there).
 
@@ -26,6 +29,7 @@ LEDGER = os.path.join(STATE, 'obligations.json')
 LOG = os.path.join(STATE, 'obligations-log.jsonl')
 POLICY = os.path.join(COS, 'handbook', 'standing-approvals.json')
 VETO = os.path.join(STATE, 'obligations-veto.json')
+DONE = os.path.join(STATE, 'obligations-done.json')   # Nov 19: done in a chat is done everywhere
 NOTICE_HOURS = 20          # a close is announced one run-day before it happens
 MAIN = os.path.join(COS, 'data-org-main')
 OUTBOX = os.path.join(COS, 'outbox')
@@ -91,7 +95,7 @@ def collect():
                  '--json', 'number,repository,title,url,updatedAt,author'):
         repo = pr['repository']['nameWithOwner']; n = pr['number']
         head = gh('pr', 'view', str(n), '--repo', repo, '--json', 'headRefOid')['headRefOid']
-        if f'review:{repo}#{n}' in vetoed():
+        if f'review:{repo}#{n}' in vetoed() or suppressed(f'review:{repo}#{n}', head=head):
             continue
         items[f'review:{repo}#{n}'] = dict(kind='review', repo=repo, number=n, title=pr['title'], url=pr['url'],
             author=pr['author']['login'], head=head, owner='OPS', auto='pr_comment_review',
@@ -124,12 +128,31 @@ def collect():
         comments = gh('api', f'repos/{repo}/issues/{n}/comments?per_page=100')
         mine = [c['created_at'] for c in comments if c['user']['login'] == ME]
         asks = [c for c in comments if c['user']['login'] != ME and f'@{ME}' in (c.get('body') or '')]
-        if asks and (not mine or asks[-1]['created_at'] > max(mine)):
+        if asks and (not mine or asks[-1]['created_at'] > max(mine)) and not suppressed(f'reply:{repo}#{n}', newest_at=asks[-1]['created_at']):
             a = asks[-1]
             items[f'reply:{repo}#{n}'] = dict(kind='reply', repo=repo, number=n, title=it['title'], url=a['html_url'],
                 asked_by=a['user']['login'], asked_at=a['created_at'], owner='OPS', auto=None,
                 closes_when='Cassidy comments after the mention')
     return items
+
+
+def done_marks():
+    try:
+        return json.load(open(DONE))
+    except Exception:
+        return {}
+
+
+def suppressed(oid, newest_at=None, head=None):
+    """Closed by Cassidy in a chat. It comes back only with something new: an ask after he closed it, or a new commit."""
+    d = done_marks().get(oid)
+    if not d:
+        return False
+    if newest_at and newest_at > d.get('at', ''):
+        return False
+    if head and d.get('head') and head != d['head']:
+        return False
+    return True
 
 
 def vetoed():
@@ -266,6 +289,45 @@ def main():
             print('veto id looks like close:wisecodeai/data-org#423', file=sys.stderr); sys.exit(64)
         v = vetoed(); v.add(oid); os.makedirs(STATE, exist_ok=True); json.dump(sorted(v), open(VETO, 'w'), indent=1)
         log('veto', id=oid); print(f'vetoed {oid}'); sys.exit(0)
+    if '--done' in args:
+        ref = args[args.index('--done') + 1] if len(args) > args.index('--done') + 1 else ''
+        how = args[args.index('--done') + 2] if len(args) > args.index('--done') + 2 else ''
+        m = re.match(r'^(?:(close|review|reply):)?(?:wisecodeai/)?([A-Za-z0-9._-]+)#(\d+)$', ref)
+        if not m or not how.strip():
+            print('usage: cos-obligations --done reply:wisecodeai/data-org#700 "answered David in the thread" (or data-org#700 for every kind)', file=sys.stderr); sys.exit(64)
+        kinds = [m.group(1)] if m.group(1) else ['close', 'review', 'reply']
+        repo = f'wisecodeai/{m.group(2)}'; n = m.group(3)
+        try:
+            cur = json.load(open(LEDGER)).get('items', {})
+        except Exception:
+            cur = {}
+        marks = done_marks(); ids = []
+        for k in kinds:
+            oid = f'{k}:{repo}#{n}'
+            marks[oid] = {'at': NOW.isoformat(timespec='seconds').replace('+00:00', 'Z'), 'how': how[:300], 'by': os.environ.get('COS_CALLER', 'chief'),
+                          'head': (cur.get(oid) or {}).get('head')}
+            ids.append(oid); log('done_by_cassidy', id=oid, how=how[:300])
+            if oid in cur:
+                cur[oid]['status'] = 'closed'
+        os.makedirs(STATE, exist_ok=True); json.dump(marks, open(DONE, 'w'), indent=1)
+        if cur:
+            led = json.load(open(LEDGER)); led['items'] = {k: v for k, v in cur.items() if v.get('status') != 'closed'}; json.dump(led, open(LEDGER, 'w'), indent=1)
+        print(json.dumps({'closed': ids, 'how': how[:300], 'comes_back_if': 'someone asks again after now, or a review gets a new commit'})); sys.exit(0)
+    if '--list' in args:
+        items = collect()
+        rows = []
+        for k, it in sorted(items.items(), key=lambda kv: kv[1].get('asked_at') or ''):
+            ref = f"#{it['number']}" if it['repo'] == 'wisecodeai/data-org' else f"{it['repo'].split('/')[1]} #{it['number']}"
+            title = re.split(r':| — | - |\(', it['title'])[0].strip()[:40]
+            if it['kind'] == 'reply':
+                rows.append(f"[{ref} · {title}]({it['url']}) — {it['asked_by']} asked you on {it['asked_at'][:10]}; you haven't answered since")
+            elif it['kind'] == 'review':
+                rows.append(f"[PR {ref} · {title}]({it['url']}) — {it['author']}'s PR · waiting on your review")
+            else:
+                rows.append(f"[{ref} · {title}]({it['url']}) — your card · its PRs merged, ready to finish")
+        print(json.dumps({'checked_at': NOW.isoformat(timespec='seconds'), 'open': rows,
+                          'note': 'Checked live against GitHub just now. Show these, never a count alone. Anything not here is not owed.'}, indent=1))
+        sys.exit(0)
     if '--selftest' in args:
         pol = policy()
         good = f"gh pr review 704 --repo wisecodeai/data-org --comment --body-file {OUTBOX}/review-data-org-704/review.md"

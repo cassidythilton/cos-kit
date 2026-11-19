@@ -1,7 +1,11 @@
 {
-  "about": "Actions the Mac may finish without a tap. Chosen by Cassidy on 2026-11-09. Set a value to false to turn it off; the item then comes to him as one tap. Only cos-obligations reads this, and only cos-sched runs it.",
+  "about": "Actions the Mac may finish without a tap. Chosen by Cassidy on 2026-11-09. Set a value to false to turn it off; the item then comes to him as one tap. Only cos-obligations reads this, and only cos-sched runs it. Nov 19 (Cassidy said yes to all four in Claude Code): own_card_daily_log (his daily logs on his own cards) and dictated_comments_own_cards (a comment he dictated word for word, on his own card), read by cos-gh log|comment; roadmap_blank_fills (sheet cells that are blank today, filled from the board, need no yes; the preview marks them), bot_created_docs (Bots edit Google Docs they created without asking; a Grok Custom Rule). Each is listed in the evening brief with its undo.",
   "pr_comment_review": true,
   "complete_merged_issue": true,
   "rsvp_internal_meeting": false,
-  "own_card_log_and_ragb": false
+  "own_card_log_and_ragb": false,
+  "own_card_daily_log": true,
+  "dictated_comments_own_cards": true,
+  "roadmap_blank_fills": true,
+  "bot_created_docs": true
 }

@@ -26,6 +26,8 @@
 #   cos-run receipt     <job>                                                     a job's result, or "running" / "didn't finish, rerun?"
 #   cos-run slack-read  <job-id> "<what to read>"                                Slack read on the Mac (read tools only)
 #   cos-run slack-draft <job-id> <draft.json>                                     saves ONE draft in Cassidy's Slack Drafts; never sends
+#   cos-run done        <data-org#700> "<how>"                                  Cassidy finished it: closed on the one owed list, comes back only if something new happens
+#   cos-run owed        list                                                      what he owes, checked live against GitHub, in plain words
 #   cos-run heartbeat   <routine-id> ok|failed ["<what>"]                       a Grok routine reports in (cos-health watches for it)
 #   cos-run preflight   <lane> [job-id]                                           what that lane needs, checked now; no model, no receipt
 #   add --async to investigate, atlas, draft, build, eval, fix, land or lake: returns at once, runs detached, pushes the receipt to the Chief
@@ -34,7 +36,7 @@
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -158,6 +160,36 @@ Examples:
   cos-run pause week 0
 H
 ;;
+    heartbeat) cat <<'H'
+cos-run heartbeat <routine-id> ok|failed ["<what>"]   a Grok routine's last step, so the Mac's monitoring knows it ran
+  The id is the routine's id in ~/cos/handbook/expected-runs.json. "failed" says what didn't work, in one line.
+
+Examples:
+  cos-run heartbeat chief-morning-brief ok
+  cos-run heartbeat chief-evening-sweep failed "couldn't read today's capture receipt"
+H
+;;
+    slack-read|slack-draft) cat <<'H'
+cos-run slack-read  <job> "<what to read>"   reads Slack on the Mac (read tools only) and reports what's waiting on Cassidy
+cos-run slack-draft <job> <draft.json>       saves ONE draft in Cassidy's Slack Drafts, word for word; never sends
+  draft.json: {"to": "<channel or user id, or a name>", "text": "<the message>", "thread_ts": "<optional>", "why": "<one line>"}
+  No agent can send a Slack message. Cassidy reviews and sends every draft from Slack himself.
+
+Examples:
+  cos-run slack-read sl-brief-20261120 "every DM, group DM and thread I'm in with activity since 4:30 PM yesterday"
+  cos-run slack-draft sd-steve-20261120 ~/cos/outbox/sd-steve-20261120/draft.json
+H
+;;
+    done|owed) cat <<'H'
+cos-run done <card or PR> "<how it was finished>"   Cassidy says it's done: closed on the one owed list
+cos-run owed list                                   what he owes, checked live against GitHub, as linked plain lines
+  A closed item comes back only if someone asks again after it was closed, or a review gets a new commit.
+
+Examples:
+  cos-run done data-org#700 "answered David in the thread"
+  cos-run owed list
+H
+;;
     receipt) cat <<'H'
 cos-run receipt <job>
   The result if finished; "running" while it works; "interrupted" with the rerun command if it stopped early.
@@ -211,6 +243,15 @@ fi
 [[ "$LANE" == gh ]] && exec "$HOME/cos/bin/cos-gh" "${@:2}"
 JOB="${2:-}"; [[ -n "$JOB" ]] || usage_fail "$LANE" "missing the job id"
 BRIEF_IN="${3:-}"
+# done / owed (Nov 19, plan change 10): one owed list, on the Mac. No model.
+if [[ "$LANE" == done ]]; then
+  [[ -n "$BRIEF_IN" ]] || usage_fail done "say how it was finished: cos-run done data-org#700 \"answered David in the thread\""
+  exec "$HOME/cos/bin/cos-obligations" --done "$JOB" "$BRIEF_IN"
+fi
+if [[ "$LANE" == owed ]]; then
+  [[ "$JOB" == list ]] || usage_fail owed "cos-run owed list"
+  exec "$HOME/cos/bin/cos-obligations" --list
+fi
 # heartbeat (Nov 19): a Grok routine's last step, so cos-health knows it ran. No model, nothing else.
 if [[ "$LANE" == heartbeat ]]; then
   [[ "$JOB" =~ ^[a-z0-9][a-z0-9-]{0,60}$ ]] || usage_fail heartbeat "the routine id: lowercase letters, digits and dashes, as in handbook/expected-runs.json"
@@ -726,10 +767,12 @@ if [[ "$LANE" == preview ]]; then
   if [[ -f "$P/apply.sh" ]]; then
     S="$(shasum -a 256 "$P/apply.sh" | cut -d' ' -f1)"
     RES="$(jq --argjson b "$("$COS/bin/cos-gh" "$JOB" plain "$P/apply.sh")" --arg y "cos-run apply $JOB $S" '. + {github: ($b + {on_yes: $y})}' <<<"$RES")"
+    echo "apply $S" >> "$P/.previewed"
   fi
   if [[ -f "$P/sheet.json" ]]; then
     S="$(shasum -a 256 "$P/sheet.json" | cut -d' ' -f1)"
-    RES="$(jq --slurpfile s "$P/sheet.json" --arg y "cos-run apply-sheet $JOB $S" '. + {sheet: {tier: 1, items: [$s[0].writes[] | "\(.tab) row \(.row) (\(.row_name)) column \(.col): \"\(.old)\" -> \"\(.new)\""], on_yes: $y}}' <<<"$RES")"
+    RES="$(jq --slurpfile s "$P/sheet.json" --arg y "cos-run apply-sheet $JOB $S" '. + {sheet: {tier: 1, items: [$s[0].writes[] | "the \(.tab) sheet, \"\(.row_name)\" row, \(.col_name // ("column " + .col)): \"\(.old)\" becomes \"\(.new)\""], on_yes: $y}}' <<<"$RES")"
+    echo "sheet $S" >> "$P/.previewed"
   fi
   jq --arg j "$JOB" '{job: $j, show_cassidy: "the items, in plain words; never the sha256", preview: .}' <<<"$RES"; exit 0
 fi
@@ -931,6 +974,7 @@ if [[ "$LANE" == "apply-sheet" ]]; then
       and ((.tab == "Data Roadmap" and (.col == "K" or .col == "J" or .col == "A")) | not)
       and ((.tab == "Pillar Metrics" and (.col|test("^[AGHIO]$"))) | not))
   ' "$SB" >/dev/null || { echo "refusing: sheet.json breaks a rule (only the roadmap sheet; tabs Data Roadmap or Pillar Metrics; no columns A, J or K on Data Roadmap; no A, G, H, I or O on Pillar Metrics; 1 to 20 writes)" >&2; exit 65; }
+  grep -qx "sheet $SHA" "$OUT/.previewed" 2>/dev/null || { echo "refusing: show Cassidy these cells first with cos-run preview $JOB, then use its on_yes" >&2; exit 67; }
   pf_run apply-sheet apply-sheet-receipt.json   # never over the job's own receipt, which holds the reviewed sha256
   SHEET_SCHEMA='{"type":"object","required":["results"],"properties":{"results":{"type":"array","items":{"type":"object","required":["tab","row","col","outcome","read_back"],"properties":{"tab":{"type":"string"},"row":{"type":"integer"},"col":{"type":"string"},"outcome":{"enum":["written","skipped-row-moved","skipped-value-changed","failed"]},"read_back":{"type":"string"},"note":{"type":"string"}}}}}}'
   COS_GATE_MODE=sheet COS_SHEET_BATCH="$SB" COS_JOB="$JOB" COS_LANE=apply-sheet claude -p "You apply an approved batch of Google Sheets edits, nothing else. The batch: $(cat "$SB")
@@ -992,6 +1036,8 @@ if [[ "$LANE" == "apply" ]]; then
   done < "$SCRIPT"
   [[ $nc -le 10 ]] || { echo "refusing: $nc PR closes in one batch (max 10; split them)" >&2; exit 65; }
   [[ $n -le 40 ]] || { echo "refusing: $n writes in one batch (max 40)" >&2; exit 65; }
+  # Shown first (Nov 19): a batch runs only after cos-run preview showed it in plain words, at this exact sha256.
+  grep -qx "apply $SHA" "$OUT/.previewed" 2>/dev/null || { echo "refusing: show Cassidy this batch first with cos-run preview $JOB, then use its on_yes" >&2; ledger applies job="$JOB" sha="$SHA" status=refused why=not-previewed; exit 67; }
   STATUS=done; ok=0; CREATED=()
   cd "$IN"
   while IFS= read -r line || [[ -n "$line" ]]; do

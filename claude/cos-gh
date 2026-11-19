@@ -37,6 +37,12 @@ Usage:
   cos-run gh <job> <action> [args] [--evidence "<why, with a link or source>"] [--dry-run]
 
 Actions on Cassidy's own cards and PRs (he is an assignee, or the author of an unassigned card):
+  log       <card> --body-file <job folder>/<file>.md --evidence "<what the log is from>"
+                                            his daily log (Did / Blocked / Next) as a comment (Nov 19, standing
+                                            approval own_card_daily_log)
+  comment   <card> --body-file <job folder>/<file>.md --evidence "<when and where he dictated it>"
+                                            a comment he dictated word for word (standing approval
+                                            dictated_comments_own_cards); anyone else's card stays tier 1
   label     <card> add|remove <label>
   assignee  <card> add|remove <login>
   milestone <card> "<milestone title>"|none
@@ -580,7 +586,57 @@ def receipt(job, obj):
     out(obj)
 
 
+def approved(key):
+    try:
+        with open(f"{COS}/handbook/standing-approvals.json") as f:
+            return json.load(f).get(key) is True
+    except Exception:
+        return False
+
+
+def own_comment(job, action, args, opts):
+    """Tier 0 since Nov 19: his daily log, or a comment he dictated, on his own card. Logged with an undo (delete it)."""
+    key = "own_card_daily_log" if action == "log" else "dictated_comments_own_cards"
+    if not approved(key):
+        raise Refuse(f"{key} is off in standing-approvals.json, so this is tier 1: stage it and ask.", tier=1)
+    if not args or not opts.get("body-file") or not opts.get("evidence"):
+        raise Refuse(f"usage: cos-run gh <job> {action} <card> --body-file <job folder>/<file>.md --evidence \"<source>\"", code=64)
+    body = os.path.realpath(os.path.expanduser(opts["body-file"]))
+    if not body.startswith(os.path.realpath(f"{COS}/outbox") + "/") or not body.endswith(".md") or not os.path.isfile(body):
+        raise Refuse("the body must be a .md file in the job folder (~/cos/outbox/<job>/)", code=64)
+    text = open(body).read()
+    if not text.strip() or len(text) > 6000:
+        raise Refuse("the body is empty or over 6000 characters", code=64)
+    c = card(args[0])
+    if not mine(c):
+        raise Refuse(f"{c['ref']} is {owner_words(c)}'s card: a comment there is tier 1 (stage it and ask).", tier=1)
+    if c["state"] != "OPEN":
+        raise Refuse(f"{c['ref']} is {c['state'].lower()}; nothing posted.", code=65)
+    d = f"{COS}/outbox/{job}"
+    if os.path.exists(f"{d}/receipt.json"):
+        raise Refuse(f"job {job} already exists. Use a new job id.", code=64)
+    if opts.get("dry-run"):
+        out({"job": job, "lane": "gh", "receipt": {"status": "dry-run", "summary": f"Would post your {'daily log' if action == 'log' else 'dictated comment'} on {c['ref']}. Nothing posted."}})
+        return 0
+    os.makedirs(d, exist_ok=True)
+    kind = "pr" if c["kind"] == "PullRequest" else "issue"
+    r = run(["gh", kind, "comment", str(c["n"]), "--repo", f"{ORG}/{c['repo']}", "--body-file", body])
+    url = (r.stdout or "").strip().splitlines()[-1] if r.stdout.strip() else ""
+    cid = url.rsplit("issuecomment-", 1)[-1] if "issuecomment-" in url else ""
+    ref = "t0-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+    undo = ["gh", "api", "-X", "DELETE", f"repos/{ORG}/{c['repo']}/issues/comments/{cid}"] if cid else None
+    row = dict(job=job, ref=ref, action=f"{action} {c['ref']}", card=c["ref"], mine="true", old="", new=url, evidence=opts["evidence"],
+               decision="done", verdict="VERIFIED" if cid else "INCONCLUSIVE", undo=f"cos-run gh <job> undo {ref}", undo_argv=json.dumps(undo) if undo else "")
+    ledger(**row)
+    rec = {"job": job, "lane": "gh", "receipt": {"status": "done", "verdict": row["verdict"],
+           "summary": f"Posted your {'daily log' if action == 'log' else 'dictated comment'} on {c['ref']}: {url}. Undo: cos-run gh <job> undo {ref}"}, "tier0": row}
+    receipt(job, rec)
+    return 0
+
+
 def do(job, action, args, opts):
+    if action in ("log", "comment"):
+        return own_comment(job, action, args, opts)
     line = " ".join([action] + args)
     d = f"{COS}/outbox/{job}"
     prior = f"{d}/receipt.json"
@@ -853,6 +909,19 @@ def undo(job, ref):
     argv = json.loads(r.get("undo_argv") or "null")
     if not argv:
         raise Refuse(f"{ref} has no automatic undo ({r.get('undo', '')}).", code=65)
+    if r.get("action", "").split(" ")[0] in ("log", "comment"):
+        m = re.fullmatch(r"repos/wisecodeai/[A-Za-z0-9._-]+/issues/comments/[0-9]+", argv[-1]) if argv[:4] == ["gh", "api", "-X", "DELETE"] else None
+        if not m:
+            raise Refuse("the recorded undo isn't one tier 0 can run.", code=65)
+        who = run(["gh", "api", argv[-1], "--jq", ".user.login"], check=False).stdout.strip()
+        if who != ME:
+            raise Refuse(f"that comment is gone or isn't Cassidy's ({who or 'not found'}); nothing undone.", code=65)
+        run(argv)
+        row = dict(job=job, ref=ref, action="undo " + r["action"], card=r["card"], old=r["new"], new="", decision="undone", verdict="VERIFIED")
+        ledger(**row)
+        rec = {"job": job, "lane": "gh", "receipt": {"status": "done", "verdict": "VERIFIED", "summary": f"Deleted the comment {ref} posted on {r['card']}."}, "tier0": row}
+        receipt(job, rec)
+        return 0
     if argv[0] not in ("gh", "make") or (argv[0] == "gh" and argv[1:3] not in (["issue", "edit"], ["pr", "edit"], ["project", "item-edit"], ["project", "item-delete"], ["api", "graphql"])):
         raise Refuse("the recorded undo isn't one tier 0 can run.", code=65)
     who = run(["gh", "api", "user", "--jq", ".login"]).stdout.strip()
@@ -969,6 +1038,45 @@ PLAIN = [
 ]
 
 
+_NAMES = {}
+
+
+def short_name(repo, n):
+    """The plain short name for a card or PR (handbook/plain-language.md): Cassidy's names list first
+    (~/cos/state/names.json, kept by STEWARD), else the GitHub title, shortened. Empty if neither can be read."""
+    key = f"{repo}#{n}"
+    if key in _NAMES:
+        return _NAMES[key]
+    name = ""
+    try:
+        with open(f"{COS}/state/names.json") as f:
+            name = json.load(f).get(key, "")
+    except Exception:
+        pass
+    if not name and os.environ.get("COS_PLAIN_NO_TITLES") != "1":
+        p = subprocess.run(["gh", "api", f"repos/{ORG}/{repo}/issues/{n}", "--jq", ".title"], capture_output=True, text=True, timeout=20)
+        t = (p.stdout or "").strip() if p.returncode == 0 else ""
+        head = re.split(r":| — | - |\(", t)[0].strip()
+        if len(head.split()) >= 2:
+            t = head
+        if len(t) > 40:
+            t = t[:40].rsplit(" ", 1)[0].rstrip(",;·-")
+        name = t
+    _NAMES[key] = name
+    return name
+
+
+def with_names(says):
+    """'#767' -> '#767 · Ingredient re-parse'; 'wisecodeai/food-enrichment#220' -> 'food-enrichment #220 · …'."""
+    def sub(m):
+        repo = m.group(1) or "data-org"
+        n = m.group(2)
+        nm = short_name(repo, n)
+        label = (f"#{n}" if repo == "data-org" else f"{repo} #{n}")
+        return f"{label} · {nm}" if nm else label
+    return re.sub(r"(?:wisecodeai/)?(?:([A-Za-z0-9._-]+)(?=#))?#(\d+)", sub, says)
+
+
 def plain(path):
     try:
         lines = [l.strip() for l in open(os.path.expanduser(path)) if l.strip() and not l.strip().startswith("#")]
@@ -981,6 +1089,10 @@ def plain(path):
             if m:
                 g = [s.strip('"') for s in m.groups()]
                 says = re.sub(r"@(\d+)", lambda m: "the new card" if m.group(1) == "1" else f"new card {m.group(1)}", fmt.format(*g).replace(" --", " ").rstrip(":"))
+                try:
+                    says = with_names(says)
+                except Exception:
+                    pass
                 items.append({"tier": tier, "says": says}); top = max(top, tier); break
         else:
             items.append({"tier": 2, "says": "Unrecognized line; show Cassidy the line itself: " + l}); top = 2

@@ -77,6 +77,8 @@
       "Bash(sqlite3 -readonly *)",
       "Bash(cos-atlas *)",
       "Bash(~/cos/bin/cos-atlas *)",
+      "Bash($HOME/cos/bin/cos-atlas *)",
+      "Bash(/Users/cassidythilton/cos/bin/cos-atlas *)",
       "Bash(git -C * rev-parse *)",
       "Bash(git -C * status)",
       "Bash(make lint-writing *)",
