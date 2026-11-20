@@ -177,6 +177,15 @@ chk "EXECUTE=1 make intake-sweep" job block
 chk "DRY_RUN=1 make ragb CARD=1 TO=RED" job allow
 chk "cos-push steward pulse r.json" pair block
 chk "cos-link sub wisecodeai/data-org#1 wisecodeai/data-org#2" job block
+chk "git -C ~/cos/kit log --since=2026-11-13 --format=%h%x20%ad%x20%s --date=short" job allow
+chk "git -C ~/cos/kit log --oneline -5" job allow
+chk "git -C ~/cos/kit reset --hard HEAD~1" job block
+chk "git -C ~/cos/kit -c user.name=a reset --hard" job block
+chk "git -C ~/cos/kit config alias.x reset" job block
+chk "git -C ~/cos/kit -c alias.x=reset x --hard" job block
+chk "git -C ~/cos/kit worktree add /tmp/w" job block
+chk "git -C ~/cos/kit stash;" job block
+chk "git -C ~/cos/kit rm -rf claude" job block
 chk "cos-pr close wisecodeai/data-org#1 0123456789abcdef0123456789abcdef01234567 /tmp/why.md" job block
 chk "gh pr close 453 --repo wisecodeai/data-org" job block
 chk "gh pr ready 3 --repo wisecodeai/data-org-notebook --undo" job block

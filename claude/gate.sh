@@ -72,7 +72,9 @@ if [[ "$tool" == "Bash" ]]; then
   # Writes into a control path only: a redirect or tee into it, an in-place edit of it, a copy or move onto it, or git in it.
   C='[^[:space:];&|]*/cos/(bin|claude|kit|handbook)(/|[[:space:]]|$)|[^[:space:];&|]*\.claude/(skills|settings)|[^[:space:];&|]*LaunchAgents'
   w1=">>?[[:space:]]*[\"']?($C)"; w2="tee[[:space:]]+(-a[[:space:]]+)?[\"']?($C)"; w3="(sed|perl)[[:space:]]+-[a-zA-Z]*i[^;&|]*($C)"
-  w5="git[[:space:]]+-C[[:space:]]+[\"']?($C)[^;&|]*(commit|apply|am|checkout|reset|add|rm|mv|restore|stash|merge|rebase|revert|cherry-pick)"
+  # Whole words only (Cassidy, Nov 20): "rm" inside "--format" no longer blocks a read, but every whole-word write verb
+  # anywhere in the git command still does, including an alias definition that names one (config alias.x reset).
+  w5="git[[:space:]]+-C[[:space:]]+[\"']?($C)([^;&|]*[^A-Za-z0-9_;&|-])?(commit|apply|am|checkout|reset|add|rm|mv|restore|stash|merge|rebase|revert|cherry-pick|worktree|alias)([^A-Za-z0-9_-]|$)"
   w6="cd[[:space:]]+[\"']?($C)[^;&|]*(&&|;)[[:space:]]*git[[:space:]]+(commit|apply|am|checkout|reset|add|rm|mv|restore|stash|merge|rebase|revert)"
   # cp, mv, install, ln, rsync, chmod: only the destination (the last argument of that command) counts.
   while IFS= read -r seg; do
