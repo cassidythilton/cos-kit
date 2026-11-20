@@ -45,7 +45,7 @@ _nt_budget() {  # _nt_budget '<jq filter>' edits this home's budget
 }
 nt() {  # nt <NOW> cos-night args...
   local when="$1"; shift
-  env HOME="$NH" COS_NIGHT_NOW="$when" COS_NIGHT_RUNNER="$NT/stub-runner" COS_NIGHT_POWER="${NT_POWER:-ac}" \
+  env HOME="$NH" COS_NIGHT_NO_SEED="${NT_SEED_OFF:-1}" COS_NIGHT_NOW="$when" COS_NIGHT_RUNNER="$NT/stub-runner" COS_NIGHT_POWER="${NT_POWER:-ac}" \
     COS_NIGHT_NO_CAFFEINATE=1 COS_NIGHT_SECS_PER_MIN="${NT_SPM:-60}" COS_NIGHT_KILL_GRACE=1 \
     COS_NIGHT_BUDGET="$NH/budget.json" COS_NIGHT_BRIEFS="$_nt_kit/claude/briefs" \
     COS_NIGHT_LEDGER="$_nt_kit/claude/cos-ledger" COS_LEDGER_DIR="$NH/cos/state/ledger" \
@@ -180,6 +180,17 @@ jq -e '.receipt.summary == "NO CHANGE"' "$NH/cos/outbox/night-20261119/receipt.j
 if [[ $_nt_q0 -eq 0 && -e "$_nt_real/cos/state/night-queue.json" ]]; then fail "the tests wrote the real ~/cos/state/night-queue.json"
 else pass "the real ~/cos was not touched"; fi
 
+# --- the Mac queues what it can see a need for (Nov 20)
+_nt_newh; mkdir -p "$NH/cos/state" "$NH/cos/zoom"
+echo '{"open": {"k": {"title": "the 4 PM capture failed"}}}' > "$NH/cos/state/health.json"
+echo '{"items": {"review:wisecodeai/data-org#805": {"kind": "review", "repo": "wisecodeai/data-org", "number": 805, "status": "open"}}}' > "$NH/cos/state/obligations.json"
+NP="$(NT_SEED_OFF=0 nt "$EVE" propose)"
+jq -e '[.items[].kind] | (index("board-cleanup") != null) and (index("pr-reviews") != null) and (index("system-fix") != null)' <<<"$NP" >/dev/null 2>&1 \
+  && pass "night: the Mac queues board cleanup, PR reviews and a system fix when it sees the need" || fail "night: no seeded items ($(jq -c '[.items[].kind]' <<<"$NP"))"
+NP2="$(NT_SEED_OFF=0 nt "$EVE" propose)"
+[[ "$(jq '[.items[] | select(.kind == "board-cleanup")] | length' <<<"$NP2")" == 1 ]] && pass "night: seeding never queues the same kind twice" || fail "night: seeded a duplicate"
+
 rm -rf "$NT"
 unset -f _nt_newh _nt_budget nt _nt_calls
 if [[ $_nt_alone -eq 1 ]]; then echo "Result: $ok passed, $bad failed"; [[ $bad -eq 0 ]]; fi
+

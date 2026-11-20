@@ -70,6 +70,7 @@ def hm(t):
     return t.astimezone(MT).strftime("%a %b %-d, %-I:%M %p")
 
 
+RECOVERED = set()
 REGISTERED = os.environ.get("COS_ROUTINES_REGISTERED", f"{COS}/state/routines-registered.json")
 UNLISTED = set()
 
@@ -259,7 +260,7 @@ def check_jobs(found):
     for r in rows("jobs"):
         if r.get("event") == "end":
             ends.setdefault(r.get("job"), []).append(r)
-    seen, groups = set(), {}
+    seen, groups, okruns = set(), {}, {}
     for job, es in ends.items():
         e = es[-1]
         if e["_t"] < NOW - WINDOW:
@@ -273,6 +274,8 @@ def check_jobs(found):
         except Exception:
             pass
         bad = code not in ("0", "64", "65", "66", "67", "68", "130", "") or status in ("failed", "interrupted")
+        if not bad and code == "0":
+            okruns.setdefault(e.get("lane", ""), []).append(e["_t"])
         if not bad or job in seen:
             continue
         seen.add(job)
@@ -286,10 +289,17 @@ def check_jobs(found):
         groups.setdefault((e.get("lane", ""), cause), []).append((job, e["_t"], summary or f"exit {code}"))
     for (lane, cause), items in groups.items():
         first = min(t for _, t, _ in items)
+        last = max(t for _, t, _ in items)
         jobs = [j for j, _, _ in items]
+        key = f"job:{lane}:{hashlib.sha1(cause.encode()).hexdigest()[:8]}"
+        # Working again (Nov 20): three good runs of the same lane since the last failure close it, so an old failure
+        # that's already fixed stops coming back and stops starting fix jobs.
+        if len([t for t in okruns.get(lane, []) if t > last]) >= 3:
+            RECOVERED.add(key)
+            continue
         title = (f"A {lane} job failed: {jobs[0]} ({hm(first)})" if len(items) == 1
                  else f"{len(items)} {lane} jobs failed the same way since {hm(first)}")
-        found.append(problem(f"job:{lane}:{hashlib.sha1(cause.encode()).hexdigest()[:8]}", title,
+        found.append(problem(key, title,
                              (items[0][2][:220] + ("  Jobs: " + ", ".join(jobs[:10]) + (" …" if len(jobs) > 10 else "") if len(items) > 1 else "")),
                              "cos-run fix with this error (the Chief starts it)" if len(items) > 1 else f"the Bot that started it reads cos-run receipt {jobs[0]} and fixes the cause"))
 
@@ -383,10 +393,10 @@ def check():
         m = re.match(r"^job:([^:]+):\d{12}:([0-9a-f]{8})$", k)   # older keys carried the first failure's time
         opened[f"job:{m.group(1)}:{m.group(2)}" if m else k] = v
     new = [p for k, p in cur.items() if k not in opened]
-    closed = [p for k, p in opened.items() if k not in cur and not k.startswith(("job:", "watchdog:", "unknown:"))]
+    closed = [p for k, p in opened.items() if k not in cur and (not k.startswith(("job:", "watchdog:", "unknown:")) or k in RECOVERED)]
     # A failed job or a gap is a one-time event: it stays open until someone says it's handled, or 26 hours pass.
     for k, p in opened.items():
-        if k not in cur and k.startswith(("job:", "watchdog:", "unknown:")) and NOW - ts(p["opened"]) < WINDOW:
+        if k not in cur and k not in RECOVERED and k.startswith(("job:", "watchdog:", "unknown:")) and NOW - ts(p["opened"]) < WINDOW:
             cur[k] = p
     for p in new:
         p["opened"] = NOW.isoformat()

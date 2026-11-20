@@ -63,8 +63,8 @@ KINDS = {
 # Planning order (plan, change 8): small kinds every night they have input, then the one large job if one is due,
 # then medium kinds fill what is left. Run order is the same.
 SIZE_RANK = {"small": 0, "large": 1, "medium": 2}
-FROM = ("cassidy", "ops", "steward", "builder")
-FROM_LABEL = {"cassidy": "Cassidy", "ops": "OPS", "steward": "STEWARD", "builder": "BUILDER"}
+FROM = ("cassidy", "ops", "steward", "builder", "mac")
+FROM_LABEL = {"cassidy": "Cassidy", "ops": "OPS", "steward": "STEWARD", "builder": "BUILDER", "mac": "the Mac"}
 
 
 def die(msg, code=64):
@@ -324,9 +324,54 @@ def plan_text(night, plan, waiting, b, runs):
     return "\n".join(lines)
 
 
+def seed(s):
+    """Nov 20: the first night ran nothing because nobody queued anything. The Mac now adds the kinds it can see a
+    need for itself (at most one of each a night, never a duplicate of a queued item): board cleanup every weeknight,
+    call follow-through when today has call transcripts, PR review drafts when PRs wait on Cassidy, and a system fix
+    when monitoring has an open problem. Meeting prep, write-ups and data answers need a person's ask (the Chief or
+    OPS adds them). Off with COS_NIGHT_NO_SEED=1 or "seed": false in night-budget.json."""
+    if os.environ.get("COS_NIGHT_NO_SEED") == "1" or load_budget().get("seed") is False:
+        return []
+    t = now()
+    if t.weekday() in (4, 5):   # Friday and Saturday nights don't run
+        return []
+    queued = {i["kind"] for i in s["items"] if i["status"] == "queued"}
+    home = os.path.expanduser("~")
+    adds = []
+    if "board-cleanup" not in queued:
+        adds.append(("board-cleanup", "Tidy the board and roadmap: stale cards, missing daily logs, and sheet rows that don't match their cards"))
+    try:
+        today = t.date()
+        calls = [f for f in os.listdir(f"{home}/cos/zoom") if dt.date.fromtimestamp(os.path.getmtime(f"{home}/cos/zoom/{f}")) == today]
+    except Exception:
+        calls = []
+    if calls and "call-follow-through" not in queued:
+        adds.append(("call-follow-through", "Today's %d call transcript%s: action items to draft cards and replies" % (len(calls), "s" if len(calls) != 1 else "")))
+    try:
+        items = json.load(open(f"{home}/cos/state/obligations.json")).get("items", {})
+        prs = ["%s#%s" % (v["repo"].split("/")[1], v["number"]) for v in items.values() if v.get("kind") == "review" and v.get("status", "open") == "open"]
+    except Exception:
+        prs = []
+    if prs and "pr-reviews" not in queued:
+        adds.append(("pr-reviews", "Draft reviews for the PRs waiting on Cassidy: " + ", ".join(prs[:5])))
+    try:
+        op = list(json.load(open(f"{home}/cos/state/health.json")).get("open", {}).values())
+    except Exception:
+        op = []
+    if op and "system-fix" not in queued:
+        adds.append(("system-fix", "Diagnose and prepare a fix for: " + op[0]["title"]))
+    for kind, what in adds:
+        iid = "n%d" % s["next"]
+        s["next"] += 1
+        s["items"].append({"id": iid, "kind": kind, "what": what, "from": "mac", "added": t.strftime("%Y-%m-%dT%H:%M"), "status": "queued"})
+        ledger(event="add", item=iid, kind=kind, src="mac")
+    return adds
+
+
 def cmd_propose(args):
     b = load_budget()
     s = load_state()
+    seed(s)
     night = plan_night(now())
     if s["nights"].get(night, {}).get("started"):
         die("tonight's shift already started; nothing to plan until tomorrow", 75)

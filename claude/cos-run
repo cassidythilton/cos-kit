@@ -812,6 +812,8 @@ if [[ "$LANE" == preview ]]; then
     echo "apply $S" >> "$P/.previewed"
   fi
   if [[ -f "$P/sheet.json" ]]; then
+    jq -e 'type == "object" and (.writes | type == "array")' "$P/sheet.json" >/dev/null 2>&1 \
+      || usage_fail preview "~/cos/outbox/$JOB/sheet.json isn't in the expected shape (an object with spreadsheet and writes). Have the job stage it again." 65
     S="$(shasum -a 256 "$P/sheet.json" | cut -d' ' -f1)"
     RES="$(jq --slurpfile s "$P/sheet.json" --arg blank "$(jq -r '.roadmap_blank_fills // false' "$COS/handbook/standing-approvals.json" 2>/dev/null || echo false)" --arg y "cos-run apply-sheet $JOB $S" '. + {sheet: {tier: (if ($s[0].writes | all(.old == "")) and ($blank == "true") then 0 else 1 end), says: (if ($s[0].writes | all(.old == "")) and ($blank == "true") then "Blank cells only: done without asking (standing approval roadmap_blank_fills); listed in the evening brief" else "Needs Cassidy'"'"'s yes" end), items: [$s[0].writes[] | "the \(.tab) sheet, \"\(.row_name)\" row, \(.col_name // ("column " + .col)): \"\(.old)\" becomes \"\(.new)\""], on_yes: $y}}' <<<"$RES")"
     echo "sheet $S" >> "$P/.previewed"
