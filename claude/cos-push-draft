@@ -13,6 +13,7 @@ COS="$HOME/cos"; REPO="$COS/repos/data-org"; R="$COS/outbox/$JOB/receipt.json"; 
 [[ -f "$R" && -d "$WT" ]] || { echo "cos-push-draft: no draft receipt or worktree for $JOB" >&2; exit 66; }
 BASE="$(jq -r '.draft.base // empty' "$R")"; BASE_SHA="$(jq -r '.draft.base_sha // empty' "$R")"; REVIEWED="$(jq -r '.draft.sha256 // empty' "$R")"
 BR="${BASE#origin/}"
+jq -e --arg b "$BR" '.branches[$b]' "$HOME/cos/handbook/live-branches.json" >/dev/null 2>&1 && { echo "cos-push-draft: $BR is live (a push deploys it); use its publish step" >&2; exit 65; }
 if [[ -n "$NEWBR" ]]; then
   # A new doc branch: the draft was made from main, the target is cassidy/<issue>-<topic>, and it must not exist yet.
   [[ "$BR" == main ]] || { echo "cos-push-draft: refusing: a new branch is only for a draft made from main (this one: $BR)" >&2; exit 65; }

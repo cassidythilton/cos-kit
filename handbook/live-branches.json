@@ -1,0 +1,14 @@
+{
+  "about": "Branches where a push deploys something live. No job ever stages a push to one, cos-push-draft refuses them, and each has its own publish step whose approval text says exactly what goes live (Cassidy, Nov 20).",
+  "branches": {
+    "cassidy/732-data-dashboard-app": {
+      "repo": "wisecodeai/data-org",
+      "what": "the exec Data dashboard, the AWS Amplify app d1p13vtuzmymdx (cobra-eval, us-east-2) that Peter, Ron and Mark read in the exec hub",
+      "url": "https://cassidy-732-data-dashboard-app.d1p13vtuzmymdx.amplifyapp.com",
+      "amplify_app": "d1p13vtuzmymdx",
+      "aws_profile": "cobra-eval-dev",
+      "aws_region": "us-east-2",
+      "publish": "cos-run publish-briefing"
+    }
+  }
+}

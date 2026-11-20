@@ -80,7 +80,7 @@ fi
 
 echo "3. Files"
 mkdir -p "$COS"/{bin,claude/briefs,claude/lake,claude/codex,handbook,outbox,state,archive,evals/runs} "$HOME/builds"
-install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-pr,cos-health,cos-packet,cos-night,cos-memory,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
+install -m 755 "$KIT"/claude/{cos-run,cos-gh,cos-sched,cos-push,cos-push-draft,cos-obligations,cos-link,cos-pr,cos-health,cos-packet,cos-night,cos-memory,cos-publish-briefing,cos-sandbox-test,cos-tcc-check,cos-gh-scan,cos-flow,cos-atlas,cos-diligence,cos-share,board-pulse,lake-query,cos-ledger,cos-db,cos-dash} "$COS/bin/"
 # Old hand-made copies (cos-run.bak-20261110*) go to the archive, never deleted (plan 2026-11-14, item 6: subtract).
 for b in "$COS"/bin/*.bak*; do [[ -e "$b" ]] || continue; mkdir -p "$COS/archive/bin-bak"; mv -f "$b" "$COS/archive/bin-bak/"; done
 bash -n "$KIT/claude/gate.sh" || { echo "install.sh: claude/gate.sh has a syntax error; the live gate was left as it was." >&2; exit 1; }
@@ -119,7 +119,7 @@ backup_then_install() {  # kit-owned file: keep a backup if the installed copy w
   local src="$1" dst="$2"; mkdir -p "$(dirname "$dst")"
   if [[ -f "$dst" ]] && ! cmp -s "$src" "$dst"; then cp "$dst" "$dst.bak-$(date +%Y%m%d%H%M%S)"; fi
   install -m 644 "$src" "$dst"; }
-for f in rules.md board-standard.md engineering-standard.md system-map.md plain-language.md expected-runs.json executive-style.md; do backup_then_install "$KIT/handbook/$f" "$COS/handbook/$f"; done
+for f in rules.md board-standard.md engineering-standard.md system-map.md plain-language.md expected-runs.json executive-style.md live-branches.json; do backup_then_install "$KIT/handbook/$f" "$COS/handbook/$f"; done
 [[ -f "$COS/handbook/standing-approvals.json" ]] || install -m 644 "$KIT/handbook/standing-approvals.json" "$COS/handbook/"
 [[ -f "$COS/handbook/night-budget.json" ]] || install -m 644 "$KIT/handbook/night-budget.json" "$COS/handbook/"   # his file, like standing-approvals   # yours once installed: the kit never overwrites it
 for f in people.md workstreams.md sources.md; do [[ -f "$COS/handbook/$f" ]] || printf '# %s\n\nFill this in. The kit never overwrites it.\n' "${f%.md}" > "$COS/handbook/$f"; done
@@ -1514,6 +1514,22 @@ PL
   fi
 fi
 
+echo "15. Publishing the exec briefing (Nov 20)"
+PB="$(mktemp -d)"; git init -q --bare "$PB/origin.git"; git clone -q "$PB/origin.git" "$PB/repo" 2>/dev/null
+mkdir -p "$PB/repo/apps/data-dashboard" "$PB/home/cos/outbox/briefing-t1" "$PB/home/cos/handbook" "$PB/home/cos/bin"
+printf "week_of: '2026-11-16'\napproved_by: Cassidy Hilton, 2026-11-16\nstatus: approved\nworking: []\n" > "$PB/repo/apps/data-dashboard/briefing.yaml"
+git -C "$PB/repo" add -A && git -C "$PB/repo" -c user.name=t -c user.email=t@t commit -qm init && git -C "$PB/repo" push -q origin HEAD:refs/heads/cassidy/732-data-dashboard-app 2>/dev/null
+printf "week_of: '2026-11-23'\napproved_by: null\nstatus: draft\nworking: []\n" > "$PB/home/cos/outbox/briefing-t1/briefing.yaml"
+cp "$KIT/handbook/live-branches.json" "$PB/home/cos/handbook/"; cp "$COS/bin/cos-ledger" "$PB/home/cos/bin/"
+pb() { HOME="$PB/home" COS_PUBLISH_REPO="$PB/repo" COS_PUBLISH_NOTEBOOK="$PB" "$COS/bin/cos-publish-briefing" "$@" 2>&1; }
+o="$(pb preview briefing-t1)"; jq -e '.show_cassidy_word_for_word | test("PUBLISH TO THE LIVE EXEC DASHBOARD") and test("AWS Amplify app d1p13vtuzmymdx") and test("THIS DEPLOYS THE LIVE PAGE PETER SEES") and test("amplifyapp.com")' <<<"$o" >/dev/null 2>&1 \
+  && pass "publish preview says exactly what goes live: the Amplify app, the push, and that it deploys Peter's page" || fail "publish preview text ($o)"
+pb run briefing-t1 0000000000000000000000000000000000000000000000000000000000000000 >/dev/null; [[ $? -eq 67 ]] && pass "publish refuses a draft that isn't the one he saw" || fail "publish ran with the wrong sha256"
+rm -f "$PB/home/cos/outbox/briefing-t1/.previewed"; S1="$(shasum -a 256 "$PB/home/cos/outbox/briefing-t1/briefing.yaml" | cut -d' ' -f1)"
+pb run briefing-t1 "$S1" >/dev/null; [[ $? -eq 67 ]] && pass "publish refuses without a preview" || fail "publish ran without a preview"
+[[ "$(git -C "$PB/origin.git" rev-list --count cassidy/732-data-dashboard-app)" == 1 ]] && pass "nothing reached the live branch in these tests" || fail "a test pushed to the live branch"
+grep -q 'is live (a push deploys it)' "$COS/bin/cos-push-draft" && pass "cos-push-draft refuses a live branch" || fail "cos-push-draft can push a live branch"
+rm -rf "$PB"
 echo "14. Packets, night shift, memory (Nov 19)"
 for tf in test-packet.sh test-night.sh test-memory.sh; do [[ -f "$KIT/claude/tests/$tf" ]] && . "$KIT/claude/tests/$tf"; done
 echo; echo "Result: $ok passed, $bad failed."

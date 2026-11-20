@@ -41,7 +41,7 @@
 # Writes everything to ~/cos/outbox/<job-id>/ and prints receipt.json. Nothing else leaves this script.
 set -euo pipefail
 
-LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed packet night memory mail-read mail-draft routine"
+LANES_ALL="quick investigate atlas gh-scan draft build apply apply-sheet preview seal gh lake eval fix land note pause receipt preflight heartbeat slack-read slack-draft done owed packet night memory mail-read mail-draft routine publish-briefing"
 lane_help() {  # cos-run <lane> --help. Examples first-class: an agent copies them (poteto/plugins cli-for-agent).
   case "${1:-}" in
     quick) cat <<'H'
@@ -274,6 +274,10 @@ if [[ "$LANE" == owed ]]; then
   exec "$HOME/cos/bin/cos-obligations" --list
 fi
 # packet / night / memory (Nov 19, plan changes 3, 8 and 11). No model here; each tool has its own --help.
+if [[ "$LANE" == publish-briefing ]]; then   # the live exec dashboard (Nov 20): approval text says exactly what deploys
+  [[ "$JOB" =~ ^(preview|run)$ ]] || usage_fail publish-briefing "cos-run publish-briefing preview briefing-<date>, then on his yes: the preview's on_yes"
+  exec "$HOME/cos/bin/cos-publish-briefing" "${@:2}"
+fi
 if [[ "$LANE" == routine ]]; then   # a Bot registers a routine it created, so the Mac watches it (Nov 19)
   [[ "$JOB" =~ ^(add|remove|list)$ ]] || usage_fail routine "cos-run routine add <id> --bot chief --what \"<plain words>\" --days mon,wed|--date YYYY-MM-DD --time HH:MM"
   [[ "$JOB" == add ]] && exec "$HOME/cos/bin/cos-health" register "${@:3}"
@@ -799,6 +803,9 @@ fi
 # ---------------------------------------------------------------- preview: a staged batch in plain words (approve with "yes")
 # cos-run preview <job>. The Chief shows Cassidy these words; his "yes" runs on_yes. The sha256 stays in on_yes, never
 # in what he reads: apply and apply-sheet still refuse a file that changed after this preview.
+if [[ "$LANE" == preview && "$JOB" == briefing-* && ! -f "$COS/outbox/$JOB/apply.sh" ]]; then
+  exec "$HOME/cos/bin/cos-publish-briefing" preview "$JOB"
+fi
 if [[ "$LANE" == preview ]]; then
   P="$COS/outbox/$JOB"
   [[ -f "$P/apply.sh" || -f "$P/sheet.json" || ! -f "$P/apply.pending.sh" ]] || usage_fail preview "~/cos/outbox/$JOB has apply.pending.sh, not apply.sh: run cos-run seal $JOB first" 66
@@ -1383,7 +1390,12 @@ if [[ "$LANE" == "draft" ]]; then
   if [[ "$DRAFT_N" -gt 0 && -z "$DRAFT_BLOCK" ]]; then
     git -C "$WORKDIR" diff --cached --quiet || git -C "$WORKDIR" -c user.name="$(git -C "$REPO" config user.name || echo cos)" commit -q \
       -m "$(head -1 "$OUT/brief.md" | cut -c1-72)" -m "Drafted by cos-run draft $JOB; pushed only on Cassidy's yes." 2>>"$OUT/run.err" || true
-    if [[ "$BASE" =~ ^cassidy/ ]]; then
+    if [[ "$BASE" =~ ^cassidy/ ]] && jq -e --arg b "$BASE" '.branches[$b]' "$COS/handbook/live-branches.json" >/dev/null 2>&1; then
+      # A live branch (Nov 20): a push deploys, so it's never staged here; its own publish step says what goes live.
+      jq --arg b "$BASE" --arg p "$(jq -r --arg b "$BASE" '.branches[$b].publish' "$COS/handbook/live-branches.json")" \
+        '.receipt.summary = ("Not staged for a push: " + $b + " is live (a push deploys it). Publish with " + $p + ". " + (.receipt.summary // ""))' \
+        "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+    elif [[ "$BASE" =~ ^cassidy/ ]]; then
       grep -q "^cos-push-draft $JOB " "$OUT/apply.sh" 2>/dev/null || echo "cos-push-draft $JOB $DRAFT_SHA" >> "$OUT/apply.sh"
       sed -i '' "s/^cos-push-draft $JOB [0-9a-f]*\$/cos-push-draft $JOB $DRAFT_SHA/" "$OUT/apply.sh"
       BATCH_SHA="$(shasum -a 256 "$OUT/apply.sh" | cut -d' ' -f1)"; BATCH_N="$(grep -cv '^[[:space:]]*\(#\|$\)' "$OUT/apply.sh" || true)"

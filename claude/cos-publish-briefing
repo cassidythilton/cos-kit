@@ -1,0 +1,101 @@
+#!/bin/bash
+# cos-publish-briefing: publish Cassidy's approved weekly exec briefing to the LIVE exec Data dashboard (Nov 20).
+#   cos-publish-briefing preview <job>          the approval text, word for word, plus what changes; no write
+#   cos-publish-briefing run <job> <sha256>     on his yes (Grok asks once more): the five steps below
+# The draft is the job's briefing.yaml (an investigate job) or the draft worktree's copy (a draft job).
+# run: 1 marks it approved by Cassidy; 2 rebuilds the page text (build.py --verdicts-only); 3 checks the YAML loads and
+# only briefing.yaml and public/payload.json changed, else stops with nothing pushed; 4 commits and pushes to the live
+# branch, which deploys the page; 5 watches the Amplify build and reports. No model runs here.
+set -uo pipefail
+ACT="${1:-}"; JOB="${2:-}"; SHA="${3:-}"
+COS="$HOME/cos"; OUT="$COS/outbox/$JOB"
+LIVE="${COS_LIVE_BRANCHES:-$COS/handbook/live-branches.json}"
+BR="cassidy/732-data-dashboard-app"; FILE="apps/data-dashboard/briefing.yaml"
+REPO="${COS_PUBLISH_REPO:-$COS/repos/data-org}"; NB="${COS_PUBLISH_NOTEBOOK:-$COS/repos/data-org-notebook}"
+die() { echo "cos-publish-briefing: $1" >&2; exit "${2:-65}"; }
+led() { "$COS/bin/cos-ledger" publishes "$@" >/dev/null 2>&1 || true; }
+[[ "$ACT" =~ ^(preview|run)$ && "$JOB" =~ ^briefing-[a-z0-9._-]{1,50}$ ]] || die "usage: cos-publish-briefing preview|run briefing-<date> [sha256]" 64
+WHAT="$(jq -r --arg b "$BR" '.branches[$b].what' "$LIVE")"; URL="$(jq -r --arg b "$BR" '.branches[$b].url' "$LIVE")"
+SRC="$OUT/briefing.yaml"; [[ -f "$SRC" ]] || SRC="$REPO/.worktrees/cos-$JOB/$FILE"
+[[ -f "$SRC" ]] || die "no drafted briefing for $JOB (neither ~/cos/outbox/$JOB/briefing.yaml nor its draft worktree)" 66
+S="$(shasum -a 256 "$SRC" | cut -d' ' -f1)"
+git -C "$REPO" fetch -q origin "+refs/heads/$BR:refs/remotes/origin/$BR" 2>/dev/null || die "couldn't fetch $BR from GitHub" 70
+TIP="$(git -C "$REPO" rev-parse "origin/$BR")"
+LIVEFILE="$(git -C "$REPO" show "origin/$BR:$FILE" 2>/dev/null)" || die "$FILE isn't on $BR" 66
+pyuv() { (cd "$NB" && uv run --quiet python - "$@"); }
+
+summary() {  # what changes, in plain words: the sections' item counts and the first lines that differ
+  printf '%s' "$LIVEFILE" > "$OUT/.live-briefing.yaml"
+  pyuv "$OUT/.live-briefing.yaml" "$SRC" <<'PY' 2>/dev/null || echo "(couldn't summarize the change)"
+import sys, yaml
+old, new = (yaml.safe_load(open(p)) or {} for p in sys.argv[1:3])
+def n(d, k): return len(d.get(k) or [])
+print(f"Week of {new.get('week_of')} (live page now shows the week of {old.get('week_of')}). Working: {n(new,'working')} items, Not working: {n(new,'not_working')}, Next two weeks: {n(new,'next_two_weeks')}.")
+for k, label in (("working", "Working"), ("not_working", "Not working"), ("next_two_weeks", "Next two weeks")):
+    for it in (new.get(k) or []):
+        if it.get("hold"): continue
+        print(f"- {label}: {str(it.get('text','')).strip()}")
+PY
+}
+
+if [[ "$ACT" == preview ]]; then
+  CH="$(summary)"
+  echo "publish $S $TIP" >> "$OUT/.previewed"
+  SAY="PUBLISH TO THE LIVE EXEC DASHBOARD
+What this is: this week's \"This week in data\" briefing for $WHAT. Live page: $URL
+What changes:
+$CH
+What your yes does, in order:
+1. Takes this exact draft and marks it approved by you.
+2. Rebuilds the page's text from it. The numbers don't change.
+3. Checks the file loads and the rebuild worked. If either fails, it stops and nothing is published.
+4. Commits and PUSHES to the branch $BR. THIS DEPLOYS THE LIVE PAGE PETER SEES: Amplify builds and publishes it within minutes.
+5. Watches the Amplify build and tells you \"published\" with the link, or what failed.
+Grok asks you to tap once more before step 4 runs. To undo it later: a revert, published the same way after your yes."
+  jq -n --arg j "$JOB" --arg say "$SAY" --arg y "cos-run publish-briefing run $JOB $S" \
+    '{job: $j, show_cassidy_word_for_word: $say, on_yes: $y, note: "Show show_cassidy_word_for_word exactly as written, as its own message, before asking for his yes. Never paraphrase it or shorten it."}'
+  exit 0
+fi
+
+# ---- run
+[[ "$SHA" =~ ^[0-9a-f]{64}$ && "$SHA" == "$S" ]] || die "the draft changed since Cassidy saw it, or the sha256 is wrong. Preview it again." 67
+grep -qx "publish $S $TIP" "$OUT/.previewed" 2>/dev/null || die "the live branch changed since Cassidy saw this preview (or there was no preview). Preview it again." 67
+[[ -e "$OUT/published.json" ]] && die "already published; see $OUT/published.json" 68
+WT="$(mktemp -d)/wt"; trap 'git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1' EXIT
+git -C "$REPO" worktree add -q --detach "$WT" "$TIP" || die "couldn't check out $BR" 70
+cp "$SRC" "$WT/$FILE"
+TODAY="$(date +%Y-%m-%d)"
+perl -0pi -e "s/^approved_by:.*\$/approved_by: Cassidy Hilton, $TODAY/m; s/^status:.*\$/status: approved/m" "$WT/$FILE"
+pyuv "$WT/$FILE" <<'PY' >/dev/null 2>&1 || die "step 3: the briefing doesn't load as YAML; nothing published" 65
+import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); assert d["status"] == "approved"
+PY
+(cd "$NB" && uv run --quiet python "$WT/apps/data-dashboard/builder/build.py" --verdicts-only) > "$OUT/publish-build.log" 2>&1 \
+  || die "step 2: the rebuild failed (see ~/cos/outbox/$JOB/publish-build.log); nothing published" 65
+CHANGED="$(git -C "$WT" status --porcelain | awk '{print $2}' | sort | tr '\n' ' ')"
+for f in $CHANGED; do [[ "$f" == "$FILE" || "$f" == "apps/data-dashboard/public/payload.json" ]] || die "step 3: the rebuild changed $f, which a briefing never should; nothing published" 65; done
+[[ " $CHANGED " == *" $FILE "* ]] || die "step 3: nothing to publish (the live page already has this briefing)" 68
+WEEK="$(grep -m1 '^week_of:' "$WT/$FILE" | sed "s/week_of: *//; s/'//g")"
+git -C "$WT" add -A && git -C "$WT" -c user.name="Cassidy Hilton" -c user.email="$(git config --global user.email || echo cassidythilton@users.noreply.github.com)" \
+  commit -q -m "Weekly briefing for the week of $WEEK, approved by Cassidy" -m "Published by the kit (cos-publish-briefing $JOB) on Cassidy's yes." || die "commit failed" 70
+NEWSHA="$(git -C "$WT" rev-parse HEAD)"
+git -C "$WT" push -q origin "HEAD:refs/heads/$BR" || die "step 4: the push was refused (someone pushed in between?). Nothing deployed; preview again." 70
+led job="$JOB" branch="$BR" commit="$NEWSHA" week="$WEEK"
+# Step 5: watch the Amplify build when the AWS sign-in is live; otherwise say so plainly.
+APP="$(jq -r --arg b "$BR" '.branches[$b].amplify_app' "$LIVE")"; PROF="$(jq -r --arg b "$BR" '.branches[$b].aws_profile' "$LIVE")"; REG="$(jq -r --arg b "$BR" '.branches[$b].aws_region' "$LIVE")"
+BUILD="not checked: the AWS sign-in for Amplify isn't active on the Mac; open the live page in a few minutes"
+if AWS_PROFILE="$PROF" aws sts get-caller-identity --region "$REG" >/dev/null 2>&1; then
+  for i in $(seq 1 40); do
+    J="$(AWS_PROFILE="$PROF" aws amplify list-jobs --app-id "$APP" --branch-name "$BR" --region "$REG" --max-items 1 --output json 2>/dev/null)"
+    if [[ "$(jq -r '.jobSummaries[0].commitId // ""' <<<"$J")" == "$NEWSHA" ]]; then
+      st="$(jq -r '.jobSummaries[0].status' <<<"$J")"
+      [[ "$st" == SUCCEED ]] && { BUILD="succeeded"; break; }
+      [[ "$st" =~ ^(FAILED|CANCELLED)$ ]] && { BUILD="FAILED in Amplify ($st): the live page still shows last week's briefing"; break; }
+    fi
+    sleep 15
+  done
+  [[ "$BUILD" == not\ checked* ]] && BUILD="still running after 10 minutes; check the live page shortly"
+fi
+jq -n --arg j "$JOB" --arg c "$NEWSHA" --arg w "$WEEK" --arg b "$BUILD" --arg u "$URL" \
+  '{job: $j, lane: "publish-briefing", receipt: {status: (if ($b | test("FAILED")) then "failed" else "done" end),
+    summary: ("Published the week of " + $w + " briefing to the live exec dashboard (" + $u + "). Amplify build: " + $b + ".")},
+    commit: $c}' | tee "$OUT/published.json"
