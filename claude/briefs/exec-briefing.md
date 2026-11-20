@@ -38,9 +38,19 @@ deploys the live page, so nothing here is ever committed for him or pushed.
   EN40 coverage targets), 630 (outside data providers), 366 (lab testing, DSS), 732 (this dashboard), 797 (David's
   board update and the offsite).
 - Slack, read only, with the Slack read tools: #data-team (C0BMLSDDNDT), the dashboard group (C0CG1MNG5MH), the V1 and
-  available-foods group (C0C6EF4FX39), the AWS group (C0CJ44VFBAA). Never post, react or draft.
-- Call transcripts in ~/cos/zoom/ (the Mac's mirror of his Zoom folder): the last seven days' files, by modified date. Cite them
-  by title and timestamp, and never quote more than a few words.
+  available-foods group (C0C6EF4FX39), the AWS group (C0CJ44VFBAA), AND every DM and group DM Cassidy had in the last
+  seven days (search his messages; executives often confirm things there: on Nov 19 Ron confirmed the Foodgraph NDA
+  was signed in a group DM, and the draft missed it). Never post, react or draft.
+- Call transcripts in ~/cos/zoom/ (the Mac's mirror of his Zoom folder): the last seven days' files, by modified date,
+  including 1:1s. Read each in full for decisions and definitions (on Nov 18 David set the 90% coverage definition in
+  "Amiah & Cassidy 1:1 02", and the draft missed it). Cite them by title and timestamp; never quote more than a few words.
+- His Google Calendar (read-only) for the week's meetings; a meeting with no transcript here is named in the hand-back.
+
+## Newest source wins, and every claim is checked
+Card text and logs go stale. Before writing an item, look for anything newer on the same subject in the DMs, channels
+and calls above, and use the newest (an NDA "in progress" on the card but "signed" in Thursday's DM is signed). A
+definition or decision someone stated in a call overrides older card wording. For each item, open its source and check
+the claim against it before you write it; in the hand-back, list each item with the source you checked.
 
 ## What to write
 Edit only these keys in `briefing.yaml`:

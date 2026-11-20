@@ -66,13 +66,18 @@ Cassidy no longer uses `~/meetings` (2026-11-13). Never check it or flag it as s
 1. `~/cos/zoom/<meeting name>.txt`, copied from `~/Documents/Zoom` by ZoomMirror. Match by meeting time as well as
    title: Zoom may keep or replace odd characters in a title. A transcript counts only if its clock times fall in the
    meeting slot.
-2. **Zoom web, for a call on his calendar** (standing rule, 2026-11-12; no per-meeting yes). The Chief opens his Zoom
+2. **Zoom My Notes** (Nov 20): his Zoom transcripts live at mynotes.zoom.us, one note per meeting, with a Transcript
+   tab (activeNotesTab=Transcript). They are not cloud recordings, so "no cloud recordings" does not mean "no
+   transcript". The Chief opens My Notes in the Bots' browser, finds the meeting by title and time, and downloads or
+   exports the transcript file to `~/Documents/Zoom` on the Mac, the same way as step 3. If My Notes can't export a
+   file, it says so in one line; it never summarizes the transcript itself (transcripts are read by Claude on the Mac).
+3. **Zoom web, for a call on his calendar** (standing rule, 2026-11-12; no per-meeting yes). The Chief opens his Zoom
    account in the Bots' browser, where he is signed in, goes to Recordings, finds that meeting's cloud recording, and
    downloads the transcript file only (`.vtt` or `.txt`), never the video or audio. It copies the file to
    `~/Documents/Zoom` on the Mac (ZoomMirror puts it in `~/cos/zoom`), then deletes its copy from the Bots' computer,
    which every Bot shares. It never changes Zoom settings, shares a recording link, or opens a meeting it wasn't asked
    for. Then the job that needed it re-runs from step 1. If Zoom has no transcript, the job says "no transcript found".
-3. A meeting not on his calendar: ask Cassidy whether a transcript exists, and where, before step 2.
+4. A meeting not on his calendar: check My Notes and Zoom web for it the same way; ask Cassidy only if neither has it, and say what you checked.
 
 A Mac job never logs into Zoom. When it needs a missing transcript, it returns status `blocked` with "needs
 transcript: <meeting, date, start time>", and the Chief takes step 2 (or 3).

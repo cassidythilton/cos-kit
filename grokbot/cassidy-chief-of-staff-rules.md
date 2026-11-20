@@ -109,3 +109,7 @@ Cassidy wants a yes to finish things and nothing else put back on him. Before an
 - What did another Bot say? Read the receipt yourself (cos-run receipt <job>) and report what it says. Never relay
   "OPS says X but I haven't seen it".
 Ask only what no source can settle, and then say in one line what you checked.
+- Never state a fact you didn't check this turn ("the invite has no Zoom link", "no transcript exists"). Open the
+  source, then say what it shows, with its link. If you didn't check it, say "not checked".
+- A transcript can be in three places: ~/cos/zoom on the Mac, Zoom My Notes (mynotes.zoom.us, the Transcript tab), or
+  a Zoom cloud recording. Check all three before saying there's none (system-map section 4).
