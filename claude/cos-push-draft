@@ -13,7 +13,12 @@ COS="$HOME/cos"; REPO="$COS/repos/data-org"; R="$COS/outbox/$JOB/receipt.json"; 
 [[ -f "$R" && -d "$WT" ]] || { echo "cos-push-draft: no draft receipt or worktree for $JOB" >&2; exit 66; }
 BASE="$(jq -r '.draft.base // empty' "$R")"; BASE_SHA="$(jq -r '.draft.base_sha // empty' "$R")"; REVIEWED="$(jq -r '.draft.sha256 // empty' "$R")"
 BR="${BASE#origin/}"
-jq -e --arg b "$BR" '.branches[$b]' "$HOME/cos/handbook/live-branches.json" >/dev/null 2>&1 && { echo "cos-push-draft: $BR is live (a push deploys it); use its publish step" >&2; exit 65; }
+# A live branch (a push deploys it): only a docs-only change goes, and only as a [skip-cd] commit, which doesn't deploy.
+LIVE_BR=0; jq -e --arg b "$BR" '.branches[$b]' "$HOME/cos/handbook/live-branches.json" >/dev/null 2>&1 && LIVE_BR=1
+if [[ $LIVE_BR -eq 1 ]]; then
+  NONDOC="$(git -C "$WT" diff --name-only "$BASE_SHA" HEAD | grep -v '\.md$' || true)"
+  [[ -z "$NONDOC" ]] || { echo "cos-push-draft: $BR is live (a push deploys it) and this draft changes more than docs ($NONDOC); use its publish step" >&2; exit 65; }
+fi
 if [[ -n "$NEWBR" ]]; then
   # A new doc branch: the draft was made from main, the target is cassidy/<issue>-<topic>, and it must not exist yet.
   [[ "$BR" == main ]] || { echo "cos-push-draft: refusing: a new branch is only for a draft made from main (this one: $BR)" >&2; exit 65; }
@@ -31,5 +36,8 @@ NOW="$(git -C "$WT" diff --binary "$BASE_SHA" HEAD | shasum -a 256 | cut -d' ' -
 [[ "$NOW" == "$WANT" ]] || { echo "cos-push-draft: refusing: the draft changed after review" >&2; exit 67; }
 git -C "$REPO" fetch -q origin "+refs/heads/$BR:refs/remotes/origin/$BR"
 [[ "$(git -C "$REPO" rev-parse "origin/$BR")" == "$BASE_SHA" ]] || { echo "cos-push-draft: refusing: $BR moved on GitHub since the draft started. Run the draft again." >&2; exit 65; }
+if [[ $LIVE_BR -eq 1 ]] && ! git -C "$WT" log -1 --format=%B | grep -q '\[skip-cd\]'; then
+  git -C "$WT" commit -q --amend -m "$(git -C "$WT" log -1 --format=%s) [skip-cd]" -m "$(git -C "$WT" log -1 --format=%b)"
+fi
 git -C "$WT" push -q origin "HEAD:refs/heads/$BR"
-echo "pushed $JOB to $BR at $(git -C "$WT" rev-parse --short HEAD) (fast-forward from ${BASE_SHA:0:7})"
+echo "pushed $JOB to $BR$([[ $LIVE_BR -eq 1 ]] && echo ' (docs only, [skip-cd]: no deploy)') at $(git -C "$WT" rev-parse --short HEAD) (fast-forward from ${BASE_SHA:0:7})"

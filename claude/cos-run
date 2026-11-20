@@ -1391,7 +1391,8 @@ if [[ "$LANE" == "draft" ]]; then
   if [[ "$DRAFT_N" -gt 0 && -z "$DRAFT_BLOCK" ]]; then
     git -C "$WORKDIR" diff --cached --quiet || git -C "$WORKDIR" -c user.name="$(git -C "$REPO" config user.name || echo cos)" commit -q \
       -m "$(head -1 "$OUT/brief.md" | cut -c1-72)" -m "Drafted by cos-run draft $JOB; pushed only on Cassidy's yes." 2>>"$OUT/run.err" || true
-    if [[ "$BASE" =~ ^cassidy/ ]] && jq -e --arg b "$BASE" '.branches[$b]' "$COS/handbook/live-branches.json" >/dev/null 2>&1; then
+    if [[ "$BASE" =~ ^cassidy/ ]] && jq -e --arg b "$BASE" '.branches[$b]' "$COS/handbook/live-branches.json" >/dev/null 2>&1 \
+       && git -C "$WORKDIR" diff --name-only "origin/$BASE" HEAD 2>/dev/null | grep -qv '\.md$'; then
       # A live branch (Nov 20): a push deploys, so it's never staged here; its own publish step says what goes live.
       jq --arg b "$BASE" --arg p "$(jq -r --arg b "$BASE" '.branches[$b].publish' "$COS/handbook/live-branches.json")" \
         '.receipt.summary = ("Not staged for a push: " + $b + " is live (a push deploys it). Publish with " + $p + ". " + (.receipt.summary // ""))' \

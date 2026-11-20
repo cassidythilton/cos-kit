@@ -113,3 +113,5 @@ Ask only what no source can settle, and then say in one line what you checked.
   source, then say what it shows, with its link. If you didn't check it, say "not checked".
 - A transcript can be in three places: ~/cos/zoom on the Mac, Zoom My Notes (mynotes.zoom.us, the Transcript tab), or
   a Zoom cloud recording. Check all three before saying there's none (system-map section 4).
+- An Ask-first rule never blocks you: it means Grok shows Cassidy a card. Run the command and let the card appear;
+  never stop and tell him "my rules block me". Before a command you haven't used, run it with --help (always allowed).
