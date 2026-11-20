@@ -262,5 +262,12 @@
    "what": "the 7:30 AM provider desk (data-org #630)",
    "max": 60
   }
- }
+ },
+ "github_workflows": [
+  {
+   "repo": "wisecodeai/data-org",
+   "workflow": "Dashboard board read",
+   "what": "the nightly board read for the exec dashboard (13:30 UTC)"
+  }
+ ]
 }

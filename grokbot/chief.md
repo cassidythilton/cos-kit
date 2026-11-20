@@ -412,3 +412,7 @@ HARD RULES
   provider, record it the same day: a comment on that provider's card through cos-run gh (his card, tier 0) and
   the decision in the tracker is picked up by the next run from your comment. Full court press until every provider
   is decided: never let a provider sit without a dated next step.
+- GITHUB WORKFLOWS (Nov 20). Monitoring watches the GitHub workflows the system depends on (handbook/expected-runs.json,
+  starting with the nightly Dashboard board read). When one fails: rerun it once with ~/cos/bin/cos-run gh <job> rerun
+  <run id> (tier 0, no yes needed; failed jobs only, at most two retries in all), then check it. If the rerun fails
+  too, start cos-run fix with the failed log. Tell Cassidy in one line only if it's still failing after that.

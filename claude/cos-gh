@@ -59,6 +59,8 @@ Actions on Cassidy's own cards and PRs (he is an assignee, or the author of an u
   push      <draft-job> --branch cassidy/<issue>-<topic>
                                             a reviewed DRD or DADR draft (cos-run draft --doc) onto a new branch of
                                             his, after make next-id and a check of every open PR say the ID is free
+  rerun     <run id>                        rerun a failed GitHub workflow run, once, only for a workflow monitoring
+                                            watches (handbook/expected-runs.json github_workflows); at most 2 retries
   handoff   <job folder>/<file>             a Cowork handoff block (its handoff skill): runs the tier-0 lines through
                                             the actions above and refuses the rest, naming each line's tier
 
@@ -634,7 +636,35 @@ def own_comment(job, action, args, opts):
     return 0
 
 
+def rerun(job, args):
+    """Tier 0 since Nov 20: rerun a failed run of a watched workflow, failed jobs only, at most twice in all."""
+    if not args or not re.fullmatch(r"\d{6,14}", args[0]):
+        raise Refuse("usage: cos-run gh <job> rerun <run id>", code=64)
+    try:
+        watched = json.load(open(f"{COS}/handbook/expected-runs.json")).get("github_workflows", [])
+    except Exception:
+        watched = []
+    for w in watched:
+        r = run(["gh", "run", "view", args[0], "--repo", w["repo"], "--json", "workflowName,conclusion,status,attempt,url"], check=False)
+        if r.returncode == 0:
+            v = json.loads(r.stdout)
+            if v.get("workflowName") != w["workflow"]:
+                continue
+            if v.get("status") != "completed" or v.get("conclusion") == "success":
+                raise Refuse(f"run {args[0]} isn't a finished failure ({v.get('status')}, {v.get('conclusion')}); nothing to rerun.", code=65)
+            if int(v.get("attempt", 1)) >= 3:
+                raise Refuse(f"run {args[0]} has already been tried {v.get('attempt')} times: start cos-run fix with its log instead.", code=65)
+            run(["gh", "run", "rerun", args[0], "--repo", w["repo"], "--failed"])
+            ledger(job=job, ref="t0-rerun-" + args[0], action=f"rerun {args[0]}", card=w["repo"], old=v.get("conclusion", ""), new="rerun requested",
+                   evidence=v.get("url", ""), decision="done", verdict="INCONCLUSIVE", undo="none needed (a rerun changes no code)")
+            out({"job": job, "lane": "gh", "receipt": {"status": "done", "summary": f"Reran the failed jobs of {w['what']} ({v.get('url')}), attempt {int(v.get('attempt', 1)) + 1}. Check it with gh run view or wait for monitoring."}})
+            return 0
+    raise Refuse(f"run {args[0]} isn't a run of a workflow monitoring watches (handbook/expected-runs.json github_workflows).", code=65)
+
+
 def do(job, action, args, opts):
+    if action == "rerun":
+        return rerun(job, args)
     if action in ("log", "comment"):
         return own_comment(job, action, args, opts)
     line = " ".join([action] + args)

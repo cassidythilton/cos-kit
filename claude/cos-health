@@ -304,6 +304,28 @@ def check_jobs(found):
                              "cos-run fix with this error (the Chief starts it)" if len(items) > 1 else f"the Bot that started it reads cos-run receipt {jobs[0]} and fixes the cause"))
 
 
+def check_workflows(exp, found):
+    """GitHub Actions workflows the system depends on (Nov 20): the latest run of each must have succeeded."""
+    if os.environ.get("COS_HEALTH_SKIP_GH") == "1":
+        return
+    for w in exp.get("github_workflows", []):
+        try:
+            p = subprocess.run(["gh", "run", "list", "--repo", w["repo"], "--workflow", w["workflow"], "--limit", "1",
+                                "--json", "databaseId,conclusion,status,createdAt,url,attempt"], capture_output=True, text=True, timeout=30)
+            runs = json.loads(p.stdout or "[]") if p.returncode == 0 else []
+        except Exception:
+            runs = []
+        if not runs:
+            continue
+        r = runs[0]
+        if r.get("status") == "completed" and r.get("conclusion") not in ("success", "skipped", "cancelled"):
+            t = ts(r.get("createdAt", ""))
+            found.append(problem(f"workflow:{w['repo']}:{w['workflow']}:{r['databaseId']}",
+                                 f"GitHub workflow failed: {w['what']} ({hm(t) if t else 'latest run'})",
+                                 f"{r.get('url')} (attempt {r.get('attempt', 1)})",
+                                 f"cos-run gh <job> rerun {r['databaseId']} (one retry; a second failure gets cos-run fix with the log)"))
+
+
 def check_mac(found, prev):
     hour = NOW.astimezone(MT).hour
     try:
@@ -384,6 +406,10 @@ def check():
         except Exception as e:
             found.append(problem(f"health:{fn.__name__}", "The health check hit an error", f"{fn.__name__}: {e}"[:300], "cos-run fix"))
     check_jobs(found)
+    try:
+        check_workflows(exp, found)
+    except Exception as e:
+        found.append(problem("health:check_workflows", "The health check hit an error", f"check_workflows: {e}"[:300], "cos-run fix"))
     check_mac(found, prev)
     cur = {p["key"]: p for p in found}
     opened = {}
