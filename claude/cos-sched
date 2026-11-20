@@ -119,6 +119,21 @@ E="$(scrub "$(tail -c 400 "$ERR" 2>/dev/null | tr '\n\r\t' '   ')" | sed -E -e '
 [[ -f "$R" ]] || jq -n --arg j "$JOB" --arg s "FAILED: $JOB stopped (exit $rc) before writing a receipt. Error: ${E:-nothing on stderr}. Full log: $ERR" \
   '{receipt: {status: "failed", summary: $s}, lane: "sched", job: $j}' > "$R"
 
+# Follow-up drafts go straight into his Slack and Gmail Drafts (Nov 20), then the receipt says where they are.
+if [[ "$SLOT" == followups && -d "$OUTD/drafts" ]]; then
+  saved=(); failed=0; k=0
+  for f in "$OUTD"/drafts/*.json; do
+    [[ -f "$f" ]] || continue; k=$((k+1)); kind="$(jq -r '.kind // ""' "$f" 2>/dev/null)"
+    if [[ "$kind" == slack ]]; then lane=slack-draft; elif [[ "$kind" == email ]]; then lane=mail-draft; else failed=$((failed+1)); continue; fi
+    r="$(COS_CALLER=sched cos-run "$lane" "$JOB-d$k" "$f" 2>/dev/null)"
+    if [[ "$(jq -r '.receipt.status' <<<"$r" 2>/dev/null)" == done ]]; then saved+=("$(jq -r 'if .kind == "slack" then "Slack to \(.to)" else "Email to \(.to | join(", ")): \(.subject)" end' "$f")"); else failed=$((failed+1)); fi
+  done
+  if (( k > 0 )); then
+    line="Saved ${#saved[@]} of $k follow-up drafts in your Drafts (nothing sent): $(IFS='; '; echo "${saved[*]-}")."; (( failed > 0 )) && line="$line $failed couldn't be saved; the text is in followups.md."
+    jq --arg l "$line" '.receipt.summary = ($l + " " + (.receipt.summary // ""))' "$R" > "$R.tmp" && mv "$R.tmp" "$R"
+    log "drafts saved: ${#saved[@]} of $k"
+  fi
+fi
 # The packet pushed itself; the night run reports at 6 AM.
 if [[ "$LANE" == packet ]]; then (( rc == 0 )) && log "pushed to chief (by cos-packet)"; exit 0; fi
 if [[ "$LANE" == night ]]; then (( rc == 0 )) && log "done: night shift ran; the report goes out at 6 AM"; exit 0; fi

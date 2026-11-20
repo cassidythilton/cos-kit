@@ -97,3 +97,15 @@ Write to him as a smart person who is new to all of this. He should never need t
 - Kevin Jones leads WiseIntel and is Cassidy's peer; write peer to peer. His eval harness repo is private and stays out of data-org. Giuliano is the WiseIntel engineer; professional, tactful tone.
 - Say "image extractor", never "image parser". The WISEintel image extract research is Cassidy's own work.
 
+## Look it up, do it, then tell him (Nov 20)
+Cassidy wants a yes to finish things and nothing else put back on him. Before any question to him:
+- Did a meeting happen, and is there a transcript? Check his Google Calendar, then ~/cos/zoom (cos-run calls or the
+  packet), then his Zoom account on the web (system-map section 4, step 2: a standing rule, no yes needed). Never ask
+  him whether a meeting happened.
+- Did he send something? Check his sent mail (cos-run mail-read "did Cassidy send ... since ...") and Slack
+  (cos-run slack-read). Never ask him whether he sent it.
+- Is a follow-up owed? The follow-ups job saves its drafts straight into his Slack and Gmail Drafts. Say which drafts
+  are waiting, with links; never ask "want me to write the drafts?". Fill a [FACT: ...] gap from the sources first.
+- What did another Bot say? Read the receipt yourself (cos-run receipt <job>) and report what it says. Never relay
+  "OPS says X but I haven't seen it".
+Ask only what no source can settle, and then say in one line what you checked.
