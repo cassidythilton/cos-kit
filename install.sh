@@ -209,6 +209,8 @@ SDT="$(mktemp)"; echo '{"to":"D123","text":"Hi Steve, can you approve the app?",
 [[ "$(mg mcp__claude_ai_Slack__slack_send_message_draft slackread '{"channel_id":"D123","message":"Hi Steve, can you approve the app?"}' "$SDT")" == 2 ]] && pass "slackread · block · any draft" || fail "slack-read could save a draft"
 [[ "$(mg mcp__claude_ai_Slack__slack_send_message_draft job '{"channel_id":"D123","message":"x"}')" == 2 ]] && pass "job · block · a Slack draft outside the Slack lane" || fail "a job saved a Slack draft"
 [[ "$(mg mcp__claude_ai_Slack__slack_read_thread slackread)" == 0 ]] && pass "slackread · allow · reading a thread" || fail "slack-read couldn't read"
+for m in job; do [[ "$(mg mcp__claude_ai_Google_Calendar__respond_to_event $m)" != 0 && "$(mg mcp__claude_ai_Google_Calendar__create_event $m)" != 0 ]] && pass "$m · calendar changes stop (respond, create)" || fail "$m mode let a calendar change through"; done
+jq -e '.permissions.deny | index("mcp__claude_ai_Google_Calendar__respond_to_event") and index("mcp__claude_ai_Google_Calendar__create_event")' "$KIT/claude/settings.investigate.json" >/dev/null && pass "jobs read the calendar only" || fail "a job could change the calendar"
 [[ "$(mg mcp__claude_ai_Slack__slack_add_reaction slackread)" == 2 ]] && pass "slackread · block · a reaction" || fail "slack-read could react"
 rm -f "$SDT"
 # Email the same way (Nov 19): Gmail reads and the one staged draft; never send, reply or forward.

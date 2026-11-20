@@ -144,7 +144,7 @@ fi
 
 # ---- Connectors: read verbs only
 if [[ "$tool" == mcp__* ]]; then
-  if [[ "$tool" =~ __(.*_)?(update|append|clear|insert|create|delete|send|copy|share|trash|batch|schedule|add|upload|complete|move|rename|use_figma|draft|reply|post|edit|write) ]]; then
+  if [[ "$tool" =~ __(.*_)?(update|append|clear|insert|create|delete|send|copy|share|trash|batch|schedule|add|upload|complete|move|rename|use_figma|draft|reply|post|edit|write|respond) ]]; then
     outward "connector write ($tool)"
   fi
   exit 0

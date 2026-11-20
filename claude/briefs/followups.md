@@ -14,7 +14,7 @@ commitment (Slack read tools; Gmail isn't available in this job, so say "email: 
 did it, list it as done with the link, and write no draft.
 For each commitment someone owes him that has a board card: the card number and whether today's log mentions it.
 Commitments with no card: list them under "needs a card" (STEWARD proposes cards; don't create one).
-A meeting on Cassidy's calendar yesterday with no transcript in either folder: list it under "needs transcript" with its date and title. The Chief checks his Zoom account for it on its own (system-map.md, section 4); never ask Cassidy whether a meeting happened.
+Read yesterday's meetings from his Google Calendar (list_events, read-only). A meeting on Cassidy's calendar yesterday with no transcript in either folder: list it under "needs transcript" with its date and title. The Chief checks his Zoom account for it on its own (system-map.md, section 4); never ask Cassidy whether a meeting happened.
 
 Done means: followups.md in the job folder, one section per meeting, every line with a timestamp.
 If there were no meetings with transcripts, set summary to exactly: NO CHANGE

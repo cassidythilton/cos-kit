@@ -115,7 +115,11 @@
       "Bash(cos-flow nostatus*)",
       "Bash(cos-flow today*)",
       "Bash(cos-flow debt*)",
-      "Bash(cos-flow next-id*)"
+      "Bash(cos-flow next-id*)",
+      "mcp__claude_ai_Google_Calendar__list_events",
+      "mcp__claude_ai_Google_Calendar__search_events",
+      "mcp__claude_ai_Google_Calendar__get_event",
+      "mcp__claude_ai_Google_Calendar__list_calendars"
     ],
     "deny": [
       "Bash(*EXECUTE=1*)",
@@ -126,7 +130,11 @@
       "Read(~/.aws/**)",
       "Read(~/.ssh/**)",
       "WebFetch",
-      "WebSearch"
+      "WebSearch",
+      "mcp__claude_ai_Google_Calendar__create_event",
+      "mcp__claude_ai_Google_Calendar__delete_event",
+      "mcp__claude_ai_Google_Calendar__update_event",
+      "mcp__claude_ai_Google_Calendar__respond_to_event"
     ]
   },
   "hooks": {
