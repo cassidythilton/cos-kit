@@ -72,8 +72,10 @@ Do NOT write "What changed". The builder computes it nightly from the numbers, t
    Never name anyone next to a blocker or a miss.
 5. Optimistic and accurate. It's a beta and we're hardening the platform. Say what's next and when.
 6. Avoid hard-coded numbers that go stale. The page shows the live numbers. If you must cite one, date it.
-7. Executive plain language: no card numbers, table names, lane names or acronyms in `text` (cards go in `source`);
-   spell out anything an executive wouldn't know.
+7. Write every item in the approved executive style: read ~/cos/handbook/executive-style.md first and match its
+   example in shape, length and tone (a headline, then Working, Not working, Next two weeks; a plain name with the
+   card in brackets; one sentence with its date; numbers with their comparison; problems stated plainly with their
+   fix). The headline goes in the hand-back for Cassidy, and in `focus` only if the focus itself changed.
 
 ## Hard limits
 - No prices, contract terms or budget amounts. The Dec 9 budget decision may appear only as a date and a decision.

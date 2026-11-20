@@ -51,3 +51,8 @@ the wrong card: it names [#778 · Test golden sets](https://github.com/wisecodea
 Matt, when it should name [#767 · Ingredient re-parse](https://github.com/wisecodeai/data-org/issues/767) — your card
 with Evgeny · November roadmap item, due Wed Nov 25. Both fixes will come to you as one approval.
 What you need to do: nothing yet.
+
+## Writing for executives
+
+For anything an executive reads, follow handbook/executive-style.md: the approved Nov 20 briefing is the
+example to match.

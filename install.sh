@@ -119,7 +119,7 @@ backup_then_install() {  # kit-owned file: keep a backup if the installed copy w
   local src="$1" dst="$2"; mkdir -p "$(dirname "$dst")"
   if [[ -f "$dst" ]] && ! cmp -s "$src" "$dst"; then cp "$dst" "$dst.bak-$(date +%Y%m%d%H%M%S)"; fi
   install -m 644 "$src" "$dst"; }
-for f in rules.md board-standard.md engineering-standard.md system-map.md plain-language.md expected-runs.json; do backup_then_install "$KIT/handbook/$f" "$COS/handbook/$f"; done
+for f in rules.md board-standard.md engineering-standard.md system-map.md plain-language.md expected-runs.json executive-style.md; do backup_then_install "$KIT/handbook/$f" "$COS/handbook/$f"; done
 [[ -f "$COS/handbook/standing-approvals.json" ]] || install -m 644 "$KIT/handbook/standing-approvals.json" "$COS/handbook/"
 [[ -f "$COS/handbook/night-budget.json" ]] || install -m 644 "$KIT/handbook/night-budget.json" "$COS/handbook/"   # his file, like standing-approvals   # yours once installed: the kit never overwrites it
 for f in people.md workstreams.md sources.md; do [[ -f "$COS/handbook/$f" ]] || printf '# %s\n\nFill this in. The kit never overwrites it.\n' "${f%.md}" > "$COS/handbook/$f"; done
