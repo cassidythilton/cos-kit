@@ -239,6 +239,7 @@ words() {  # a command line a person can read and paste back: plain words bare, 
     if [[ "$a" =~ ^[A-Za-z0-9._/:=@#,+-]+$ ]]; then o+="$a "
     else a="${a//\\/\\\\}"; a="${a//\"/\\\"}"; a="${a//\$/\\\$}"; a="${a//\`/\\\`}"; o+="\"$a\" "; fi
   done; printf '%s' "${o% }"; }
+sheet_shape_ok() { jq -e '(.spreadsheet|type) == "string" and (.writes|type) == "array" and (.writes|length) >= 1' "$1" >/dev/null 2>&1; }
 usage_fail() {  # refuse fast, and print the call that would have worked
   echo "cos-run $1: $2" >&2
   { echo "Correct call:"; lane_help "$1" | sed -n '/^Examples:/,$p' | sed 1d; } >&2 || true
@@ -1344,6 +1345,12 @@ if [[ -f "$OUT/sheet.json" ]]; then
   SHEET_SHA="$(shasum -a 256 "$OUT/sheet.json" | cut -d' ' -f1)"; SHEET_N="$(jq '.writes|length' "$OUT/sheet.json" 2>/dev/null || echo 0)"
   jq --arg s "$SHEET_SHA" --argjson n "${SHEET_N:-0}" '. + {sheet_batch: {sha256: $s, cells: $n, file: "sheet.json", approve_with: "cos-run apply-sheet \(.job) \($s)"}}' \
     "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+  # A shape apply-sheet can't read (a bare list) fails the job here, not later at preview (sheet-en40-20261118, Nov 18;
+  # found by the Chief's fix-quick-20261119).
+  if ! sheet_shape_ok "$OUT/sheet.json"; then
+    jq '.receipt.status = "failed" | .receipt.summary = ("FAILED: sheet.json is not {\"spreadsheet\": \"<id>\", \"writes\": [...]}, the shape cos-run apply-sheet reads. Stage it again. " + (.receipt.summary // ""))' \
+      "$OUT/receipt.json" > "$OUT/receipt.tmp" && mv "$OUT/receipt.tmp" "$OUT/receipt.json"
+  fi
 fi
 if [[ -f "$OUT/apply.sh" ]]; then
   BATCH_SHA="$(shasum -a 256 "$OUT/apply.sh" | cut -d' ' -f1)"; BATCH_N="$(grep -cv '^[[:space:]]*\(#\|$\)' "$OUT/apply.sh" || true)"

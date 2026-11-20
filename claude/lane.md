@@ -59,6 +59,9 @@ Write batches (board jobs):
   job folder (repo, base = their branch, branch = cassidy/<issue>-<topic>, dest, source_root, items, content_sha256,
   title, body_file; the format is at the top of ~/cos/bin/cos-share) and the PR body file, and put one line in apply.sh:
   `cos-share <this job> <sha256 of share.json>`. A comment that says where the files are goes after it in the same batch.
+- Roadmap sheet cells: stage sheet.json as one object, never a bare list:
+  {"spreadsheet": "1OkdCrSUr3Q9dZHkDA0bq2NTr7I6jpiE8fyWEStnMrXM", "writes": [{"tab": "Data Roadmap", "row": 12, "row_name": "<column A text>", "col": "D", "col_name": "<the column's header>", "old": "<exact current value>", "new": "<new value>"}]}.
+  One object per cell in writes. row is a number; the others are strings. Any other shape fails the job.
 - Preview each make write with `DRY_RUN=1` first in the command (`DRY_RUN=1 make field CARD=652 FIELD=Target TO=2026-11-25`), never at the end, and quote the preview in notes.md.
 - Data questions: you don't query data. Write the question in open_questions as a `cos-run lake` request (the question, the tables you expect it to read, the shape of the answer); the Chief runs it after Cassidy's yes.
 - No write of any kind (RAGB, Status, log, make field) on a card whose owner isn't cassidythilton, in apply.sh or in needs_approval. Those go in that owner's nudge draft instead.
