@@ -31,7 +31,8 @@ packet-morning | 1-5 05:45 | 5-8 | chief | packet
 packet-evening | 1-5 16:12 | 15-19 | chief | packet
 night       | 0-4 22:00 | 21-23 | builder | night
 night-report | 1-5 06:00 | 5-9 | chief | nightreport
-memory-clean | 5 12:30 | 11-17 | keeper | memory'
+memory-clean | 5 12:30 | 11-17 | keeper | memory
+providers   | 1-5 07:30 | 6-12 | chief | investigate'
 
 if [[ "$SLOT" == list ]]; then echo "$TABLE"; exit 0; fi
 row="$(printf '%s\n' "$TABLE" | awk -F'|' -v s="$SLOT" '{k=$1; gsub(/ /,"",k)} k==s')"
@@ -120,7 +121,16 @@ E="$(scrub "$(tail -c 400 "$ERR" 2>/dev/null | tr '\n\r\t' '   ')" | sed -E -e '
   '{receipt: {status: "failed", summary: $s}, lane: "sched", job: $j}' > "$R"
 
 # Follow-up drafts go straight into his Slack and Gmail Drafts (Nov 20), then the receipt says where they are.
-if [[ "$SLOT" == followups && -d "$OUTD/drafts" ]]; then
+# The provider desk (Nov 20): keep its tracker, and post its daily log on #630 (his card; tier 0, own_card_daily_log).
+if [[ "$SLOT" == providers ]]; then
+  [[ -s "$OUTD/providers.json" ]] && jq -e 'type == "array" or type == "object"' "$OUTD/providers.json" >/dev/null 2>&1 \
+    && cp "$OUTD/providers.json" "$COS/state/providers.json" && log "tracker saved"
+  if [[ -s "$OUTD/log-630.md" ]]; then
+    COS_CALLER=sched cos-run gh "$JOB-log" log data-org#630 --body-file "$OUTD/log-630.md" --evidence "provider desk $JOB" >/dev/null 2>>"$ERR" \
+      && log "daily log posted on #630" || log "daily log on #630 not posted (see sched.err)"
+  fi
+fi
+if [[ ( "$SLOT" == followups || "$SLOT" == providers ) && -d "$OUTD/drafts" ]]; then
   saved=(); failed=0; k=0
   for f in "$OUTD"/drafts/*.json; do
     [[ -f "$f" ]] || continue; k=$((k+1)); kind="$(jq -r '.kind // ""' "$f" 2>/dev/null)"

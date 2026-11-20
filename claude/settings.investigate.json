@@ -119,7 +119,11 @@
       "mcp__claude_ai_Google_Calendar__list_events",
       "mcp__claude_ai_Google_Calendar__search_events",
       "mcp__claude_ai_Google_Calendar__get_event",
-      "mcp__claude_ai_Google_Calendar__list_calendars"
+      "mcp__claude_ai_Google_Calendar__list_calendars",
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Gmail__get_thread",
+      "mcp__claude_ai_Gmail__get_message",
+      "mcp__claude_ai_Gmail__list_labels"
     ],
     "deny": [
       "Bash(*EXECUTE=1*)",
@@ -134,7 +138,18 @@
       "mcp__claude_ai_Google_Calendar__create_event",
       "mcp__claude_ai_Google_Calendar__delete_event",
       "mcp__claude_ai_Google_Calendar__update_event",
-      "mcp__claude_ai_Google_Calendar__respond_to_event"
+      "mcp__claude_ai_Google_Calendar__respond_to_event",
+      "mcp__claude_ai_Gmail__send_message",
+      "mcp__claude_ai_Gmail__reply",
+      "mcp__claude_ai_Gmail__forward",
+      "mcp__claude_ai_Gmail__create_draft",
+      "mcp__claude_ai_Gmail__update_draft",
+      "mcp__claude_ai_Gmail__delete_draft",
+      "mcp__claude_ai_Gmail__trash_message",
+      "mcp__claude_ai_Gmail__trash_thread",
+      "mcp__claude_ai_Gmail__label_message",
+      "mcp__claude_ai_Gmail__label_thread",
+      "mcp__claude_ai_Gmail__update_message_labels"
     ]
   },
   "hooks": {

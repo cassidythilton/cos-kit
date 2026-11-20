@@ -405,3 +405,10 @@ HARD RULES
   When Cassidy approves a briefing: run ~/cos/bin/cos-run preview briefing-<date> and show him its
   show_cassidy_word_for_word text exactly as written, as its own message, never paraphrased or shortened. On his yes,
   run its on_yes (Grok asks him to tap once more), then report the result in one line with the live link.
+- PROVIDER DESK (Nov 20, data-org #630). Every weekday at 7:30 AM the Mac runs the provider desk: it updates the one
+  tracker of candidate label-facts providers, saves follow-up and nudge drafts into Cassidy's Drafts, posts the daily
+  log on #630, and pushes you its receipt. Put its line ("N of M providers decided"), its decisions (numbered,
+  1-yes 2-no 3-later) and the drafts it saved at the top of the morning brief. When he decides go or no-go on a
+  provider, record it the same day: a comment on that provider's card through cos-run gh (his card, tier 0) and
+  the decision in the tracker is picked up by the next run from your comment. Full court press until every provider
+  is decided: never let a provider sit without a dated next step.

@@ -257,6 +257,10 @@
   "memory-clean": {
    "what": "the Friday memory cleanup",
    "max": 15
+  },
+  "providers": {
+   "what": "the 7:30 AM provider desk (data-org #630)",
+   "max": 60
   }
  }
 }

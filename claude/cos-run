@@ -1272,7 +1272,8 @@ case "$LANE" in
                # An opportunity pass reads every source, writes the Slack digest and proves each idea in the code; $3 made it
                # skip sources (Nov 15). With its revision round and checkers it stays under $18 of the run's $30 cap
                # (cos-diligence spends the rest on Codex and the cross-examination).
-               grep -q "Task: find this week's build opportunities" "$OUT/brief.md" 2>/dev/null && BUDGET=10 ;;
+               grep -q "Task: find this week's build opportunities" "$OUT/brief.md" 2>/dev/null && BUDGET=10
+               grep -q "Task: the provider desk" "$OUT/brief.md" 2>/dev/null && BUDGET=8 ;;   # many sources, every weekday (Nov 20)
   draft)       SETTINGS="$COS/claude/settings.draft.json";       BUDGET=12; EFFORT=high
                WORKDIR="$REPO/.worktrees/cos-$JOB"
                # The base is fetched here, outside the model: the draft gate denies fetch and shasum (Nov 12,
