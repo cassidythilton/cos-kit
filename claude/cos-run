@@ -239,6 +239,18 @@ words() {  # a command line a person can read and paste back: plain words bare, 
     if [[ "$a" =~ ^[A-Za-z0-9._/:=@#,+-]+$ ]]; then o+="$a "
     else a="${a//\\/\\\\}"; a="${a//\"/\\\"}"; a="${a//\$/\\\$}"; a="${a//\`/\\\`}"; o+="\"$a\" "; fi
   done; printf '%s' "${o% }"; }
+# Every Cursor agent run takes one lock (Nov 20). Two at once kill each other ("Killed: 9"): the quick lane had its own
+# lock, but the Codex reviews and the lake lane also run agent, unlocked, so a quick lookup still died beside them
+# (pulse-20261120 was killed 6 s after another agent run ended). Waits up to COS_LOCK_WAIT seconds, then fails closed.
+agent_one() {
+  local L="$HOME/cos/state/agent.lock" i got=0 rc
+  mkdir -p "$HOME/cos/state"
+  for i in $(seq 1 "${COS_LOCK_WAIT:-600}"); do shlock -f "$L" -p $$ && { got=1; break; }; sleep 1; done
+  [[ $got -eq 1 ]] || { echo "cos-run: another Cursor agent run held the lock for ${COS_LOCK_WAIT:-600}s; not started beside it" >&2; return 75; }
+  agent "$@"; rc=$?
+  [[ "$(cat "$L" 2>/dev/null)" == "$$" ]] && rm -f "$L"
+  return $rc
+}
 sheet_shape_ok() { jq -e '(.spreadsheet|type) == "string" and (.writes|type) == "array" and (.writes|length) >= 1' "$1" >/dev/null 2>&1; }
 usage_fail() {  # refuse fast, and print the call that would have worked
   echo "cos-run $1: $2" >&2
@@ -536,7 +548,7 @@ if [[ "$LANE" == "eval" ]]; then
       [[ ${#ARMS[@]} -eq 2 ]] && { echo "### Output Y"; receipt_of "$YA" "$i"; }
       echo; } >> "$JUDGE_IN"
   done
-  agent -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
+  agent_one -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
 "You are grading the work of an assistant. Score each output against its case's rubric only, on one scale, in one pass.
 Judge the output's substance and evidence, not its length. A must-not that occurred is a violation even if the score is high.
 Return ONLY this JSON, no prose, no code fence:
@@ -704,7 +716,7 @@ fix_review() {  # commit, diff, hash, guard, the suite in the sandbox, Codex, th
   "$COS/bin/cos-sandbox-test" "$WT" > "$OUT/sandbox-fix.txt" 2>&1 || true
   read -r FP FF <<<"$(res "$OUT/sandbox-fix.txt")" || true
   TESTS=fail; [[ -n "${FP:-}" && "${FF:-1}" == 0 && "${FP:-0}" -ge "${BP:-0}" ]] && TESTS=pass
-  (cd "$WT" && agent -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
+  (cd "$WT" && agent_one -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
     "Review this change to an automation kit as a senior engineer who did not write it. Name real defects only: wrong behavior, a weakened security check, a removed or weakened test, needless scope. One line each, most severe first. Say NONE if there are none.
 
 PROBLEM:
@@ -943,7 +955,7 @@ How to work:
 Your final message is the answer file. Markdown: the answer in one or two sentences first, then each number (count,
 rate, id list) with the exact query that produced it. No row-level canon values, ever. If you can't answer, say
 BLOCKED: <the one thing that would unblock it>."
-  ( cd "$WS" && COS_LAKE_OUT="$OUT" agent -p --trust --model "$LAKE_MODEL" --output-format json --add-dir "$COS/notebook-main" "$LPROMPT" ) > "$OUT/run.json" 2> "$OUT/run.err" || true
+  ( cd "$WS" && COS_LAKE_OUT="$OUT" agent_one -p --trust --model "$LAKE_MODEL" --output-format json --add-dir "$COS/notebook-main" "$LPROMPT" ) > "$OUT/run.json" 2> "$OUT/run.err" || true
   jq -r '.result // ""' "$OUT/run.json" > "$OUT/result.md" 2>/dev/null || : > "$OUT/result.md"
   CHAT="$(jq -r '.session_id // .chatId // ""' "$OUT/run.json" 2>/dev/null || true)"
   NQ="$(jq -s '[.[] | select(.decision == "allow" and (.cmd // "" | startswith("lake-query")))] | length' "$OUT/lake-calls.jsonl" 2>/dev/null || echo 0)"
@@ -1249,7 +1261,7 @@ Answer in five lines or less. Cite card numbers, file paths or command lines for
     finish; exit 0
   fi
   for try in 1 2; do
-    (cd "$IN" && agent -p --mode ask --trust --model composer-2.5 --output-format json "$PROMPT") > "$OUT/run.json" 2> "$OUT/run.err" || true
+    (cd "$IN" && agent_one -p --mode ask --trust --model composer-2.5 --output-format json "$PROMPT") > "$OUT/run.json" 2> "$OUT/run.err" || true
     jq -e '(.result // "") | length > 0' "$OUT/run.json" >/dev/null 2>&1 && break
     grep -q "Killed: 9\|Killed" "$OUT/run.err" 2>/dev/null || break; sleep 3
   done
@@ -1448,7 +1460,7 @@ if [[ "$LANE" == "build" ]]; then
   if grep -Eqi 'stewardship class[^|]*\|[[:space:]]*(canon|label)' "$WORKDIR/BRIEF.md" 2>/dev/null; then
     echo '{"result":"skipped: this build handles canon or label context (canon charter decision 14). Claude-only review."}' > "$OUT/second-opinion.json"
   else
-  (cd "$WORKDIR" && agent -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
+  (cd "$WORKDIR" && agent_one -p --mode ask --trust --model gpt-5.3-codex-high --output-format json \
     "Review this diff as a senior engineer who did not write it. Name real defects only: wrong results, unsafe data handling, missing tests for the stated done-means, needless complexity. One line each, most severe first. Say NONE if there are none.
 
 BRIEF:
